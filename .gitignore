@@ -2,9 +2,12 @@ node_modules/
 dist/
 target/
 src-tauri/target/
+src-tauri/gen/
 .env
 .env.*
 *.local
 .DS_Store
 Thumbs.db
 my_doc/
+data/
+AGENTS.md
