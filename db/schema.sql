@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS personas (
     self_evolve_enabled INTEGER NOT NULL DEFAULT 1,          -- 人设自调开关：1 开启，0 关闭
     last_evolved_at     TEXT,                                -- 最近一次 AI 调整时间 RFC3339，可空
     color               TEXT    NOT NULL DEFAULT '#ffb6c1',  -- 桌宠本体颜色（十六进制），按人设绑定
+    chat_bg_file        TEXT,                                -- 聊天窗背景图相对文件名，可空；图片保存在 data/chat_background/
+    chat_bg_opacity     INTEGER NOT NULL DEFAULT 85,         -- 聊天窗背景透明度百分比 0–100
+    chat_bg_blur        INTEGER NOT NULL DEFAULT 0           -- 聊天窗背景模糊像素 0–40
     is_active           INTEGER NOT NULL DEFAULT 0,          -- 当前使用的人设（全局唯一为 1）
     expressions         TEXT                                 -- 分类表情库 JSON；未生成时为 NULL
 );

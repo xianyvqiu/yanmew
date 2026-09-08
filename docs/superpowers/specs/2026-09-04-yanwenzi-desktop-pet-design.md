@@ -16,7 +16,7 @@
 - 主宠窗：透明、无边框、置顶；默认位于屏幕右下角（320×240）；可拖动到任意位置，位置会被记住并在下次启动恢复。
 - 透明空白区域鼠标点击穿透，只让颜文字本身可交互。
 - 宠物形象分两层：基础颜文字 + 头顶饰品层；饰品默认隐藏，佩戴后显示。基础颜文字颜色按人设绑定，饰品层不跟随该颜色。
-- 聊天窗：独立、轻量、贴近气泡风格的窗口，可拖动、可关闭。
+- 聊天窗：独立、轻量、贴近气泡风格的窗口，可拖动、可关闭；支持按人设设置背景图、透明度和模糊度。
 - 设置窗：常规窗口，承载所有配置。
 - 记忆小窗：独立小窗，从聊天窗打开，只显示当前会话记忆。
 - 系统托盘图标：快速打开设置、退出应用。
@@ -28,7 +28,8 @@
 - 记忆整合提供商：可单独指定；未指定时默认跟随聊天当前提供商。
 - 提供商“测试连接”按钮。
 - 人设：可保存多个人设，可切换当前人设。
-- 桌宠本体颜色：按人设绑定，支持预设色板 + 自定义颜色选择器，存储为十六进制颜色。
+- 桌宠本体颜色：按人设绑定，支持预设色板 + 自定义颜色选择器，存储为十六进制颜色，默认 `#ffb6c1`。
+- 聊天窗背景：按人设隔离；支持 jpg/png/webp，单张最大 10MB；图片复制到 `data/chat_background/`；可调透明度（0–100%）和模糊度（0–40px）。
 - 人设自调开关：每个人设单独设置，默认开启；设置页按钮明显。
 - 初始设定：每个人设保存一份“初始设定”，用户可手动保存，并可一键恢复当前人设。
 - 喵币与游戏：每日签到、石头剪刀布、饰品价格等。
@@ -146,7 +147,7 @@
 完整结构见 `db/schema.sql`。表如下：
 
 - `providers`：id、name、base_url、api_key_encrypted、model、is_active（聊天）、memory_is_active（记忆，为空跟随聊天）。
-- `personas`：id、name、prompt（当前人设）、initial_prompt（初始设定）、self_evolve_enabled、last_evolved_at、color（本体颜色）、is_active、expressions（分类表情库 JSON）。
+- `personas`：id、name、prompt（当前人设）、initial_prompt（初始设定）、self_evolve_enabled、last_evolved_at、color（本体颜色）、chat_bg_file、chat_bg_opacity、chat_bg_blur、is_active、expressions（分类表情库 JSON）。
 - `sessions`：id、persona_id、title、created_at、updated_at、summary_cursor、intimacy、last_return_at、active_seconds_since_return、next_travel_after_seconds。
 - `messages`：id、session_id、role、content、expression、created_at。
 - `settings`：key、value（键值对，见 schema 注释）。
@@ -260,6 +261,7 @@
 - 代码：`src/`、`src-tauri/`。
 - 建库脚本：`db/schema.sql`。
 - 运行数据库：应用目录下 `data/yanwenzi.db`（与可执行文件同目录，首次启动自动创建）。
+- 聊天窗背景图片：应用目录下 `data/chat_background/`，数据库只保存相对文件名和设置值。
 
 ## 13. 里程碑建议
 
