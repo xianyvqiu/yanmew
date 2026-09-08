@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建一个 Windows 常驻桌宠应用：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、流式聊天、会话记忆、表情库与提醒。
+**Goal:** 构建一个 Windows 常驻桌宠应用：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、流式聊天、会话记忆、表情库、提醒、人设自调、喵币与饰品、旅行与伴手礼。
 
-**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位与 AI 客户端；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
+**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、饰品、旅行、信件与伴手礼；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
 
 **Tech Stack:** Tauri 2、Rust、React 18、TypeScript、Vite、SQLite（rusqlite）、windows crate（DPAPI、定位）。
 
@@ -18,7 +18,7 @@
 - Rust 测试：`cargo test`；前端测试：`npm run test`（Vitest）。
 - 每完成一个 Task 就提交一次，保持提交粒度与 Task 一致。
 - Windows 换行：仓库用 LF，Git 已配置自动转换，不要手动改 CRLF。
-- 本计划分 12 个阶段（阶段 0 到阶段 11），每个阶段结束时应用可编译运行。
+- 本计划分 17 个阶段（阶段 0 到阶段 16），每个阶段结束时应用可编译运行。
 
 ## 项目结构（本计划将创建/修改的文件）
 
@@ -30,15 +30,17 @@
   - `src/api.ts`：Tauri command/event 封装。
   - `src/windows/PetWindow.tsx`：宠窗。
   - `src/windows/ChatWindow.tsx`：聊天窗。
-  - `src/windows/SettingsWindow.tsx`：设置窗。
-  - `src/components/Kaomoji.tsx`、`Bubble.tsx`、`ContextMenu.tsx`、`ErrorBadge.tsx`。
+  - src/windows/SettingsWindow.tsx：设置窗。
+  - src/windows/MemoryWindow.tsx：记忆小窗。
+  - src/windows/TravelWindow.tsx：出行/邮箱/伴手礼管理窗。
+  - `src/components/Kaomoji.tsx`、`Bubble.tsx`、`ContextMenu.tsx`、`ErrorBadge.tsx`、`AccessoryLayer.tsx`。
 - `src-tauri/`：Rust 核心。
   - `src-tauri/Cargo.toml`、`tauri.conf.json`、`build.rs`、`capabilities/default.json`。
   - `src-tauri/src/main.rs`、`lib.rs`、`error.rs`、`state.rs`。
   - `src-tauri/src/db.rs`、`models.rs`、`config.rs`、`crypto.rs`。
   - `src-tauri/src/providers.rs`、`persona.rs`、`expressions.rs`。
   - `src-tauri/src/ai/mod.rs`、`ai/client.rs`、`ai/streaming.rs`。
-  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`commands.rs`。
+  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`commands.rs`。
 
 ---
 
@@ -4083,6 +4085,551 @@ git commit -m "feat: 添加提醒编辑、测试连接与短期记忆游标"
 
 ---
 
+## 阶段 12：人设自调与初始设定
+
+目标：当前人设与初始设定分离；聊天回复完成后由 AI 自判是否调整当前人设；用户可保存和恢复初始设定。
+
+### Task 12.1: 人设数据模型与 CRUD 扩展
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Modify: `src-tauri/src/persona.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 更新人设建表与模型**
+
+`personas` 增加 `initial_prompt`、`self_evolve_enabled`、`last_evolved_at`；模型字段与 `db/schema.sql` 保持一致。`create_persona` 时把 `initial_prompt` 设为用户填写的 `prompt`，`self_evolve_enabled` 默认 1。
+
+- [ ] **Step 2: 增加人设命令**
+
+`commands.rs` 暴露：获取人设详情、更新当前人设、保存当前人设为初始设定、从初始设定恢复当前人设。恢复操作在 Rust 层做事务更新，不调用 AI。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/persona.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加人设初始设定与恢复命令"
+```
+
+### Task 12.2: 聊天后人设自调
+
+**Files:**
+- Modify: `src-tauri/src/chat.rs`
+- Modify: `src-tauri/src/ai/client.rs`
+- Modify: `src-tauri/src/persona.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 增加人设自调工具**
+
+为聊天 function calling 增加 `update_persona_prompt(new_prompt)`；仅当当前会话所属人设的 `self_evolve_enabled=1` 时允许调用。工具返回后写入 `personas.prompt` 和 `last_evolved_at`，保持原有人设核心。
+
+- [ ] **Step 2: 接入回复完成流程**
+
+流式回复完成后执行工具调用阶段；AI 自行判断是否需要调用。写入成功后在宠窗发出 `persona-updated` 气泡，并通知设置窗刷新。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src-tauri/src/chat.rs src-tauri/src/ai/client.rs src-tauri/src/persona.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加聊天后人设自调"
+```
+
+### Task 12.3: 人设自调设置界面
+
+**Files:**
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/api.ts`
+- Modify: `src/types.ts`
+
+- [ ] **Step 1: 展示人设当前值与初始设定**
+
+人设卡片显示当前人设、初始设定、自调开关和最近调整时间。
+
+- [ ] **Step 2: 增加操作按钮**
+
+提供“保存为初始设定”“从初始设定恢复”按钮；恢复前弹确认框。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src/windows/SettingsWindow.tsx src/api.ts src/types.ts
+git commit -m "feat: 添加人设自调设置界面"
+```
+
+---
+
+### Task 12.4: 人设本体颜色设置与渲染
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Modify: `src-tauri/src/persona.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/components/Kaomoji.tsx`
+- Modify: `src/windows/PetWindow.tsx`
+
+- [ ] **Step 1: 增加人设颜色字段**
+
+`db.rs` 和 `models.rs` 按 `db/schema.sql` 增加 `color` 字段，默认 `#ffb6c1`；`create_persona` 使用默认值。
+
+- [ ] **Step 2: 增加颜色读取与更新命令**
+
+`persona.rs` 和 `commands.rs` 暴露读取/更新当前人设颜色的命令。
+
+- [ ] **Step 3: 设置页增加选色器**
+
+设置页人设卡片提供预设色板 + 自定义颜色选择器，保存为十六进制颜色。
+
+- [ ] **Step 4: 宠窗渲染本体颜色**
+
+`Kaomoji.tsx` 和 `PetWindow.tsx` 使用当前会话所属人设的 `color` 渲染基础颜文字；饰品层、气泡和窗口背景不受影响。
+
+- [ ] **Step 5: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/persona.rs src-tauri/src/commands.rs src/windows/SettingsWindow.tsx src/components/Kaomoji.tsx src/windows/PetWindow.tsx
+git commit -m "feat: 添加人设本体颜色设置"
+```
+## 阶段 13：亲密度与喵币
+
+目标：会话亲密度、全局喵币、每日签到和石头剪刀布游戏。
+
+### Task 13.1: 亲密度与货币数据层
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Create: `src-tauri/src/currency.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 更新建表与初始化**
+
+`db.rs` 按 `db/schema.sql` 创建 `user_state`、`currency_ledger`，并为 `sessions` 增加 `intimacy` 等字段。首次启动插入单行 `user_state`。
+
+- [ ] **Step 2: 实现喵币流水**
+
+`currency.rs` 提供 `get_balance`、`apply_delta`、`count_today_reason`。所有余额变更与 `currency_ledger` 在同一事务中完成。
+
+- [ ] **Step 3: 暴露钱包查询命令**
+
+`commands.rs` 暴露 `get_wallet` 和 `get_session_intimacy`。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/currency.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加亲密度与喵币数据层"
+```
+
+### Task 13.2: 互动增加亲密度
+
+**Files:**
+- Modify: `src-tauri/src/pet.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src/windows/PetWindow.tsx`
+
+- [ ] **Step 1: 更新互动命令**
+
+点击、摸摸、喂食命令成功时给当前会话亲密度 +1；AI 出门中时不增加。
+
+- [ ] **Step 2: 聊天轮数增加亲密度**
+
+一轮完整用户消息与 AI 回复完成后，当前会话亲密度 +1。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src-tauri/src/pet.rs src-tauri/src/commands.rs src/windows/PetWindow.tsx
+git commit -m "feat: 添加互动与聊天亲密度"
+```
+
+### Task 13.3: 签到与石头剪刀布
+
+**Files:**
+- Modify: `src-tauri/src/currency.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/api.ts`
+
+- [ ] **Step 1: 实现每日签到**
+
+签到命令按本地日期判断当天是否已签到；随机发放 1–10 喵币，写入流水和余额。
+
+- [ ] **Step 2: 实现石头剪刀布**
+
+`play_rps(choice)` 由系统随机出拳；赢 +5、输 -4、平局 0；开始前校验余额 ≥ 4，并统计当天游戏次数不超过 20。
+
+- [ ] **Step 3: 增加设置页入口**
+
+“设置 > 宠物状态”显示喵币余额、签到按钮、石头剪刀布按钮和亲密度。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/currency.rs src-tauri/src/commands.rs src/windows/SettingsWindow.tsx src/api.ts
+git commit -m "feat: 添加签到与石头剪刀布"
+```
+
+---
+
+## 阶段 14：饰品
+
+目标：会话级饰品库、AI 制作请求、佩戴/卸载/删除和前端饰品层。
+
+### Task 14.1: 饰品数据与命令
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Create: `src-tauri/src/accessories.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 创建饰品表和模型**
+
+按 `db/schema.sql` 创建 `accessories`；模型包含 `display_text`、`description`、`cost`、`source`、`is_worn`。
+
+- [ ] **Step 2: 实现饰品 CRUD**
+
+暴露当前会话饰品列表、佩戴、卸载、删除未佩戴饰品命令；删除后不可恢复。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/accessories.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加饰品数据与命令"
+```
+
+### Task 14.2: AI 制作饰品流程
+
+**Files:**
+- Modify: `src-tauri/src/chat.rs`
+- Modify: `src-tauri/src/accessories.rs`
+- Modify: `src-tauri/src/currency.rs`
+
+- [ ] **Step 1: 增加制作请求工具**
+
+聊天 function calling 增加 `request_accessory_craft(name, display_text, description)`；达到亲密度档位且满足 10/50/150 各限一次、300 后不限时，AI 可发起请求。
+
+- [ ] **Step 2: 处理用户确认与扣款**
+
+用户点“给你买”且余额足够时，在事务中扣款、写饰品记录；余额不足或点“没有钱了”则不创建。拒绝后至少 1 小时或下次启动后才能再次请求。
+
+- [ ] **Step 3: 生成人设口吻简介**
+
+制作成功时由聊天 AI 按当前人设口吻生成饰品简介，写入 `description`。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/chat.rs src-tauri/src/accessories.rs src-tauri/src/currency.rs
+git commit -m "feat: 添加 AI 制作饰品流程"
+```
+
+### Task 14.3: 前端饰品层与管理页
+
+**Files:**
+- Modify: `src/components/Kaomoji.tsx`
+- Create: `src/components/AccessoryLayer.tsx`
+- Modify: `src/windows/PetWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
+
+- [ ] **Step 1: 实现饰品层**
+
+`AccessoryLayer` 渲染当前会话佩戴的 `display_text`，限制长度和字符集；不影响基础颜文字颜色和表情。
+
+- [ ] **Step 2: 增加饰品管理入口**
+
+设置 > 饰品 显示当前会话饰品列表、简介、佩戴/卸载/删除；右键菜单提供快捷入口。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src/components/Kaomoji.tsx src/components/AccessoryLayer.tsx src/windows/PetWindow.tsx src/windows/SettingsWindow.tsx
+git commit -m "feat: 添加饰品层与饰品管理"
+```
+
+---
+
+## 阶段 15：旅行与写信
+
+目标：会话级旅行状态、出门/返回、写信与回信。
+
+### Task 15.1: 旅行状态与调度
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Create: `src-tauri/src/travel.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 创建旅行表**
+
+按 `db/schema.sql` 创建 `travels`，并读取 `sessions` 中的出行计时字段。
+
+- [ ] **Step 2: 实现出行触发**
+
+仅在应用开启且桌宠空闲时累计在线秒数；达到 4–24 小时随机阈值后创建 `away` 旅行，计划返回时间为 1–3 小时随机，并弹出行气泡。
+
+- [ ] **Step 3: 实现运行期返回**
+
+应用开启时到 `planned_return_at` 后把旅行置为 `returned`，更新 `last_return_at` 和下次出行阈值，触发礼物、回信和旅行总结。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/travel.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加旅行状态与调度"
+```
+
+### Task 15.2: 关闭应用后的旅行续算
+
+**Files:**
+- Modify: `src-tauri/src/travel.rs`
+- Modify: `src-tauri/src/lib.rs`
+
+- [ ] **Step 1: 启动时恢复旅行**
+
+启动时查找当前会话最新 `away` 旅行；若已过 `planned_return_at`，按已回来处理；否则继续出门并注册剩余时间定时器。
+
+- [ ] **Step 2: 关闭时保存状态**
+
+应用退出前保存 `active_seconds_since_return` 和 `next_travel_after_seconds`；关闭期间不累计在线出行时间。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src-tauri/src/travel.rs src-tauri/src/lib.rs
+git commit -m "feat: 添加旅行关闭续算"
+```
+
+### Task 15.3: 写信与回信
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Create: `src-tauri/src/letters.rs`
+- Modify: `src-tauri/src/travel.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 创建信件表**
+
+按 `db/schema.sql` 创建 `letters`；使用 `reply_to_id` 唯一索引保证每封信最多回复一次。
+
+- [ ] **Step 2: 生成途中信和回来信**
+
+每次旅行生成 1 封途中信；返回时生成 1 封回来信。生成内容使用当前会话人设、记忆和记事本。
+
+- [ ] **Step 3: 用户写信与回信调度**
+
+用户出门中可写多封信；每封用户来信延迟 10–30 分钟随机生成 AI 回信。应用关闭期间到期的回信，下次启动补生成。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/letters.rs src-tauri/src/travel.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加写信与回信"
+```
+
+### Task 15.4: 出行与邮箱界面
+
+**Files:**
+- Create: `src/windows/TravelWindow.tsx`
+- Modify: `src/windows/PetWindow.tsx`
+- Modify: `src/api.ts`
+- Modify: `src/types.ts`
+
+- [ ] **Step 1: 增加出门中宠窗状态**
+
+出门中时主宠窗显示出门中形象，聊天按钮变为“写信”按钮。
+
+- [ ] **Step 2: 增加设置 > 出行**
+
+出行管理页默认显示当前会话，页内可切换会话；包含邮箱和伴手礼两个入口。
+
+- [ ] **Step 3: 增加邮箱操作**
+
+邮箱支持查看、收藏、删除、回信；已回复的信不能再回。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src/windows/TravelWindow.tsx src/windows/PetWindow.tsx src/api.ts src/types.ts
+git commit -m "feat: 添加出行与邮箱界面"
+```
+
+---
+
+## 阶段 16：伴手礼与旅行总结
+
+目标：返回礼物进入伴手礼管理；旅行总结写入短期记忆。
+
+### Task 16.1: 伴手礼数据与管理
+
+**Files:**
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Create: `src-tauri/src/souvenirs.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src/windows/TravelWindow.tsx`
+
+- [ ] **Step 1: 创建伴手礼表**
+
+按 `db/schema.sql` 创建 `souvenirs`；只保存普通文字礼物，可佩戴饰品进入 `accessories`。
+
+- [ ] **Step 2: 生成返回礼物**
+
+每次返回生成 1 件伴手礼；10% 概率生成可佩戴饰品，90% 概率生成文字礼物。
+
+- [ ] **Step 3: 增加伴手礼操作**
+
+支持查看、收藏、删除；不做背包、数量、容量或使用机制。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/souvenirs.rs src-tauri/src/commands.rs src/windows/TravelWindow.tsx
+git commit -m "feat: 添加伴手礼数据与管理"
+```
+
+### Task 16.2: 旅行总结写入短期记忆
+
+**Files:**
+- Modify: `src-tauri/src/travel.rs`
+- Modify: `src-tauri/src/memory.rs`
+- Modify: `src-tauri/src/ai/client.rs`
+
+- [ ] **Step 1: 生成旅行总结**
+
+旅行返回后使用记忆整合 provider 生成 1 条短期记忆，内容包含出发时间、出行时长、做了什么、写了什么信、带了什么回来。
+
+- [ ] **Step 2: 写入短期记忆**
+
+以 `source_type='travel'`、`source_ref_id=travels.id` 写入 `short_memories`，参与后续 10 条短期记忆合并为长期记忆。
+
+- [ ] **Step 3: 应用关闭期间返回的补生成**
+
+若返回发生在应用关闭期间，则下次启动后台补生成；失败按后台记忆整合失败规则处理。
+
+- [ ] **Step 4: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/travel.rs src-tauri/src/memory.rs src-tauri/src/ai/client.rs
+git commit -m "feat: 添加旅行总结短期记忆"
+```
+
+### Task 16.3: 记忆与出行页联动
+
+**Files:**
+- Modify: `src/windows/MemoryWindow.tsx`
+- Modify: `src/windows/TravelWindow.tsx`
+- Modify: `src/api.ts`
+
+- [ ] **Step 1: 记忆小窗显示旅行总结**
+
+短期记忆列表展示 `travel` 类型来源标记。
+
+- [ ] **Step 2: 出行页与记忆小窗会话联动**
+
+记忆小窗自动跟随聊天窗当前会话；出行页切换会话后，邮箱、伴手礼和记忆入口同步刷新。
+
+- [ ] **Step 3: 编译验证**
+
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 4: 提交**
+
+```bash
+git add src/windows/MemoryWindow.tsx src/windows/TravelWindow.tsx src/api.ts
+git commit -m "feat: 添加记忆与出行页联动"
+```
+
+---
 ## 收尾与交付检查
 
 - [ ] **Step 1: 全量测试与构建**
@@ -4107,9 +4654,11 @@ git commit -m "chore: 完成颜喵 YanMew 首版实现"
 
 ## 交付前检查
 
-- 规格覆盖：窗口/托盘、提供商、人设、表情库、流式聊天、function calling 记事本、会话记忆、宠物状态、提醒、天气定位、错误休眠、默认人设、开机自启均有对应 Task。
+- 规格覆盖：窗口/托盘、提供商、人设、人设本体颜色、表情库、流式聊天、function calling 记事本、会话记忆、宠物状态、提醒、天气定位、错误休眠、默认人设、开机自启、人设自调、喵币与游戏、亲密度、饰品、旅行、写信、伴手礼、旅行总结均有对应 Task。
 - 无占位符：代码步骤均给出完整代码或命令。
 - 类型一致性：前端类型与 Rust 模型字段命名一致；命令名前后一致。
 - 应用图标使用用户提供的 `cat_icon.png`，已转为 `src-tauri/icons/icon.png`。
 - 已确定：天气采用 Open-Meteo 优先、和风天气兜底，和风 API Key 在设置中配置（DPAPI 加密存储）；`create_persona` 自动生成表情库依赖 provider 可用，无 provider 时静默跳过并在设置页提示手动生成。
-- 已确定：删除人设级联删除其会话与记忆；提醒到点由 AI 用人设语气润色、失败回退原文；关闭期间一次性提醒询问补/过期、重复提醒只补最近一次；宠窗默认右下角并记忆位置。
+- 已确定：删除人设级联删除其会话与会话级数据；提醒到点由 AI 用人设语气润色、失败回退原文；关闭期间一次性提醒询问补/过期、重复提醒只补最近一次；宠窗默认右下角并记忆位置。
+- 已确定：喵币为全局用户级，不随会话删除；亲密度、饰品、旅行、信件、伴手礼均为会话级，删除会话时级联删除。
+- 已确定：旅行间隔只累计应用开启时间；AI 出门后关闭应用，下次启动按真实时间差判断继续出门或已返回。
