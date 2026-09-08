@@ -553,7 +553,8 @@ pub struct Persona {
 pub struct AppSettings {
     pub hungry_minutes: u64,
     pub bored_minutes: u64,
-    pub sleep_minutes: u64,
+    pub sleep_min_minutes: u64,
+    pub sleep_max_minutes: u64,
     pub idle_bubble_minutes: u64,
 }
 
@@ -562,7 +563,8 @@ impl Default for AppSettings {
         Self {
             hungry_minutes: 120,
             bored_minutes: 45,
-            sleep_minutes: 30,
+            sleep_min_minutes: 60,
+            sleep_max_minutes: 120,
             idle_bubble_minutes: 20,
         }
     }
@@ -623,6 +625,8 @@ pub fn init(path: &Path) -> Result<Connection> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
             content TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'chat',
+            source_ref_id INTEGER,
             created_at TEXT NOT NULL,
             FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
         );
@@ -979,7 +983,8 @@ pub fn get_settings(conn: &Connection) -> Result<AppSettings, String> {
         match k.as_str() {
             "hungry_minutes" => s.hungry_minutes = parsed,
             "bored_minutes" => s.bored_minutes = parsed,
-            "sleep_minutes" => s.sleep_minutes = parsed,
+            "sleep_min_minutes" => s.sleep_min_minutes = parsed,
+            "sleep_max_minutes" => s.sleep_max_minutes = parsed,
             "idle_bubble_minutes" => s.idle_bubble_minutes = parsed,
             _ => {}
         }
@@ -991,7 +996,8 @@ pub fn save_settings(conn: &Connection, s: &AppSettings) -> Result<(), String> {
     let pairs = [
         ("hungry_minutes", s.hungry_minutes),
         ("bored_minutes", s.bored_minutes),
-        ("sleep_minutes", s.sleep_minutes),
+        ("sleep_min_minutes", s.sleep_min_minutes),
+        ("sleep_max_minutes", s.sleep_max_minutes),
         ("idle_bubble_minutes", s.idle_bubble_minutes),
     ];
     for (k, v) in pairs {
@@ -1595,11 +1601,11 @@ git commit -m "feat: 添加先切表情再流式回复的聊天命令"
 ```
 ---
 
-## 阶段 4：宠物状态机与活动
+## 阶段 4：桌宠状态机与活动
 
 目标：饿、无聊、睡觉由可配置时长触发；点击/喂食/摸摸更新状态；状态通过事件推给前端。
 
-### Task 4.1: 宠物状态机核心
+### Task 4.1: 桌宠状态机核心
 
 **Files:**
 - Create: `src-tauri/src/pet.rs`
@@ -1621,7 +1627,9 @@ pub struct AppState {
 }
 ```
 
-- [ ] **Step 2: 编写宠物状态机**
+- [ ] **Step 2: 编写桌宠状态机**
+
+睡觉状态首次进入时从 `sleep_min_minutes..=sleep_max_minutes` 随机取一次睡眠时长，用户点击/摸摸/喂食可唤醒；下面循环中的 `sleep_max_minutes` 只作为兜底判定。
 
 `src-tauri/src/pet.rs`:
 ```rust
@@ -1684,7 +1692,7 @@ pub fn start_pet_loop(app: AppHandle) {
             };
             let last = *state.pet.last_interaction.lock().unwrap();
             let elapsed = last.elapsed().as_secs() / 60;
-            let next = if elapsed >= settings.sleep_minutes {
+            let next = if elapsed >= settings.sleep_max_minutes {
                 PetState::Sleeping
             } else if elapsed >= settings.hungry_minutes {
                 PetState::Hungry
@@ -1746,7 +1754,7 @@ Expected: 无错误。
 
 ```bash
 git add src-tauri/src/pet.rs src-tauri/src/state.rs src-tauri/src/lib.rs src-tauri/src/commands.rs
-git commit -m "feat: 添加宠物状态机与交互命令"
+git commit -m "feat: 添加桌宠状态机与交互命令"
 ```
 
 ## 阶段 5：聊天会话与记忆
@@ -2560,7 +2568,8 @@ export interface Persona {
 export interface AppSettings {
   hungry_minutes: number;
   bored_minutes: number;
-  sleep_minutes: number;
+  sleep_min_minutes: number;
+  sleep_max_minutes: number;
   idle_bubble_minutes: number;
 }
 
@@ -3247,7 +3256,8 @@ function TimePetTab() {
   const fields: [keyof AppSettings, string][] = [
     ["hungry_minutes", "饥饿（分钟）"],
     ["bored_minutes", "无聊（分钟）"],
-    ["sleep_minutes", "睡觉（分钟）"],
+    ["sleep_min_minutes", "睡眠最短（分钟）"],
+    ["sleep_max_minutes", "睡眠最长（分钟）"],
     ["idle_bubble_minutes", "空闲气泡（分钟）"],
   ];
   return (
@@ -3328,6 +3338,8 @@ pub struct ShortMemory {
     pub id: i64,
     pub session_id: i64,
     pub content: String,
+    pub source_type: String,
+    pub source_ref_id: Option<i64>,
     pub created_at: String,
 }
 
@@ -3505,30 +3517,35 @@ use tauri::Manager;
 pub async fn maybe_consolidate(app: &tauri::AppHandle, session_id: i64) -> Result<(), String> {
     let state = app.state::<AppState>();
     let settings = { let conn = state.conn.lock().unwrap(); config::get_settings(&conn).unwrap_or_default() };
-    let (messages, short_count) = {
+    let (messages, cursor, short_count) = {
         let conn = state.conn.lock().unwrap();
         let messages = sessions::list_messages(&conn, session_id)?;
+        let cursor: i64 = conn.query_row("SELECT summary_cursor FROM sessions WHERE id = ?1", [session_id], |r| r.get(0)).unwrap_or(0);
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM short_memories WHERE session_id = ?1", [session_id], |r| r.get(0)).unwrap_or(0);
-        (messages, count)
+        (messages, cursor, count)
     };
 
-    // 最近 30 条之外、尚未总结的连续 10 条消息生成短期记忆。
+    // 最近 30 条之外、且消息 id 大于 summary_cursor 的旧消息，按连续 10 条生成短期记忆。
     if messages.len() > 30 {
-        let window = &messages[..messages.len() - 30];
-        let chunks = window.chunks(10);
+        let recent_start = messages.len().saturating_sub(30);
+        let recent_ids: std::collections::HashSet<i64> = messages[recent_start..].iter().map(|m| m.id).collect();
+        let pending: Vec<_> = messages.iter().filter(|m| m.id > cursor && !recent_ids.contains(&m.id)).collect();
         let target = memory_target(app)?;
-        for chunk in chunks {
+        for chunk in pending.chunks(10) {
             if chunk.len() == 10 {
                 let text = chunk.iter().map(|m| format!("{}: {}", m.role, m.content)).collect::<Vec<_>>().join("\n");
                 let summary = summarize(&target, &text, settings.short_memory_min_chars, settings.short_memory_max_chars).await?;
+                let last_id = chunk.last().map(|m| m.id).unwrap_or(cursor);
                 let conn = state.conn.lock().unwrap();
                 conn.execute(
-                    "INSERT INTO short_memories (session_id, content, created_at) VALUES (?1, ?2, ?3)",
+                    "INSERT INTO short_memories (session_id, content, source_type, source_ref_id, created_at) VALUES (?1, ?2, 'chat', NULL, ?3)",
                     params![session_id, summary, Utc::now().to_rfc3339()],
                 ).map_err(|e| e.to_string())?;
+                conn.execute("UPDATE sessions SET summary_cursor = ?1 WHERE id = ?2", params![last_id, session_id]).map_err(|e| e.to_string())?;
             }
         }
     }
+
 
     // 满 10 条短期记忆整合成 1 条长期记忆。
     let conn = state.conn.lock().unwrap();
@@ -3755,7 +3772,7 @@ git commit -m "feat: 聊天窗接入记忆入口与当前会话同步"
 - Modify: `src-tauri/src/sessions.rs`
 - Modify: `src-tauri/src/commands.rs`
 - Modify: `src-tauri/src/lib.rs`
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 
@@ -3808,9 +3825,9 @@ async fn maybe_generate_title(conn: &Connection, target: &ApiTarget, session_id:
 }
 ```
 
-- [ ] **Step 4: 设置页会话与聊天记录查看**
+- [ ] **Step 4: 聊天窗会话与聊天记录查看**
 
-`SettingsWindow.tsx` 增加“会话与聊天记录”页面，展示当前人设下的会话列表，可查看历史消息、切换当前会话、重命名、删除。删除操作需要确认弹窗。
+`ChatWindow.tsx` 展示当前人设下的会话列表，可切换会话、查看历史消息、重命名、删除；删除操作需要确认弹窗。
 
 - [ ] **Step 5: 编译验证**
 
@@ -3820,7 +3837,7 @@ Expected: 无错误。
 - [ ] **Step 6: 提交**
 
 ```bash
-git add src-tauri/src/sessions.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/chat.rs src/windows/SettingsWindow.tsx src/api.ts src/types.ts
+git add src-tauri/src/sessions.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/src/chat.rs src/windows/ChatWindow.tsx src/api.ts src/types.ts
 git commit -m "feat: 添加会话删除、重命名与标题生成"
 ```
 
@@ -4211,7 +4228,7 @@ git commit -m "feat: 添加聊天后人设自调"
 ### Task 12.3: 人设自调设置界面
 
 **Files:**
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 - Modify: `src/components/Kaomoji.tsx`
@@ -4251,7 +4268,7 @@ git commit -m "feat: 添加人设自调与本体颜色设置界面"
 - Modify: `src-tauri/src/persona.rs`
 - Modify: `src-tauri/src/commands.rs`
 - Modify: `src/windows/ChatWindow.tsx`
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 
@@ -4355,7 +4372,7 @@ git commit -m "feat: 添加互动与聊天亲密度"
 **Files:**
 - Modify: `src-tauri/src/currency.rs`
 - Modify: `src-tauri/src/commands.rs`
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 - Modify: `src/api.ts`
 
 - [ ] **Step 1: 实现每日签到**
@@ -4368,7 +4385,7 @@ git commit -m "feat: 添加互动与聊天亲密度"
 
 - [ ] **Step 3: 增加设置页入口**
 
-“设置 > 宠物状态”显示喵币余额、签到按钮、石头剪刀布按钮和亲密度。
+“设置 > 桌宠与内容 > 桌宠状态”显示喵币余额、签到按钮、石头剪刀布按钮和亲密度。
 
 - [ ] **Step 4: 编译验证**
 
@@ -4429,7 +4446,7 @@ git commit -m "feat: 添加旅行状态与调度"
 
 - [ ] **Step 1: 启动时恢复旅行**
 
-启动时查找当前会话最新 `away` 旅行；若已过 `planned_return_at`，按已回来处理；否则继续出门并注册剩余时间定时器。
+启动时查找当前会话最新 `away` 旅行；若已过 `planned_return_at`，按已回来处理并触发返回后处理（回来信、礼物、旅行总结）；否则继续出门并注册剩余时间定时器。
 
 - [ ] **Step 2: 关闭时保存状态**
 
@@ -4491,7 +4508,7 @@ git commit -m "feat: 添加写信与回信"
 
 - [ ] **Step 1: 增加出门中宠窗状态**
 
-出门中时主宠窗显示出门中形象，聊天按钮变为“写信”按钮。
+出门中时主宠窗只显示文字“`{当前人设名}出门啦`”，聊天按钮变为“写信”按钮。
 
 - [ ] **Step 2: 增加写信界面**
 
@@ -4499,7 +4516,7 @@ git commit -m "feat: 添加写信与回信"
 
 - [ ] **Step 3: 增加设置 > 出行**
 
-出行管理页默认显示当前会话，页内可切换会话；先接入邮箱，伴手礼入口在阶段 16 接入。
+出行管理页不显示会话选择器，数据默认跟随最近使用的会话；先接入邮箱，伴手礼入口在阶段 16 接入。
 
 - [ ] **Step 4: 增加邮箱操作**
 
@@ -4588,7 +4605,7 @@ git commit -m "feat: 添加 AI 制作饰品流程"
 - Modify: `src/components/Kaomoji.tsx`
 - Create: `src/components/AccessoryLayer.tsx`
 - Modify: `src/windows/PetWindow.tsx`
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 
 - [ ] **Step 1: 实现饰品层**
 
@@ -4753,7 +4770,7 @@ git commit -m "feat: 添加导入导出模块"
 **Files:**
 - Modify: `src-tauri/src/import_export.rs`
 - Modify: `src-tauri/src/commands.rs`
-- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
 - Modify: `src/api.ts`
 
 - [ ] **Step 1: 文件摘要**
