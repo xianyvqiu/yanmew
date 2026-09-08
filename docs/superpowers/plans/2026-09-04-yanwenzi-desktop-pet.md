@@ -1,8 +1,8 @@
-# 颜文字桌宠（Windows 桌面宠物）实现计划
+# 颜喵 YanMew 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建一个 Windows 常驻桌宠应用：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、流式聊天、会话记忆、表情库、提醒、人设自调、喵币与饰品、旅行与伴手礼。
+**Goal:** 构建一个 Windows 常驻桌宠应用“颜喵 YanMew”：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、用户设定、流式聊天（含暂停中断）、会话记忆与记事本、表情库、提醒、天气定位、人设自调、喵币与饰品、旅行/写信/伴手礼、导入导出与数据迁移。
 
 **Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、饰品、旅行、信件与伴手礼；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
 
@@ -18,7 +18,7 @@
 - Rust 测试：`cargo test`；前端测试：`npm run test`（Vitest）。
 - 每完成一个 Task 就提交一次，保持提交粒度与 Task 一致。
 - Windows 换行：仓库用 LF，Git 已配置自动转换，不要手动改 CRLF。
-- 本计划分 17 个阶段（阶段 0 到阶段 16），每个阶段结束时应用可编译运行。
+- 本计划分 18 个阶段（阶段 0 到阶段 17），每个阶段结束时应用可编译运行。
 
 ## 项目结构（本计划将创建/修改的文件）
 
@@ -41,7 +41,7 @@
   - `src-tauri/src/db.rs`、`models.rs`、`config.rs`、`crypto.rs`。
   - `src-tauri/src/providers.rs`、`persona.rs`、`expressions.rs`。
   - `src-tauri/src/ai/mod.rs`、`ai/client.rs`、`ai/streaming.rs`。
-  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`commands.rs`。
+  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`import_export.rs`、`commands.rs`。
 
 ---
 
@@ -1397,7 +1397,7 @@ pub async fn generate_persona_expressions(
     target: &ApiTarget,
     persona_prompt: &str,
 ) -> Result<String, String> {
-    let system = "你是颜文字表情生成器。请只输出 JSON，不要输出任何解释。格式：{\"开心\":[\"表情1\",\"表情2\"],\"惊讶\":[],\"害羞\":[],\"饿\":[],\"困\":[],\"无聊\":[],\"思考\":[],\"点击\":[]}。每个分类 2-3 个，全部用颜文字，不要英文。";
+    let system = "你是颜文字表情生成器。请只输出 JSON，不要输出任何解释。格式：{\"点击\":{\"开心\":[\"表情1\",\"表情2\"],\"惊讶\":[],\"害羞\":[]},\"饿\":[],\"吃东西\":[],\"困\":[],\"无聊\":[],\"思考\":[]}。点击下的开心/惊讶/害羞、以及其余分类各 2-3 个，全部用颜文字，不要英文。";
     let messages = vec![
         ChatMessage { role: "system".into(), content: system.into() },
         ChatMessage { role: "user".into(), content: format!("人设：{persona_prompt}") },
@@ -1415,13 +1415,30 @@ fn extract_json_object(raw: &str) -> Result<Value, String> {
 
 fn normalize_expression_json(value: &Value) -> Result<String, String> {
     let obj = value.as_object().ok_or("表情库不是对象")?;
-    let required = ["开心", "惊讶", "害羞", "饿", "困", "无聊", "思考", "点击"];
     let mut out = BTreeMap::new();
-    for key in required {
-        let arr = obj.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        out.insert(key.to_string(), arr);
+
+    let click_input = obj
+        .get("点击")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+    let mut click = BTreeMap::new();
+    for key in ["开心", "惊讶", "害羞"] {
+        let arr = click_input
+            .get(key)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        click.insert(key.to_string(), Value::Array(arr));
     }
-    serde_json::to_string(&out).map_err(|e| e.to_string())
+    out.insert("点击".to_string(), Value::Object(click.into_iter().collect()));
+
+    for key in ["饿", "吃东西", "困", "无聊", "思考"] {
+        let arr = obj.get(key).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        out.insert(key.to_string(), Value::Array(arr));
+    }
+
+    serde_json::to_string(&Value::Object(out.into_iter().collect())).map_err(|e| e.to_string())
 }
 ```
 
@@ -1439,10 +1456,18 @@ mod tests {
 
     #[test]
     fn normalizes_missing_categories() {
-        let value = serde_json::json!({"开心": ["(≧▽≦)", "(＾▽＾)"], "点击": ["(・ω・)"]});
+        let value = serde_json::json!({
+            "点击": {
+                "开心": ["(≧▽≦)", "(＾▽＾)"],
+                "惊讶": ["(°ロ°)"],
+                "害羞": ["(*/ω＼*)"]
+            },
+            "吃东西": ["(＾～＾)ﾓｸﾞﾓｸﾞ"]
+        });
         let out = normalize_expression_json(&value).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(parsed["开心"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["点击"]["开心"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["吃东西"].as_array().unwrap().len(), 1);
         assert_eq!(parsed["困"].as_array().unwrap().len(), 0);
     }
 }
@@ -2765,6 +2790,16 @@ const FALLBACK: Record<string, string> = {
   thinking: "(。・_・。)…?",
   dormant: "(×_×)",
 };
+function clickExpressions(raw: string): string[] {
+  const map = JSON.parse(raw) as Record<string, unknown>;
+  const group = map["点击"] as Record<string, string[]> | undefined;
+  if (!group) return [];
+  return [
+    ...(group["开心"] ?? []),
+    ...(group["惊讶"] ?? []),
+    ...(group["害羞"] ?? []),
+  ];
+}
 
 export default function PetWindow() {
   const [state, setState] = useState<PetState>("normal");
@@ -2784,8 +2819,7 @@ export default function PetWindow() {
     void listPersonas().then((personas) => {
       const active = personas.find((p) => p.is_active);
       if (active?.expressions) {
-        const map = JSON.parse(active.expressions) as Record<string, string[]>;
-        const click = map["点击"] ?? [];
+        const click = clickExpressions(active.expressions);
         if (click.length > 0) setExpression(click[0]);
       }
     }).catch((e) => setError(String(e)));
@@ -2797,8 +2831,7 @@ export default function PetWindow() {
     void listPersonas().then((personas) => {
       const active = personas.find((p) => p.is_active);
       if (active?.expressions) {
-        const map = JSON.parse(active.expressions) as Record<string, string[]>;
-        const click = map["点击"] ?? [];
+        const click = clickExpressions(active.expressions);
         if (click.length > 0) setExpression(click[Math.floor(Math.random() * click.length)]);
       }
     }).catch((e) => setError(String(e)));
@@ -3070,8 +3103,6 @@ import {
   listPersonas,
   listProviders,
   listReminders,
-  listSessions,
-  listMessages,
   saveSettings,
   setActivePersona,
   setActiveProvider,
@@ -3080,33 +3111,61 @@ import {
   setReminderStatus,
   deleteReminder,
 } from "../api";
-import type { AppSettings, Message, Persona, Provider, Reminder, Session } from "../types";
+import type { AppSettings, Persona, Provider, Reminder } from "../types";
 
-type Tab = "providers" | "personas" | "settings" | "reminders" | "history";
+type Tab = "providers" | "personas" | "user_profiles" | "reminders" | "time_weather" | "general" | "pet_status" | "pet_time" | "memory" | "travel" | "accessories";
 
 export default function SettingsWindow() {
   const [tab, setTab] = useState<Tab>("providers");
 
+  const groups: { title: string; items: [Tab, string][] }[] = [
+    { title: "全局设置", items: [
+      ["providers", "API 提供商"],
+      ["personas", "人设"],
+      ["user_profiles", "用户设定"],
+      ["reminders", "提醒"],
+      ["time_weather", "时间与天气"],
+      ["general", "通用"],
+    ]},
+    { title: "桌宠与内容", items: [
+      ["pet_status", "桌宠状态"],
+      ["pet_time", "时间与桌宠"],
+      ["memory", "记忆"],
+      ["travel", "出行"],
+      ["accessories", "饰品"],
+    ]},
+  ];
+
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "sans-serif" }}>
-      <nav style={{ width: 120, borderRight: "1px solid #ddd", padding: 8 }}>
-        {(["providers", "personas", "settings", "reminders", "history"] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 0", background: tab === t ? "#eef" : "none", border: "none", cursor: "pointer" }}>
-            {t === "providers" ? "API 提供商" : t === "personas" ? "人设" : t === "settings" ? "参数" : t === "reminders" ? "提醒" : "历史"}
-          </button>
+      <nav style={{ width: 160, borderRight: "1px solid #ddd", padding: 8 }}>
+        {groups.map((group) => (
+          <div key={group.title}>
+            <div style={{ fontWeight: 700, margin: "8px 0 4px" }}>{group.title}</div>
+            {group.items.map(([key, label]) => (
+              <button key={key} onClick={() => setTab(key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 0", background: tab === key ? "#eef" : "none", border: "none", cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <main style={{ flex: 1, overflowY: "auto", padding: 16 }}>
         {tab === "providers" && <ProvidersTab />}
         {tab === "personas" && <PersonasTab />}
-        {tab === "settings" && <SettingsTab />}
+        {tab === "user_profiles" && <div>用户设定（Task 10.2 补齐）</div>}
         {tab === "reminders" && <RemindersTab />}
-        {tab === "history" && <HistoryTab />}
+        {tab === "time_weather" && <TimeWeatherTab />}
+        {tab === "general" && <div>通用：开机自启、版本、导入与导出（阶段 17 补齐）</div>}
+        {tab === "pet_status" && <div>桌宠状态：亲密度、喵币、签到、游戏（阶段 13 补齐）</div>}
+        {tab === "pet_time" && <TimePetTab />}
+        {tab === "memory" && <div>记忆：参数与小窗入口（阶段 9/12 补齐）</div>}
+        {tab === "travel" && <div>出行：邮箱、伴手礼、历史（阶段 14/16 补齐）</div>}
+        {tab === "accessories" && <div>饰品：当前会话饰品（阶段 15 补齐）</div>}
       </main>
     </div>
   );
 }
-
 function ProvidersTab() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [name, setName] = useState("");
@@ -3165,14 +3224,25 @@ function PersonasTab() {
   );
 }
 
-function SettingsTab() {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+function TimeWeatherTab() {
   const [weatherKey, setWeatherKeyValue] = useState("");
   const [weatherKeySet, setWeatherKeySet] = useState(false);
-  useEffect(() => {
-    void getSettings().then(setSettings);
-    void hasWeatherKey().then(setWeatherKeySet);
-  }, []);
+  useEffect(() => { void hasWeatherKey().then(setWeatherKeySet); }, []);
+  return (
+    <div>
+      <h2>时间与天气</h2>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        和风天气 API Key（可选，{weatherKeySet ? "已配置" : "未配置"}）
+        <input type="password" placeholder="留空表示不修改" value={weatherKey} onChange={(e) => setWeatherKeyValue(e.target.value)} />
+      </label>
+      <button onClick={() => { void setWeatherKey(weatherKey).then(() => setWeatherKeySet(true)); }}>保存</button>
+    </div>
+  );
+}
+
+function TimePetTab() {
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  useEffect(() => { void getSettings().then(setSettings); }, []);
   if (!settings) return <div>加载中…</div>;
   const fields: [keyof AppSettings, string][] = [
     ["hungry_minutes", "饥饿（分钟）"],
@@ -3182,26 +3252,17 @@ function SettingsTab() {
   ];
   return (
     <div>
-      <h2>参数</h2>
+      <h2>时间与桌宠</h2>
       {fields.map(([key, label]) => (
         <label key={key} style={{ display: "block", marginBottom: 8 }}>
           {label}
           <input type="number" value={settings[key]} onChange={(e) => setSettings({ ...settings, [key]: Number(e.target.value) })} />
         </label>
       ))}
-      <label style={{ display: "block", marginBottom: 8 }}>
-        和风天气 API Key（可选，{weatherKeySet ? "已配置" : "未配置"}）
-        <input type="password" placeholder="留空表示不修改" value={weatherKey} onChange={(e) => setWeatherKeyValue(e.target.value)} />
-      </label>
-      <button onClick={() => {
-        void saveSettings(settings).then(() => {
-          if (weatherKey !== "") return setWeatherKey(weatherKey).then(() => setWeatherKeySet(true));
-        });
-      }}>保存</button>
+      <button onClick={() => { void saveSettings(settings); }}>保存</button>
     </div>
   );
 }
-
 function RemindersTab() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [content, setContent] = useState("");
@@ -3231,28 +3292,6 @@ function RemindersTab() {
   );
 }
 
-function HistoryTab() {
-  const [personas, setPersonas] = useState<Persona[]>([]);
-  const [active, setActive] = useState<number | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-
-  useEffect(() => { void listPersonas().then((list) => { setPersonas(list); const a = list.find((p) => p.is_active) ?? list[0]; if (a) setActive(a.id); }); }, []);
-  useEffect(() => { if (active != null) { void listSessions(active).then(setSessions); } }, [active]);
-
-  return (
-    <div>
-      <h2>历史</h2>
-      <select value={active ?? ""} onChange={(e) => setActive(Number(e.target.value))}>
-        {personas.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-      <select onChange={(e) => { void listMessages(Number(e.target.value)).then(setMessages); }}>
-        {sessions.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
-      </select>
-      <div>{messages.map((m) => <div key={m.id}><b>{m.role}</b> {m.content}</div>)}</div>
-    </div>
-  );
-}
 ```
 
 - [ ] **Step 2: 构建验证**
@@ -3425,7 +3464,7 @@ pub fn apply_operation(current: &str, op: &str, section_index: Option<usize>, co
 
 - [ ] **Step 4: 改造聊天命令以支持工具循环**
 
-`src-tauri/src/chat.rs` 的 `chat` 函数改为：先组装上下文（见 Task 9.6 的 `assemble_context`），然后循环最多 `tool_call_rounds` 次。同时把 `ai/client.rs` 的 `stream_chat` 改造为返回 `(String, Vec<ToolCallDelta>)`：正文仍逐字回调，同时累积工具调用。
+`src-tauri/src/chat.rs` 的 `chat` 函数改为：先组装上下文（见 Task 9.4 的 `assemble`），然后循环最多 `tool_call_rounds` 次。同时把 `ai/client.rs` 的 `stream_chat` 改造为返回 `(String, Vec<ToolCallDelta>)`：正文仍逐字回调，同时累积工具调用。
 1. 调用改造后的 `stream_chat` 流式输出正文，并收集 tool_calls。
 2. 若有工具调用：执行 `read_notebook`（返回记事本全文）或 `update_notebook`（按结构化操作更新，并检查字数上限）；把工具结果作为 `role: "tool"` 消息追加，继续下一轮。
 3. 无工具调用则结束，返回完整文本。
@@ -3584,7 +3623,16 @@ use crate::state::AppState;
 use rusqlite::Connection;
 use tauri::Manager;
 
-pub fn assemble(app: &tauri::AppHandle, session_id: i64, persona_prompt: &str, settings: &AppSettings) -> Result<Vec<ChatMessage>, String> {
+pub fn assemble(
+    app: &tauri::AppHandle,
+    session_id: i64,
+    persona_prompt: &str,
+    user_profile: Option<&str>,
+    environment: &str,
+    tools: &str,
+    memory_params: &str,
+    _settings: &AppSettings,
+) -> Result<Vec<ChatMessage>, String> {
     let state = app.state::<AppState>();
     let conn = state.conn.lock().unwrap();
     let long: Vec<String> = {
@@ -3601,12 +3649,19 @@ pub fn assemble(app: &tauri::AppHandle, session_id: i64, persona_prompt: &str, s
     let recent = recent.into_iter().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>();
 
     let mut out = vec![ChatMessage { role: "system".into(), content: "你是桌宠角色，按人设回复。".into() }];
+    out.push(ChatMessage { role: "system".into(), content: environment.to_string() });
+    out.push(ChatMessage { role: "system".into(), content: tools.to_string() });
+    out.push(ChatMessage { role: "system".into(), content: memory_params.to_string() });
+    if let Some(profile) = user_profile {
+        out.push(ChatMessage { role: "system".into(), content: format!("用户设定：{profile}") });
+    }
     out.push(ChatMessage { role: "system".into(), content: format!("人设：{persona_prompt}") });
     if !long.is_empty() { out.push(ChatMessage { role: "system".into(), content: format!("长期记忆：\n{}", long.join("\n")) }); }
     if !short.is_empty() { out.push(ChatMessage { role: "system".into(), content: format!("短期记忆：\n{}", short.join("\n")) }); }
     for m in recent { out.push(ChatMessage { role: m.role, content: m.content }); }
     Ok(out)
 }
+
 ```
 
 - [ ] **Step 2: 编写记忆 CRUD 命令**
@@ -3841,7 +3896,7 @@ git commit -m "feat: 添加消息删除、编辑与重说"
 let count: i64 = conn.query_row("SELECT COUNT(*) FROM personas", [], |r| r.get(0))?;
 if count == 0 {
     conn.execute(
-        "INSERT INTO personas (name, prompt, is_active, expressions) VALUES ('喵喵桌宠', '你是一只可爱的猫咪桌宠，用颜文字和温柔语气陪伴用户。', 1, NULL)",
+        "INSERT INTO personas (name, prompt, initial_prompt, self_evolve_enabled, last_evolved_at, color, chat_bg_file, chat_bg_opacity, chat_bg_blur, is_active, expressions) VALUES ('喵喵桌宠', '你是一只可爱的猫咪桌宠，用颜文字和温柔语气陪伴用户。', '你是一只可爱的猫咪桌宠，用颜文字和温柔语气陪伴用户。', 1, NULL, '#ffb6c1', NULL, 85, 0, 1, NULL)",
         [],
     )?;
 }
@@ -4407,7 +4462,7 @@ git commit -m "feat: 添加旅行关闭续算"
 
 - [ ] **Step 2: 生成途中信和回来信**
 
-每次旅行生成 1 封途中信；返回时生成 1 封回来信。生成内容使用当前会话人设、记忆和记事本。
+每次旅行生成 1 封途中信；返回时生成 1 封回来信。生成内容使用当前会话人设、记忆和记事本，AI 生成的信件内容应包含可爱颜文字。
 
 - [ ] **Step 3: 用户写信与回信调度**
 
@@ -4654,6 +4709,80 @@ git commit -m "feat: 添加记忆与出行页联动"
 ```
 
 ---
+
+## 阶段 17：导入导出与数据迁移
+
+目标：提供全量备份、指定会话、指定用户设定、人设资料包（分享用）和人设完整包（迁移用）的导出与导入。
+
+### Task 17.1: 导出模块
+
+**Files:**
+- Create: `src-tauri/src/import_export.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src-tauri/src/lib.rs`
+
+- [ ] **Step 1: 定义备份清单**
+
+备份包使用 `.yanmew-backup.zip`，内部包含 `manifest.json` 和按类型拆分的 JSON 文件；聊天窗背景图等文件放入 `files/`。导出范围包括：
+- 全量备份：全部人设、用户设定、会话、消息、记忆、记事本、提醒、喵币与账单、饰品、旅行、信件、伴手礼。
+- 指定会话：该会话及其消息、记忆、记事本、饰品、旅行、信件、伴手礼、亲密度。
+- 指定用户设定：单个用户设定。
+- 人设资料包（分享用）：人设定义、聊天窗背景图、表情库；不包含会话与私密数据。
+- 人设完整包（迁移用）：人设定义及其全部会话级数据。
+
+- [ ] **Step 2: 导出不包含密钥**
+
+API Key、和风天气 API Key 不进入备份；`manifest.json` 记录需要重新填写的密钥类型，但不保存密钥值。
+
+- [ ] **Step 3: 打包 ZIP**
+
+Rust 侧按用户选择目录写入临时目录后压缩为 `颜喵YanMew-<时间戳>.yanmew-backup.zip`，完成后清理临时目录。
+
+- [ ] **Step 4: 编译验证与提交**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Expected: 无错误。
+
+```bash
+git add src-tauri/src/import_export.rs src-tauri/src/commands.rs src-tauri/src/lib.rs
+git commit -m "feat: 添加导入导出模块"
+```
+
+### Task 17.2: 导入与校验
+
+**Files:**
+- Modify: `src-tauri/src/import_export.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/api.ts`
+
+- [ ] **Step 1: 文件摘要**
+
+导入前读取 `manifest.json`，展示导出类型、导出时间、包含的人设/会话/用户设定/文件数量。
+
+- [ ] **Step 2: 导入模式**
+
+默认只新建为新的副本；人设资料包只允许新建副本，名称冲突时自动重命名；其他备份包可选覆盖同名项，覆盖前二次确认。
+
+- [ ] **Step 3: 校验与失败处理**
+
+校验文件结构、版本和必需字段；导入失败或结构异常时显示中文错误，不写入半成品数据。
+
+- [ ] **Step 4: 完成后提示**
+
+导入完成后显示成功摘要，并提示重新填写 API Key / 和风天气 API Key。
+
+- [ ] **Step 5: 编译验证与提交**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml` 与 `npm run build`
+Expected: 无错误。
+
+```bash
+git add src-tauri/src/import_export.rs src-tauri/src/commands.rs src/windows/SettingsWindow.tsx src/api.ts
+git commit -m "feat: 添加导入校验与人设资料包"
+```
+
+---
 ## 收尾与交付检查
 
 - [ ] **Step 1: 全量测试与构建**
@@ -4678,7 +4807,7 @@ git commit -m "chore: 完成颜喵 YanMew 首版实现"
 
 ## 交付前检查
 
-- 规格覆盖：窗口/托盘、提供商、人设、人设本体颜色、表情库、流式聊天、function calling 记事本、会话记忆、宠物状态、提醒、天气定位、错误休眠、默认人设、开机自启、人设自调、喵币与游戏、亲密度、饰品、旅行、写信、伴手礼、旅行总结均有对应 Task。
+- 规格覆盖：窗口/托盘、提供商、人设、人设本体颜色、聊天窗背景、用户设定、表情库（点击：开心/惊讶/害羞、饿、吃东西、困、无聊、思考）、流式聊天与暂停中断、function calling 记事本、会话记忆、桌宠状态、提醒、天气定位、错误休眠、默认人设、开机自启、人设自调、喵币与游戏、亲密度、饰品、旅行、写信、伴手礼、旅行总结、导入导出与数据迁移均有对应 Task。
 - 无占位符：代码步骤均给出完整代码或命令。
 - 类型一致性：前端类型与 Rust 模型字段命名一致；命令名前后一致。
 - 应用图标使用用户提供的 `cat_icon.png`，已转为 `src-tauri/icons/icon.png`。
@@ -4686,3 +4815,4 @@ git commit -m "chore: 完成颜喵 YanMew 首版实现"
 - 已确定：删除人设级联删除其会话与会话级数据；提醒到点由 AI 用人设语气润色、失败回退原文；关闭期间一次性提醒询问补/过期、重复提醒只补最近一次；宠窗默认右下角并记忆位置。
 - 已确定：喵币为全局用户级，不随会话删除；亲密度、饰品、旅行、信件、伴手礼均为会话级，删除会话时级联删除。
 - 已确定：旅行间隔只累计应用开启时间；AI 出门后关闭应用，下次启动按真实时间差判断继续出门或已返回。
+- 已确定：导入导出不导出 API Key / 和风天气 Key，导入后重新填写；人设资料包只新建副本并自动重命名，且包含聊天窗背景图和表情库。

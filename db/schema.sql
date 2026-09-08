@@ -37,20 +37,32 @@ CREATE TABLE IF NOT EXISTS personas (
     color               TEXT    NOT NULL DEFAULT '#ffb6c1',  -- 桌宠本体颜色（十六进制），按人设绑定
     chat_bg_file        TEXT,                                -- 聊天窗背景图相对文件名，可空；图片保存在 data/chat_background/
     chat_bg_opacity     INTEGER NOT NULL DEFAULT 85,         -- 聊天窗背景透明度百分比 0–100
-    chat_bg_blur        INTEGER NOT NULL DEFAULT 0           -- 聊天窗背景模糊像素 0–40
+    chat_bg_blur        INTEGER NOT NULL DEFAULT 0,          -- 聊天窗背景模糊像素 0–40
     is_active           INTEGER NOT NULL DEFAULT 0,          -- 当前使用的人设（全局唯一为 1）
     expressions         TEXT                                 -- 分类表情库 JSON；未生成时为 NULL
 );
 
 -- ------------------------------------------------------------
+-- 2.1 用户设定
+-- 用户自己写的个人设定/背景，可创建多个；会话可选绑定一个，未绑定则为空。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
+    name       TEXT    NOT NULL,                    -- 用户设定名称
+    content    TEXT    NOT NULL,                    -- 用户设定正文
+    created_at TEXT    NOT NULL,                    -- 创建时间 RFC3339
+    updated_at TEXT    NOT NULL                     -- 最近更新时间 RFC3339
+);
+-- ------------------------------------------------------------
 -- 3. 会话
 -- 每个会话归属一个人设；记忆、记事本、饰品、旅行、信件、伴手礼都按会话隔离。
 -- summary_cursor 用于记录“已总结到哪条消息”，避免重复生成短期记忆。
--- 旅行相关字段记录当前会话的在线出行计时，只在应用开启且宠物在家时累计。
+-- 旅行相关字段记录当前会话的在线出行计时，只在应用开启且桌宠在家时累计。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sessions (
     id                            INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
     persona_id                    INTEGER NOT NULL,                    -- 所属人设 -> personas.id
+    user_profile_id               INTEGER,                             -- 绑定的用户设定 -> user_profiles.id，可空
     title                         TEXT    NOT NULL,                    -- 会话标题，可 AI 生成、用户重命名
     created_at                    TEXT    NOT NULL,                    -- 创建时间 RFC3339
     updated_at                    TEXT    NOT NULL,                    -- 最近更新时间 RFC3339
@@ -59,7 +71,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_return_at                TEXT,                                -- 最近一次旅行回来时间 RFC3339，可空
     active_seconds_since_return   INTEGER NOT NULL DEFAULT 0,          -- 本次回来后累计的在线秒数
     next_travel_after_seconds     INTEGER,                             -- 下次可出行的在线秒数阈值，可空
-    FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE CASCADE
+    FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
 
 -- ------------------------------------------------------------
@@ -81,7 +94,8 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 常用键：
 --   hungry_minutes                    饥饿触发分钟数
 --   bored_minutes                     无聊触发分钟数
---   sleep_minutes                     多久没互动进入睡觉
+--   sleep_min_minutes                 睡眠最短分钟数，默认 60
+--   sleep_max_minutes                 睡眠最长分钟数，默认 120
 --   idle_bubble_minutes               空闲气泡触发分钟数
 --   short_memory_min_chars            短期记忆最小字数
 --   short_memory_max_chars            短期记忆最大字数
@@ -193,7 +207,7 @@ CREATE TABLE IF NOT EXISTS user_state (
 -- ------------------------------------------------------------
 -- 11. 喵币账单
 -- 所有喵币变动都记一条流水，用于余额核对、每日签到/游戏次数判断。
--- reason: daily_sign_in / game_win / game_loss / game_draw / accessory_craft
+-- reason: daily_sign_in / game_win / game_loss / game_draw / accessory_craft / accessory_sell
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS currency_ledger (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
@@ -241,7 +255,7 @@ CREATE TABLE IF NOT EXISTS accessories (
 
 -- ------------------------------------------------------------
 -- 14. 信件
--- sender: user=用户写的信，ai=AI 写的信。
+-- sender: user=用户写的信，ai=AI 写的信；AI 生成的信件内容应包含可爱颜文字。
 -- reply_to_id 非空时表示这是对某封信的回复；每封信最多回复一次。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS letters (
@@ -274,6 +288,7 @@ CREATE TABLE IF NOT EXISTS souvenirs (
     session_id  INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
     travel_id   INTEGER,                             -- 来源旅行 -> travels.id，可空
     content     TEXT    NOT NULL,                    -- 文字礼物内容
+    note        TEXT    NOT NULL,                    -- AI 按人设口吻写的备注
     is_favorite INTEGER NOT NULL DEFAULT 0,          -- 是否收藏：1 收藏，0 未收藏
     created_at  TEXT    NOT NULL,                    -- 创建时间 RFC3339
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
