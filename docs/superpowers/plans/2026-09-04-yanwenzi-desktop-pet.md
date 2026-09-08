@@ -39,7 +39,7 @@
   - `src-tauri/Cargo.toml`、`tauri.conf.json`、`build.rs`、`capabilities/default.json`。
   - `src-tauri/src/main.rs`、`lib.rs`、`error.rs`、`state.rs`。
   - `src-tauri/src/db.rs`、`models.rs`、`config.rs`、`crypto.rs`。
-  - `src-tauri/src/providers.rs`、`persona.rs`、`expressions.rs`。
+  - `src-tauri/src/providers.rs`、`persona.rs`、`user_profiles.rs`、`expressions.rs`、`sessions.rs`、`memory.rs`、`memory_commands.rs`、`notebook.rs`、`context.rs`、`idle_bubble.rs`。
   - `src-tauri/src/ai/mod.rs`、`ai/client.rs`、`ai/streaming.rs`。
   - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`import_export.rs`、`commands.rs`。
 
@@ -3162,7 +3162,7 @@ export default function SettingsWindow() {
       <main style={{ flex: 1, overflowY: "auto", padding: 16 }}>
         {tab === "providers" && <ProvidersTab />}
         {tab === "personas" && <PersonasTab />}
-        {tab === "user_profiles" && <div>用户设定（Task 10.2 补齐）</div>}
+        {tab === "user_profiles" && <div>用户设定（Task 10.6 补齐）</div>}
         {tab === "reminders" && <RemindersTab />}
         {tab === "time_weather" && <TimeWeatherTab />}
         {tab === "general" && <div>通用：开机自启、版本、导入与导出（阶段 17 补齐）</div>}
@@ -3513,6 +3513,7 @@ use crate::state::AppState;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use tauri::Manager;
+use std::collections::HashSet;
 
 pub async fn maybe_consolidate(app: &tauri::AppHandle, session_id: i64) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -3528,7 +3529,7 @@ pub async fn maybe_consolidate(app: &tauri::AppHandle, session_id: i64) -> Resul
     // 最近 30 条之外、且消息 id 大于 summary_cursor 的旧消息，按连续 10 条生成短期记忆。
     if messages.len() > 30 {
         let recent_start = messages.len().saturating_sub(30);
-        let recent_ids: std::collections::HashSet<i64> = messages[recent_start..].iter().map(|m| m.id).collect();
+        let recent_ids: HashSet<i64> = messages[recent_start..].iter().map(|m| m.id).collect();
         let pending: Vec<_> = messages.iter().filter(|m| m.id > cursor && !recent_ids.contains(&m.id)).collect();
         let target = memory_target(app)?;
         for chunk in pending.chunks(10) {
@@ -3625,6 +3626,7 @@ git commit -m "feat: 添加短期/长期记忆生成与整合"
 - Create: `src-tauri/src/context.rs`
 - Create: `src-tauri/src/memory_commands.rs`
 - Modify: `src-tauri/src/chat.rs`
+- Modify: `src-tauri/src/commands.rs`
 - Modify: `src-tauri/src/lib.rs`
 
 - [ ] **Step 1: 编写上下文组装**
@@ -3681,24 +3683,35 @@ pub fn assemble(
 
 ```
 
-- [ ] **Step 2: 编写记忆 CRUD 命令**
+- [ ] **Step 2: 让聊天命令改用上下文组装**
+
+`src-tauri/src/commands.rs` 的 `chat` 不再接收 `persona_prompt` 和 `history`，改为接收 `session_id` 与 `user_text`。`chat.rs` 中：
+
+1. 从 `sessions` 查询当前会话、所属人设和 `user_profile_id`；绑定用户设定时读取 `user_profiles.content`，未绑定为 `None`。
+2. 读取当前人设 prompt、环境文本、工具说明和记忆参数，调用 `context::assemble` 生成 `Vec<ChatMessage>`。
+3. 先用 `complete_json` 生成说话表情并 `emit("chat-start", ...)`。
+4. 再把 `Vec<ChatMessage>` 追加用户消息后调用 `stream_chat` 流式回复。
+
+前端 API 类型同步更新为 `chat(sessionId, userText)`，不再传历史数组；历史由 Rust 从数据库读取。
+
+- [ ] **Step 3: 编写记忆 CRUD 命令**
 
 `src-tauri/src/memory_commands.rs` 增加 `list_short_memories`、`list_long_memories`、`get_notebook`、`save_notebook`、`update_short_memory`、`delete_short_memory`、`update_long_memory`、`delete_long_memory`、`merge_long_memories`。其中 `merge_long_memories` 接收 `ids: Vec<i64>` 和字数范围，调用记忆 AI 合并并返回结果文本；确认后由前端再次调用 `replace_long_memories` 完成替换。
 
-- [ ] **Step 3: 注册模块与命令**
+- [ ] **Step 4: 注册模块与命令**
 
 `src-tauri/src/lib.rs` 顶部加 `mod context; mod memory_commands;`，并注册这些命令。
 
-- [ ] **Step 4: 编译验证**
+- [ ] **Step 5: 编译验证**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: 无错误。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
-git add src-tauri/src/context.rs src-tauri/src/memory_commands.rs src-tauri/src/chat.rs src-tauri/src/lib.rs
-git commit -m "feat: 添加上下文组装与记忆 CRUD 命令"
+git add src-tauri/src/context.rs src-tauri/src/memory_commands.rs src-tauri/src/chat.rs src-tauri/src/commands.rs src-tauri/src/lib.rs
+git commit -m "feat: 添加上下文组装、聊天接入与记忆 CRUD 命令"
 ```
 
 ### Task 9.5: 记忆管理小窗（前端）
@@ -3764,7 +3777,7 @@ git commit -m "feat: 聊天窗接入记忆入口与当前会话同步"
 
 ## 阶段 10：会话与消息操作、默认人设、自启
 
-目标：补全会话删除/标题、消息删除/编辑/重说、默认人设、开机自启与正式应用名。
+目标：补全会话删除/标题、消息删除/编辑/重说、用户设定 CRUD 与会话绑定、默认人设、开机自启与正式应用名。
 
 ### Task 10.1: 会话删除与标题
 
@@ -4043,6 +4056,70 @@ git commit -m "feat: 添加宠窗默认位置与位置记忆"
 
 ---
 
+### Task 10.6: 用户设定 CRUD 与会话绑定
+
+**Files:**
+- Create: `src-tauri/src/user_profiles.rs`
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/sessions.rs`
+- Modify: `src-tauri/src/models.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src-tauri/src/lib.rs`
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/api.ts`
+- Modify: `src/types.ts`
+
+- [ ] **Step 1: 建表与迁移**
+
+`db.rs` 按 `db/schema.sql` 创建 `user_profiles`；若旧库的 `sessions` 还没有 `user_profile_id`，则执行：
+
+```sql
+ALTER TABLE sessions ADD COLUMN user_profile_id INTEGER REFERENCES user_profiles(id) ON DELETE SET NULL;
+```
+
+`models.rs` 增加 `UserProfile`；`sessions.rs` 的 `Session` 增加 `user_profile_id: Option<i64>`，`list_sessions` 同步读取该字段。
+
+- [ ] **Step 2: 实现用户设定 CRUD**
+
+`src-tauri/src/user_profiles.rs` 提供：
+
+```rust
+pub fn create(conn: &Connection, name: &str, content: &str) -> Result<i64, String>
+pub fn list(conn: &Connection) -> Result<Vec<UserProfile>, String>
+pub fn update(conn: &Connection, id: i64, name: &str, content: &str) -> Result<(), String>
+pub fn delete(conn: &Connection, id: i64) -> Result<(), String>
+```
+
+`delete` 依靠 `sessions.user_profile_id` 的 `ON DELETE SET NULL` 自动把绑定它的会话置为“未绑定”，不删除会话。`commands.rs` 暴露 `create_user_profile`、`list_user_profiles`、`update_user_profile`、`delete_user_profile`，并在 `lib.rs` 注册。
+
+- [ ] **Step 3: 会话绑定**
+
+`create_session(conn, persona_id, user_profile_id: Option<i64>)` 增加可选绑定参数；`list_sessions` 返回 `user_profile_id`。`commands.rs` 增加 `set_session_user_profile(session_id, user_profile_id)`，允许用户在聊天窗修改绑定；未绑定传 `None`。
+
+- [ ] **Step 4: 设置窗用户设定页**
+
+`SettingsWindow.tsx` 将“用户设定（Task 10.6 补齐）”占位替换为 `<UserProfilesTab />`，实现新建、编辑、删除、导出用户设定；删除前提示绑定它的会话会变为“未绑定”。
+
+- [ ] **Step 5: 聊天窗绑定与展示**
+
+`ChatWindow.tsx` 新建会话时允许选择用户设定或留空；会话行显示“用户设定：未绑定/名称”；会话详情中提供“修改绑定”。`api.ts`、`types.ts` 同步命令和类型。
+
+- [ ] **Step 6: 编译验证**
+
+Run: `cargo check --manifest-path src-tauri/Cargo.toml`
+Run: `npm run build`
+Expected: 无错误。
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add src-tauri/src/user_profiles.rs src-tauri/src/db.rs src-tauri/src/sessions.rs src-tauri/src/models.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src/windows/SettingsWindow.tsx src/windows/ChatWindow.tsx src/api.ts src/types.ts
+git commit -m "feat: 添加用户设定 CRUD 与会话绑定"
+```
+
+---
+
 ## 阶段 11：体验完善
 
 目标：落实表情库自动生成、喂食计时、饿/无聊气泡、空闲气泡上下文、提醒编辑、测试连接、短期记忆游标。
@@ -4108,7 +4185,7 @@ git commit -m "feat: 分离喂食计时并添加饿/无聊气泡"
 `src-tauri/src/idle_bubble.rs` 增加 `generate(app: &AppHandle)`：
 1. 取当前人设（`personas.is_active`）。
 2. 取上下文会话：优先 `current_session`；否则该人设最近更新的会话；否则 `None`。
-3. 有会话时调用 `context::assemble` 得到上下文，否则仅人设+环境。
+3. 有会话时调用 `context::assemble`，传入会话所属人设 prompt、会话绑定的用户设定（未绑定为 `None`）、`get_environment()` 得到的环境文本、工具说明与记忆参数；否则仅人设+环境。
 4. 用聊天 provider 生成一条简短气泡并 `emit("idle-bubble", text)`。
 
 - [ ] **Step 2: 接入空闲与状态气泡**
@@ -4228,7 +4305,7 @@ git commit -m "feat: 添加聊天后人设自调"
 ### Task 12.3: 人设自调设置界面
 
 **Files:**
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 - Modify: `src/components/Kaomoji.tsx`
@@ -4268,7 +4345,7 @@ git commit -m "feat: 添加人设自调与本体颜色设置界面"
 - Modify: `src-tauri/src/persona.rs`
 - Modify: `src-tauri/src/commands.rs`
 - Modify: `src/windows/ChatWindow.tsx`
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 
@@ -4318,7 +4395,7 @@ git commit -m "feat: 添加按人设隔离的聊天窗背景设置"
 
 - [ ] **Step 1: 更新建表与初始化**
 
-`db.rs` 按 `db/schema.sql` 创建 `user_state`、`currency_ledger`，并为 `sessions` 增加 `intimacy` 等字段。首次启动插入单行 `user_state`。
+`db.rs` 按 `db/schema.sql` 创建 `user_state`、`currency_ledger`，并为 `sessions` 增加 `intimacy INTEGER NOT NULL DEFAULT 0`。首次启动插入单行 `user_state`。
 
 - [ ] **Step 2: 实现喵币流水**
 
@@ -4372,7 +4449,7 @@ git commit -m "feat: 添加互动与聊天亲密度"
 **Files:**
 - Modify: `src-tauri/src/currency.rs`
 - Modify: `src-tauri/src/commands.rs`
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
 - Modify: `src/api.ts`
 
 - [ ] **Step 1: 实现每日签到**
@@ -4414,9 +4491,17 @@ git commit -m "feat: 添加签到与石头剪刀布"
 - Create: `src-tauri/src/travel.rs`
 - Modify: `src-tauri/src/commands.rs`
 
-- [ ] **Step 1: 创建旅行表**
+- [ ] **Step 1: 创建旅行表并补齐会话字段**
 
-按 `db/schema.sql` 创建 `travels`，并读取 `sessions` 中的出行计时字段。
+按 `db/schema.sql` 创建 `travels`；若 `sessions` 缺少出行计时字段，则执行：
+
+```sql
+ALTER TABLE sessions ADD COLUMN last_return_at TEXT;
+ALTER TABLE sessions ADD COLUMN active_seconds_since_return INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN next_travel_after_seconds INTEGER;
+```
+
+后续出行调度直接读取这些字段。
 
 - [ ] **Step 2: 实现出行触发**
 
@@ -4554,7 +4639,7 @@ git commit -m "feat: 添加出行与邮箱界面"
 
 - [ ] **Step 2: 实现饰品 CRUD**
 
-暴露当前会话饰品列表、佩戴、卸载、删除未佩戴饰品命令；删除后不可恢复。
+暴露当前会话饰品列表、佩戴、卸载、卖出未佩戴饰品、删除未佩戴饰品命令；卖出固定获得 10 喵币并写入 `currency_ledger`，删除后不可恢复。
 
 - [ ] **Step 3: 编译验证**
 
@@ -4605,7 +4690,7 @@ git commit -m "feat: 添加 AI 制作饰品流程"
 - Modify: `src/components/Kaomoji.tsx`
 - Create: `src/components/AccessoryLayer.tsx`
 - Modify: `src/windows/PetWindow.tsx`
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
 
 - [ ] **Step 1: 实现饰品层**
 
@@ -4613,7 +4698,7 @@ git commit -m "feat: 添加 AI 制作饰品流程"
 
 - [ ] **Step 2: 增加饰品管理入口**
 
-设置 > 饰品 显示当前会话饰品列表、简介、佩戴/卸载/删除；右键菜单提供快捷入口。
+设置 > 桌宠与内容 > 饰品 显示当前会话饰品列表、简介、佩戴/卸载/卖出/删除；卖出未佩戴饰品固定获得 10 喵币，右键菜单提供快捷入口。
 
 - [ ] **Step 3: 编译验证**
 
@@ -4743,7 +4828,7 @@ git commit -m "feat: 添加记忆与出行页联动"
 备份包使用 `.yanmew-backup.zip`，内部包含 `manifest.json` 和按类型拆分的 JSON 文件；聊天窗背景图等文件放入 `files/`。导出范围包括：
 - 全量备份：全部人设、用户设定、会话、消息、记忆、记事本、提醒、喵币与账单、饰品、旅行、信件、伴手礼。
 - 指定会话：该会话及其消息、记忆、记事本、饰品、旅行、信件、伴手礼、亲密度。
-- 指定用户设定：单个用户设定。
+- 指定用户设定：单个用户设定，可选择同时导出绑定它的会话。
 - 人设资料包（分享用）：人设定义、聊天窗背景图、表情库；不包含会话与私密数据。
 - 人设完整包（迁移用）：人设定义及其全部会话级数据。
 
@@ -4770,7 +4855,7 @@ git commit -m "feat: 添加导入导出模块"
 **Files:**
 - Modify: `src-tauri/src/import_export.rs`
 - Modify: `src-tauri/src/commands.rs`
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
 - Modify: `src/api.ts`
 
 - [ ] **Step 1: 文件摘要**
