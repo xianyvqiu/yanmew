@@ -1,4 +1,6 @@
 use std::io;
+mod commands;
+mod pet_region;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -7,6 +9,7 @@ use tauri::{
 };
 
 pub(crate) fn show_pet_window(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    commands::change_hidden(app, false).map_err(io::Error::other)?;
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
@@ -21,6 +24,12 @@ pub(crate) fn show_pet_window(app: &AppHandle) -> Result<(), Box<dyn std::error:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(std::sync::Mutex::new(commands::PetState::default()))
+        .invoke_handler(tauri::generate_handler![
+            commands::get_pet_window_state,
+            commands::set_pet_hidden,
+            commands::update_pet_regions
+        ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "显示宠窗", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "设置", false, None::<&str>)?;

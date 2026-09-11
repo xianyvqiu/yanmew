@@ -1,5 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useRef, type PointerEvent } from "react";
+import { useEffect, useRef, type PointerEvent } from "react";
+import { usePetWindow } from "./usePetWindow";
+import "./PetWindow.css";
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -10,11 +12,18 @@ type PointerStart = {
 };
 
 export default function PetWindow() {
+  const root = useRef<HTMLDivElement>(null);
+  const { state, error, pending, toggleHidden, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
   const draggingStarted = useRef(false);
 
+  useEffect(() => {
+    pointerStart.current = null;
+    draggingStarted.current = false;
+  }, [state.hidden]);
+
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) {
+    if (event.button !== 0 || pointerStart.current) {
       return;
     }
 
@@ -39,7 +48,7 @@ export default function PetWindow() {
     }
 
     draggingStarted.current = true;
-    void getCurrentWindow().startDragging();
+    void Promise.resolve(getCurrentWindow().startDragging()).catch(fail);
   };
 
   const resetPointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -51,7 +60,9 @@ export default function PetWindow() {
 
   return (
     <div
+      ref={root}
       data-testid="pet-window"
+      className="pet-window"
       style={{
         alignItems: "center",
         background: "transparent",
@@ -62,8 +73,21 @@ export default function PetWindow() {
         width: "100%",
       }}
     >
-      <div
+      <button
+        className="pet-visibility"
+        data-pet-interactive
+        disabled={pending || state.revision < 0}
+        onClick={() => { void toggleHidden(); }}
+        title={error || undefined}
+        aria-description={error || undefined}
+        style={error ? { color: "#b91c1c" } : undefined}
+      >
+        {state.hidden ? "显示宠窗" : "隐藏宠窗"}
+      </button>
+      {!state.hidden && <div
+        data-pet-interactive
         aria-label="颜文字桌宠"
+        onLostPointerCapture={resetPointer}
         onPointerCancel={resetPointer}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -72,7 +96,7 @@ export default function PetWindow() {
         style={{ cursor: "grab", fontSize: 48, lineHeight: 1, touchAction: "none" }}
       >
         (・ω・)
-      </div>
+      </div>}
     </div>
   );
 }

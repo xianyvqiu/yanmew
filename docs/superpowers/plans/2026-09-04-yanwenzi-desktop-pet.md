@@ -335,185 +335,44 @@ git commit -m "feat: 初始化 Tauri 2 桌面工程"
 
 ## 阶段 1：桌面壳（透明、置顶、可拖动、托盘）
 
-目标：宠窗可拖动、透明区域点击穿透、系统托盘可退出；补齐窗口标签。
+目标：建立可编译运行的 Windows 桌面壳。代码与自动化验证已完成，部分原生交互验收待人工完成。
 
 ### Task 1.1: 可拖动透明宠窗
 
-**Files:**
-- Modify: `src/App.tsx`
-- Create: `src/windows/PetWindow.tsx`
+**Files:** `src/App.tsx`、`src/windows/PetWindow.tsx`、`src/windows/PetWindow.test.tsx`、`vite.config.ts`、`package.json`、`package-lock.json`。
 
-- [ ] **Step 1: 编写失败测试（窗口渲染）**
-
-Create `src/windows/PetWindow.test.tsx`:
-```tsx
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import PetWindow from "./PetWindow";
-
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ startDragging: vi.fn() }),
-}));
-
-describe("PetWindow", () => {
-  it("渲染颜文字形象", () => {
-    render(<PetWindow />);
-    expect(screen.getByText("(・ω・)")).toBeTruthy();
-  });
-});
-```
-
-- [ ] **Step 2: 运行测试确认失败**
-
-Run: `npm test -- PetWindow.test.tsx`
-Expected: FAIL（`PetWindow` 模块不存在）。
-
-- [ ] **Step 3: 安装测试依赖**
-
-Run: `npm install -D @testing-library/react @testing-library/dom jsdom`
-修改 `vite.config.ts`，增加 Vitest 配置：
-```ts
-export default defineConfig({
-  plugins: [react()],
-  clearScreen: false,
-  server: { port: 1420, strictPort: true },
-  envPrefix: ["VITE_", "TAURI_"],
-  test: { environment: "jsdom", globals: true },
-});
-```
-
-- [ ] **Step 4: 实现 PetWindow**
-
-`src/windows/PetWindow.tsx`:
-```tsx
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-
-export default function PetWindow() {
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button === 0) {
-      void getCurrentWindow().startDragging();
-    }
-  };
-
-  return (
-    <div
-      style={{ width: "100%", height: "100%", userSelect: "none", background: "transparent" }}
-      onPointerDown={onPointerDown}
-    >
-      <div style={{ fontSize: 48, cursor: "grab", lineHeight: 1 }}>(・ω・)</div>
-    </div>
-  );
-}
-```
-
-`src/App.tsx`:
-```tsx
-import PetWindow from "./windows/PetWindow";
-
-export default function App() {
-  return <PetWindow />;
-}
-```
-
-- [ ] **Step 5: 运行测试确认通过**
-
-Run: `npm test -- PetWindow.test.tsx`
-Expected: PASS。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add -A
-git commit -m "feat: 添加可拖动透明宠窗"
-```
+- [x] 渲染颜文字 `(・ω・)`，沿用透明、无边框、置顶的 `main` 窗口。
+- [x] 仅颜文字左键位移达到 5px 后开始原生拖动；普通单击不触发拖动。
+- [x] 配置 Testing Library、jsdom 与 Vitest，验证渲染和拖动边界。
+- [x] 前端测试与 TypeScript/Vite 构建通过，代码保存为独立提交。
 
 ### Task 1.2: 系统托盘
 
-**Files:**
-- Modify: `src-tauri/Cargo.toml`
-- Modify: `src-tauri/src/lib.rs`
-- Modify: `src-tauri/capabilities/default.json`
+**Files:** `src-tauri/src/lib.rs`。
 
-- [ ] **Step 1: 编写 Rust 托盘逻辑**
-
-`src-tauri/src/lib.rs` 改为：
-```rust
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
-};
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let show = MenuItem::with_id(app, "show", "打开设置", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-```
-
-- [ ] **Step 2: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 3: 手动验证托盘**
-
-Run: `npm run tauri dev`
-Expected: 系统托盘出现图标；左键点击显示宠窗；右键菜单有“打开设置”和“退出”，“退出”能关闭应用。
-
-- [ ] **Step 4: 提交**
-
-```bash
-git add src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json
-git commit -m "feat: 添加系统托盘与退出菜单"
-```
----
+- [x] 创建托盘图标与“显示宠窗”“设置”“退出”菜单。
+- [x] 左键显示并聚焦宠窗，右键打开菜单；“退出”关闭整个应用。
+- [x] “设置”暂时禁用，后续设置窗口阶段接入真实窗口。
+- [x] 显示逻辑共用入口，缺少窗口或恢复失败会返回并记录中文错误。
+- [x] Rust 编译检查通过，代码保存为独立提交。
+- [ ] 人工验收托盘左击、右键菜单、隐藏后托盘恢复与退出。
 
 ### Task 1.3: 点击穿透与隐藏恢复
 
-**Files:** `src/windows/PetWindow.tsx`、`src-tauri/src/commands.rs`、`src-tauri/src/lib.rs`、`src-tauri/capabilities/default.json`。
+**Files:** `src/windows/PetWindow.tsx`、`src/windows/PetWindow.css`、`src/windows/usePetWindow.ts`、`src/windows/PetWindow.test.tsx`、`src-tauri/src/commands.rs`、`src-tauri/src/pet_region.rs`、`src-tauri/src/lib.rs`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`、`src-tauri/capabilities/default.json`。
 
-- [ ] 建立可交互区域命中规则：颜文字、饰品相关交互、按钮、菜单和确认卡片接收鼠标；其他透明区域穿透到桌面。不能只用 CSS 透明或 pointer-events 代替系统窗口命中测试。
-- [ ] 拖动仅由颜文字拖动区域触发，与单击区分；按钮事件不冒泡触发拖动/增加亲密度。缩放、尺寸变化和颜文字位移后更新命中区域。
-- [ ] 实现 `set_pet_hidden(hidden)`：隐藏颜文字、饰品和气泡，只保留“显示宠窗”按钮；保存完整窗口尺寸，恢复时还原。隐藏期间暂停活动与游走。
-- [ ] 托盘菜单明确提供“显示宠窗”“设置”“退出”；设置项打开设置窗口，显示项解除隐藏。退出关闭所有窗口与后台任务。
-- [ ] Windows 手动验收：透明空白点击到下面窗口、颜文字可单击/拖动、控件不触发拖动、隐藏按钮仍可恢复、托盘可恢复；覆盖不同 DPI。
+- [x] 以 Windows `SetWindowRgn` 设置颜文字和按钮区域，空白区域由原生窗口形状排除。不能以 CSS 透明或 `pointer-events` 代替系统命中规则。
+- [x] 跟踪布局、尺寸、字体和 DPI 变化；区域从 CSS 像素换算为物理像素，前后端去重并管理原生区域句柄所有权。
+- [x] `set_pet_hidden(hidden)` 保存完整尺寸，隐藏时缩为 `112×44`，只保留“显示宠窗”按钮；恢复时还原尺寸。
+- [x] 托盘与前端共用 Rust 权威状态；使用修订号拒绝旧快照和旧模式区域，托盘恢复可清除失效裁剪。
+- [x] 处理取消、失去指针捕获、不同指针和原生拖动失败；按钮不触发拖动。
+- [x] 前端 13 项与 Rust 4 项测试通过，前端构建、Rust check 及 Windows 测试版构建通过。
+- [x] Windows 实机启动及按钮隐藏/恢复验收通过。
+- [ ] Windows 人工验收：透明空白点击到下面窗口、连续拖动、控件不触发拖动、托盘恢复，覆盖不同 DPI。
+
+本阶段没有活动状态机，后续活动和游走任务必须消费隐藏状态并暂停执行。`SetWindowRgn` 同时影响绘制，后续新增气泡、饰品和菜单时必须同步设计可见区域及交互区域。
+
+验证命令：`npm test`、`npm run build`、`cargo test --manifest-path src-tauri/Cargo.toml`、`cargo check --manifest-path src-tauri/Cargo.toml`、`npm run tauri build -- --debug --no-bundle`。
 
 ---
 
