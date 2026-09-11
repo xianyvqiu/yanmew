@@ -11,3 +11,5 @@ Thumbs.db
 my_doc/
 data/
 AGENTS.md
+.worktrees/
+.superpowers/
