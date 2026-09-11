@@ -128,11 +128,11 @@ pub async fn update_pet_regions(
         if !state.accepts_region(revision) {
             return Ok(());
         }
-        let region = pet_region::physical_rects(&rects, scale)?;
+        let window = app.get_webview_window("main").ok_or("找不到 main 宠窗")?;
+        let region = pet_region::window_rects(&window, &rects, scale)?;
         if state.region.as_ref() == Some(&region) {
             return Ok(());
         }
-        let window = app.get_webview_window("main").ok_or("找不到 main 宠窗")?;
         pet_region::apply(&window, Some(&region))?;
         state.region = Some(region);
         Ok(())

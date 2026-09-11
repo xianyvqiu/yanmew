@@ -33,6 +33,44 @@ pub fn physical_rects(rects: &[Rect], scale: f64) -> Result<Vec<[i32; 4]>, Strin
         .collect()
 }
 
+fn translate_to_window(
+    rects: Vec<[i32; 4]>,
+    client_origin: [i32; 2],
+    window_origin: [i32; 2],
+) -> Result<Vec<[i32; 4]>, String> {
+    let offset = [
+        i64::from(client_origin[0]) - i64::from(window_origin[0]),
+        i64::from(client_origin[1]) - i64::from(window_origin[1]),
+    ];
+    rects
+        .into_iter()
+        .map(|rect| {
+            let mut translated = [0; 4];
+            for (index, coordinate) in rect.into_iter().enumerate() {
+                translated[index] = i32::try_from(i64::from(coordinate) + offset[index % 2])
+                    .map_err(|_| "宠窗交互区域偏移超出范围".to_string())?;
+            }
+            Ok(translated)
+        })
+        .collect()
+}
+
+pub fn window_rects(
+    window: &tauri::WebviewWindow,
+    rects: &[Rect],
+    scale: f64,
+) -> Result<Vec<[i32; 4]>, String> {
+    let rects = physical_rects(rects, scale)?;
+    let client = window
+        .inner_position()
+        .map_err(|e| format!("读取宠窗客户区位置失败：{e}"))?;
+    let outer = window
+        .outer_position()
+        .map_err(|e| format!("读取宠窗外框位置失败：{e}"))?;
+    // SetWindowRgn 以窗口外框为原点；两个位置已是物理像素，不能再乘 DPI。
+    translate_to_window(rects, [client.x, client.y], [outer.x, outer.y])
+}
+
 #[cfg(windows)]
 pub fn apply(window: &tauri::WebviewWindow, rects: Option<&[[i32; 4]]>) -> Result<(), String> {
     use windows::Win32::{
@@ -100,6 +138,33 @@ mod tests {
             height: 5.0,
         };
         assert_eq!(physical_rects(&[r], 1.5).unwrap(), vec![[1, -2, 17, 6]]);
+    }
+    #[test]
+    fn offsets_client_rect_without_scaling_physical_offset_again() {
+        let r = Rect {
+            x: 1.1,
+            y: 2.1,
+            width: 10.0,
+            height: 5.0,
+        };
+        let physical = physical_rects(&[r], 1.5).unwrap();
+        assert_eq!(
+            translate_to_window(physical, [-990, 208], [-1000, 200]).unwrap(),
+            vec![[11, 11, 27, 19]]
+        );
+    }
+    #[test]
+    fn changed_window_offset_changes_cached_coordinates() {
+        let rects = vec![[0, 0, 10, 10]];
+        assert_ne!(
+            translate_to_window(rects.clone(), [108, 200], [100, 200]).unwrap(),
+            translate_to_window(rects.clone(), [112, 200], [100, 200]).unwrap()
+        );
+        assert_eq!(
+            translate_to_window(rects.clone(), [100, 200], [100, 200]).unwrap(),
+            rects
+        );
+        assert!(translate_to_window(vec![[0, 0, 10, 10]], [i32::MAX, 0], [i32::MIN, 0]).is_err());
     }
     #[test]
     fn rejects_invalid_resource_inputs() {
