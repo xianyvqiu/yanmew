@@ -15,6 +15,7 @@
 --
 -- 全局级（不属于任何会话）：
 --   providers          独立表，无外键；聊天与记忆整合各选一个启用项
+--   embedding_providers 独立表；默认启用随应用打包的本地模型，也可选联网接口
 --   personas           顶层容器：人设 → 会话 → 会话级数据
 --   user_profiles      独立表；被 sessions 引用，删除时置空而非删会话
 --   settings           键值对，全局配置
@@ -28,14 +29,18 @@
 --   sessions           主表
 --                        persona_id      → personas.id        级联删除
 --                        user_profile_id → user_profiles.id  置空
---   messages            session_id    → sessions.id          级联删除
+--   chat_rounds         session_id    → sessions.id          级联删除
+--   messages            session_id / round_id → sessions.id / chat_rounds.id
 --   short_memories      session_id    → sessions.id          级联删除
---   short_memory_messages → short_memories.id / messages.id，双向级联删除关联
+--                        round_id      → chat_rounds.id       级联删除
 --   long_memories       session_id    → sessions.id          级联删除
+--   long_memory_sources → long_memories.id / short_memories.id，记录整合来源
+--   long_memory_embeddings → long_memories.id / sessions.id，当前模型的可重建向量
 --   notebooks           session_id    → sessions.id          级联删除（主键，一会话一行）
 --   session_festivals   session_id    → sessions.id          级联删除
 --                        festival_id   → festival_catalog.id  置空
 --   travels             session_id    → sessions.id          级联删除
+--   travel_journals     session_id / travel_id → sessions.id / travels.id
 --   accessories         session_id    → sessions.id          级联删除
 --                        travel_id     → travels.id          置空
 --   letters             session_id    → sessions.id          级联删除
@@ -46,9 +51,9 @@
 --
 -- 级联行为约定：
 --   删除人设   → 删除它名下所有 sessions 及全部会话级数据
---   删除会话   → 删除该会话的 messages / 记忆 / 记事本 / 节日子表 / 饰品 / 旅行 / 信件 / 伴手礼
+--   删除会话   → 删除该会话的回合 / messages / 记忆 / 记事本 / 节日子表 / 饰品 / 旅行 / 游记 / 信件 / 伴手礼
 --   删除用户设定 → 会话保留，只把 user_profile_id 置空（前端显示“未绑定”）
---   删除旅行记录 → 饰品 / 信件 / 伴手礼保留，travel_id 置空
+--   删除旅行记录 → 对应旅行游记级联删除；饰品 / 信件 / 伴手礼保留，travel_id 置空
 --   节日母表   → 系统内置数据，不随任何业务删除；子表靠 festival_id 引用它
 -- ============================================================
 
@@ -64,6 +69,25 @@ CREATE TABLE IF NOT EXISTS providers (
     model             TEXT    NOT NULL,                    -- 模型名，如 gpt-4o-mini / deepseek-chat
     is_active         INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 是否为聊天当前提供商（全局唯一为 1）
     memory_is_active  INTEGER NOT NULL DEFAULT 0 CHECK (memory_is_active IN (0, 1))           -- 是否为记忆整合专用提供商；全表无启用项时跟随聊天提供商
+);
+
+-- Embedding 提供商与聊天/记忆整合提供商分开管理。
+-- 首次启动写入并启用一个不可删除的内置本地项：BAAI/bge-small-zh-v1.5。
+-- online 项调用 OpenAI-compatible /embeddings 接口；API Key 同样使用 DPAPI 加密。
+CREATE TABLE IF NOT EXISTS embedding_providers (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT    NOT NULL,
+    kind              TEXT    NOT NULL CHECK (kind IN ('local', 'online')),
+    base_url          TEXT,
+    api_key_encrypted TEXT,
+    model             TEXT    NOT NULL,
+    is_builtin        INTEGER NOT NULL DEFAULT 0 CHECK (is_builtin IN (0, 1)),
+    is_active         INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),
+    CHECK (
+        (kind = 'local' AND base_url IS NULL AND api_key_encrypted IS NULL)
+        OR
+        (kind = 'online' AND base_url IS NOT NULL)
+    )
 );
 
 -- ------------------------------------------------------------
@@ -99,8 +123,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 -- ------------------------------------------------------------
 -- 3. 会话
--- 每个会话归属一个人设；记忆、记事本、节日子表、饰品、旅行、信件、伴手礼都按会话隔离。
--- summary_cursor 用于记录“已总结到哪条消息”，避免重复生成短期记忆。
+-- 每个会话归属一个人设；回合、消息、记忆、记事本、节日子表、饰品、旅行、游记、信件、伴手礼都按会话隔离。
 -- 旅行相关字段记录当前会话的在线出行计时，只在应用开启、该会话为当前会话且桌宠在家空闲时累计。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sessions (
@@ -110,7 +133,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     title                         TEXT    NOT NULL,                    -- 会话标题，可 AI 生成、用户重命名
     created_at                    TEXT    NOT NULL,                    -- 创建时间 RFC3339
     updated_at                    TEXT    NOT NULL,                    -- 最近更新时间 RFC3339
-    summary_cursor                INTEGER NOT NULL DEFAULT 0 CHECK (summary_cursor >= 0),          -- 已总结到的最后一条消息 id
     memory_revision               INTEGER NOT NULL DEFAULT 0 CHECK (memory_revision >= 0), -- 消息/记忆变更版本，事务提交前校验
     craft_tier_1_used              INTEGER NOT NULL DEFAULT 0 CHECK (craft_tier_1_used IN (0, 1)), -- 第一档是否已制作
     craft_tier_2_used              INTEGER NOT NULL DEFAULT 0 CHECK (craft_tier_2_used IN (0, 1)), -- 第二档是否已制作
@@ -124,17 +146,30 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- ------------------------------------------------------------
--- 4. 消息
--- 完整保存会话历史；记忆是历史之外的“摘要层”，不影响原文保存。
+-- 4. 聊天回合与消息
+-- 一轮由一条用户消息和一条 AI 回复组成。主动消息 round_id 为 NULL，不计入回合或短期记忆。
+-- pending：只有用户消息；completed：AI 正常回复完成；interrupted：回复被中断，不生成短期记忆。
 -- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chat_rounds (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   INTEGER NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'interrupted')),
+    created_at   TEXT    NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
     session_id INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
+    round_id   INTEGER,                             -- 所属完整聊天轮次；主动消息为 NULL
     role       TEXT    NOT NULL CHECK (role IN ('user', 'assistant')),                    -- user / assistant
     content    TEXT    NOT NULL,                    -- 消息正文
     expression TEXT,                                -- AI 回复时使用的颜文字；用户消息为 NULL
     created_at TEXT    NOT NULL,                    -- 创建时间 RFC3339
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (round_id) REFERENCES chat_rounds(id) ON DELETE CASCADE,
+    UNIQUE (round_id, role)
 );
 
 -- ------------------------------------------------------------
@@ -148,8 +183,11 @@ CREATE TABLE IF NOT EXISTS messages (
 --   short_memory_max_chars            短期记忆最大字数
 --   long_memory_min_chars             长期记忆最小字数
 --   long_memory_max_chars             长期记忆最大字数
---   merge_memory_min_chars            手动合并记忆最小字数
---   merge_memory_max_chars            手动合并记忆最大字数
+--   memory_merge_count                 生成一条长期记忆使用的短期记忆数 k，默认 20
+--   recent_message_count               进入上下文的最近原文消息数，默认 30
+--   recent_long_memory_count           直接进入上下文的最近长期记忆数 m，默认 30
+--   travel_journal_min_chars           旅行游记最小字数
+--   travel_journal_max_chars           旅行游记最大字数
 --   tool_call_rounds                  AI 单次回复最多工具调用轮数，默认 3
 --   notebook_max_chars                记事本最大字数，默认 4000
 --   intimacy_threshold_1              第一档亲密度，默认 10
@@ -184,42 +222,94 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- ------------------------------------------------------------
 -- 6. 短期记忆
--- 由“最近 30 条之外的旧消息”按连续 10 条一组生成；旅行返回也会生成一条。
--- 满 10 条短期记忆会整合成 1 条长期记忆，然后删除这 10 条。
--- 排序统一用 id 升序，不再单独维护序号。
--- source_type：chat=聊天摘要，travel=旅行总结。
+-- 每个 completed 回合生成且只生成一条；整合后仍永久保留。
+-- integration_state：pending=尚未整合成长期记忆，integrated=已经整合。
+-- 短期记忆和长期记忆是中性事实记录，不使用人设口吻，不需要任何氛围总结或主观评价，必须只是如同剧本一样的叙事描述。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS short_memories (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
-    session_id    INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
-    content       TEXT    NOT NULL,                    -- 记忆正文（中文事实记录）
-    source_type   TEXT    NOT NULL DEFAULT 'chat' CHECK (source_type IN ('chat', 'travel')),     -- chat / travel
-    source_ref_id INTEGER NOT NULL,                    -- 来源 ID：chat 为 sessions.id；travel 为 travels.id
-    created_at    TEXT    NOT NULL,                    -- 创建时间 RFC3339
-    CHECK (source_type <> 'chat' OR source_ref_id = session_id),
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);
-
--- 聊天摘要与原消息的精确关联；旅行摘要不写本表。
--- 编辑/删除消息必须先查询关联 memory_id，再在同一事务中删除对应短期记忆及修改消息。
-CREATE TABLE IF NOT EXISTS short_memory_messages (
-    short_memory_id INTEGER NOT NULL,
-    message_id      INTEGER NOT NULL,
-    PRIMARY KEY (short_memory_id, message_id),
-    FOREIGN KEY (short_memory_id) REFERENCES short_memories(id) ON DELETE CASCADE,
-    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id        INTEGER NOT NULL,
+    round_id          INTEGER NOT NULL UNIQUE,
+    content           TEXT    NOT NULL,
+    integration_state TEXT    NOT NULL DEFAULT 'pending' CHECK (integration_state IN ('pending', 'integrated')),
+    created_at        TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (round_id) REFERENCES chat_rounds(id) ON DELETE CASCADE
 );
 
 -- ------------------------------------------------------------
 -- 7. 长期记忆
--- 由 10 条短期记忆整合生成，不设自动上限，全部进入聊天上下文。
+-- 当第 k+1 条短期记忆出现时，由此前连续 k 条 pending 短期记忆生成。
+-- covered_through_message_id 指向第 k 轮 AI 消息；activated_by_round_id 指向触发整合的第 k+1 轮。
+-- 标题与正文同次生成，均为中性事实记录，并共同参与混合检索。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS long_memories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
-    session_id INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
-    content    TEXT    NOT NULL,                    -- 记忆正文（中文事实记录）
-    created_at TEXT    NOT NULL,                    -- 创建时间 RFC3339
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id                 INTEGER NOT NULL,
+    title                      TEXT    NOT NULL CHECK (length(trim(title)) > 0),
+    content                    TEXT    NOT NULL,
+    source_count               INTEGER NOT NULL CHECK (source_count > 0),
+    covered_through_message_id INTEGER NOT NULL,
+    activated_by_round_id      INTEGER NOT NULL UNIQUE,
+    created_at                 TEXT    NOT NULL,
+    updated_at                 TEXT    NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (covered_through_message_id) REFERENCES messages(id) ON DELETE RESTRICT,
+    FOREIGN KEY (activated_by_round_id) REFERENCES chat_rounds(id) ON DELETE CASCADE
+);
+
+-- 长期记忆全文索引。trigram 支持中文连续字符的子串匹配；不足三个字符的查询由 Rust 层补充普通匹配。
+-- 此表是可重建数据，逻辑备份不导出；可执行 INSERT INTO long_memories_fts(long_memories_fts) VALUES('rebuild') 重建。
+CREATE VIRTUAL TABLE IF NOT EXISTS long_memories_fts USING fts5(
+    title,
+    content,
+    session_id UNINDEXED,
+    content = 'long_memories',
+    content_rowid = 'id',
+    tokenize = 'trigram'
+);
+
+CREATE TRIGGER IF NOT EXISTS long_memories_fts_insert AFTER INSERT ON long_memories BEGIN
+    INSERT INTO long_memories_fts(rowid, title, content, session_id)
+    VALUES (new.id, new.title, new.content, new.session_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS long_memories_fts_delete AFTER DELETE ON long_memories BEGIN
+    INSERT INTO long_memories_fts(long_memories_fts, rowid, title, content, session_id)
+    VALUES ('delete', old.id, old.title, old.content, old.session_id);
+END;
+
+CREATE TRIGGER IF NOT EXISTS long_memories_fts_update AFTER UPDATE OF title, content, session_id ON long_memories BEGIN
+    INSERT INTO long_memories_fts(long_memories_fts, rowid, title, content, session_id)
+    VALUES ('delete', old.id, old.title, old.content, old.session_id);
+    INSERT INTO long_memories_fts(rowid, title, content, session_id)
+    VALUES (new.id, new.title, new.content, new.session_id);
+END;
+
+-- 当前激活 Embedding 模型为每条长期记忆保存一份向量缓存。
+-- vector 使用归一化 float32 BLOB；model_key 标识 provider 类型、地址、模型及维度组合。
+-- 向量是可重建数据，不进入导出包；标题或正文改变、模型切换或导入后重新生成。
+CREATE TABLE IF NOT EXISTS long_memory_embeddings (
+    long_memory_id INTEGER PRIMARY KEY,
+    session_id     INTEGER NOT NULL,
+    model_key      TEXT    NOT NULL,
+    dimensions     INTEGER NOT NULL CHECK (dimensions > 0),
+    vector         BLOB    NOT NULL,
+    content_hash   TEXT    NOT NULL,
+    updated_at     TEXT    NOT NULL,
+    FOREIGN KEY (long_memory_id) REFERENCES long_memories(id) ON DELETE CASCADE,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS long_memory_sources (
+    long_memory_id  INTEGER NOT NULL,
+    short_memory_id INTEGER NOT NULL UNIQUE,
+    source_order    INTEGER NOT NULL CHECK (source_order > 0),
+    PRIMARY KEY (long_memory_id, short_memory_id),
+    UNIQUE (long_memory_id, source_order),
+    FOREIGN KEY (long_memory_id) REFERENCES long_memories(id) ON DELETE CASCADE,
+    FOREIGN KEY (short_memory_id) REFERENCES short_memories(id) ON DELETE RESTRICT
 );
 
 -- ------------------------------------------------------------
@@ -316,14 +406,31 @@ CREATE TABLE IF NOT EXISTS travels (
     midway_letter_state TEXT NOT NULL DEFAULT 'pending' CHECK (midway_letter_state IN ('pending', 'done', 'cancelled')),
     return_letter_state TEXT NOT NULL DEFAULT 'pending' CHECK (return_letter_state IN ('pending', 'done', 'cancelled')),
     gift_state        TEXT NOT NULL DEFAULT 'pending' CHECK (gift_state IN ('pending', 'done', 'cancelled')),
-    summary_state     TEXT NOT NULL DEFAULT 'pending' CHECK (summary_state IN ('pending', 'done', 'cancelled')),
+    journal_state     TEXT NOT NULL DEFAULT 'pending' CHECK (journal_state IN ('pending', 'done', 'cancelled')),
     gift_kind         TEXT CHECK (gift_kind IN ('text', 'accessory')), -- 正常返回时确定一次
     created_at        TEXT    NOT NULL,                    -- 创建时间 RFC3339
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
 -- ------------------------------------------------------------
--- 13. 饰品
+-- 13. 旅行游记
+-- 每次正常返回的旅行一篇；按人设口吻详细总结整次旅行，不参与短期或长期记忆整合。
+-- 标题用一句话极简概括何时去了哪里、做了什么、带回什么伴手礼、去了多久。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS travel_journals (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    travel_id  INTEGER NOT NULL UNIQUE,
+    title      TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (travel_id) REFERENCES travels(id) ON DELETE CASCADE
+);
+
+-- ------------------------------------------------------------
+-- 14. 饰品
 -- 每个饰品属于一个会话；source: crafted=制作，travel=旅行带回。
 -- v1 只有头顶装饰槽；is_worn=1 表示当前佩戴。
 -- ------------------------------------------------------------
@@ -343,7 +450,7 @@ CREATE TABLE IF NOT EXISTS accessories (
 );
 
 -- ------------------------------------------------------------
--- 14. 信件
+-- 15. 信件
 -- sender: user=用户写的信，ai=AI 写的信；AI 生成的信件内容应包含可爱颜文字。
 -- reply_to_id 非空时表示这是对某封信的回复；每封信最多回复一次。
 -- ------------------------------------------------------------
@@ -373,7 +480,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_letters_reply_to_unique
     WHERE reply_to_id IS NOT NULL;
 
 -- ------------------------------------------------------------
--- 15. 伴手礼
+-- 16. 伴手礼
 -- 只保存普通文字礼物；旅行带回的可佩戴饰品存 accessories 表。
 -- 不做背包、数量、容量或使用机制。
 -- ------------------------------------------------------------
@@ -390,7 +497,7 @@ CREATE TABLE IF NOT EXISTS souvenirs (
 );
 
 -- ------------------------------------------------------------
--- 16. 节日母表（系统级内置）
+-- 17. 节日母表（系统级内置）
 -- 首次启动由项目内置静态数据写入，并直接查内置农历表把当年的公历月日填好。
 -- 不联网、不调用任何日历接口、失败不进休眠。
 -- calendar_type：solar=公历节日，lunar=农历节日，solar_term=节气（清明、冬至）。
@@ -417,7 +524,7 @@ CREATE TABLE IF NOT EXISTS festival_catalog (
 );
 
 -- ------------------------------------------------------------
--- 17. 会话节日子表（会话级）
+-- 18. 会话节日子表（会话级）
 -- 由 AI 或用户维护的节日、生日、纪念日、自定义日子。
 -- 与母表同样只存公历月日与农历月日；农历行每年查内置表推出公历月日后更新。
 -- festival_id 可空：来源于母表时填写，AI/用户自定义时为空。
@@ -450,14 +557,17 @@ CREATE TABLE IF NOT EXISTS session_festivals (
 -- 常用索引（加快按会话查询）
 -- ------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_messages_session        ON messages (session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rounds_session      ON chat_rounds (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_sessions_persona        ON sessions (persona_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_profile   ON sessions (user_profile_id);
 CREATE INDEX IF NOT EXISTS idx_short_memories_session  ON short_memories (session_id);
 CREATE INDEX IF NOT EXISTS idx_long_memories_session   ON long_memories (session_id);
+CREATE INDEX IF NOT EXISTS idx_long_memory_embeddings_session ON long_memory_embeddings (session_id, long_memory_id);
 CREATE INDEX IF NOT EXISTS idx_reminders_status_fire   ON reminders (status, fire_at);
 CREATE INDEX IF NOT EXISTS idx_currency_ledger_created ON currency_ledger (created_at);
 CREATE INDEX IF NOT EXISTS idx_accessories_session     ON accessories (session_id);
 CREATE INDEX IF NOT EXISTS idx_travels_session_status  ON travels (session_id, status);
+CREATE INDEX IF NOT EXISTS idx_travel_journals_session ON travel_journals (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_letters_session         ON letters (session_id);
 CREATE INDEX IF NOT EXISTS idx_souvenirs_session       ON souvenirs (session_id);
 CREATE INDEX IF NOT EXISTS idx_session_festivals_session ON session_festivals (session_id);
@@ -465,21 +575,21 @@ CREATE INDEX IF NOT EXISTS idx_session_festivals_session ON session_festivals (s
 -- 全局当前项最多一个；允许无提供商或无显式记忆提供商。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_one_active ON providers(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_one_memory_active ON providers(memory_is_active) WHERE memory_is_active = 1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_active ON embedding_providers(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_one_active ON personas(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accessories_one_worn ON accessories(session_id) WHERE is_worn = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_travels_one_away ON travels(session_id) WHERE status = 'away';
 CREATE INDEX IF NOT EXISTS idx_reminder_occurrences_pending ON reminder_occurrences(status, delivery_state);
-CREATE INDEX IF NOT EXISTS idx_short_memories_source ON short_memories(source_type, source_ref_id);
+CREATE INDEX IF NOT EXISTS idx_short_memories_state ON short_memories(session_id, integration_state, id);
+CREATE INDEX IF NOT EXISTS idx_long_memory_sources_long ON long_memory_sources(long_memory_id, source_order);
 
--- 跨表规则由 Rust 命令在事务中检查：旅行/信件/礼物/饰品必须属于同一会话；
--- chat 来源 ID 等于 session_id，travel 来源 ID 必须指向同会话旅行。
+-- 跨表规则由 Rust 命令在事务中检查：round/message/记忆来源、旅行/游记/信件/礼物/饰品必须属于同一会话。
 -- 切换当前项先验证目标存在，再在同一事务内清除旧项并启用新项。
 -- 余额检查、签到/游戏次数检查、饰品增删、档位使用标记和流水写入必须共用同一事务。
 -- settings 在 Rust 层逐键校验：非负值、最小值 <= 最大值、亲密度档位严格递增。
 -- 日期、重复规则 JSON、颜色及饰品字符限制在 Rust 层验证；前端校验不替代后端校验。
 
-CREATE INDEX IF NOT EXISTS idx_short_memory_messages_message ON short_memory_messages(message_id);
 CREATE INDEX IF NOT EXISTS idx_letters_reply_pending ON letters(reply_state, reply_due_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_letters_travel_kind ON letters(travel_id, letter_kind)
     WHERE travel_id IS NOT NULL AND letter_kind IN ('midway', 'return');
--- summary_state 是总结是否已完成的永久依据；短期记忆被合并/手动删除后不得补生成。
+-- journal_state 是旅行游记生成是否完成的永久依据；用户编辑游记不改变 done，取消旅行不生成游记。

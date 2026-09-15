@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建一个 Windows 常驻桌宠应用“颜喵 YanMew”：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、用户设定、流式聊天（含暂停中断）、会话记忆与记事本、表情库、提醒、天气定位、人设自调、喵币与饰品、旅行/写信/伴手礼、导入导出与数据迁移。
+**Goal:** 构建一个 Windows 常驻桌宠应用“颜喵 YanMew”：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、用户设定、流式聊天（含暂停中断）、会话记忆与记事本、表情库、提醒、天气定位、人设自调、喵币与饰品、旅行/写信/伴手礼/旅行游记、导入导出与数据迁移。
 
-**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、饰品、旅行、信件与伴手礼；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
+**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、饰品、旅行、信件、伴手礼与旅行游记；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
 
 **Tech Stack:** Tauri 2、Rust、React 18、TypeScript、Vite、SQLite（rusqlite）、windows crate（DPAPI、定位）。
 
@@ -588,10 +588,10 @@ impl Default for AppSettings {
 `src-tauri/src/db.rs` 通过 `include_str!("../../db/schema.sql")` 读取唯一完整结构，不另写一套建表 SQL。
 
 1. `init(path)` 建立连接并启用外键，识别新库与已有库。
-2. 新库在一个事务中执行完整 schema、创建默认人设（initial_prompt=prompt）和 user_state 单行，并设置当前结构版本后提交。
+2. 新库在一个事务中执行完整 schema、创建默认人设（initial_prompt=prompt）、user_state 单行和内置本地 Embedding 提供商 `BAAI/bge-small-zh-v1.5`，并设置当前结构版本后提交。
 3. 已有库先按 user_version 运行版本化迁移，再执行幂等种子逻辑；IF NOT EXISTS 不替代迁移。迁移前备份，失败回滚并停止业务启动。
 4. 未带版本的旧结构需有明确识别与回填方案；NOT NULL、外键和唯一约束迁移要验证已有数据，不能删除冲突记录来凑过检查。
-5. 阶段 10、12、13、14、18 接入功能时字段已经存在；默认人设插入不会引用尚未建好的列。
+5. 阶段 9、10、12、13、14、18 接入功能时字段已经存在；默认人设和内置 Embedding 提供商插入不会引用尚未建好的列。
 6. 对空库、重复启动和代表性旧版本升级分别验证，升级后比较字段、外键及索引与完整 schema 一致。
 
 - [ ] **Step 4: 编写共享状态**
@@ -1698,152 +1698,19 @@ git commit -m "feat: 添加桌宠状态机与交互命令"
 
 目标：会话按人设隔离、新建/切换/继续、消息持久化与历史查询。
 
-### Task 5.1: 会话与消息仓储
+### Task 5.1: 会话、聊天回合与消息仓储
 
-**Files:**
-- Create: `src-tauri/src/sessions.rs`
-- Modify: `src-tauri/src/commands.rs`
-- Modify: `src-tauri/src/lib.rs`
+**Files:** `src-tauri/src/sessions.rs`、`models.rs`、`commands.rs`、`lib.rs`。
 
-- [ ] **Step 1: 编写会话仓储**
+- [ ] 按 `db/schema.sql` 建立 `Session`、`ChatRound`、`Message` 模型；消息包含可空 `round_id`。
+- [ ] 提供会话新建、列表、标题更新和按 ID 顺序读取消息的仓储接口，所有操作验证会话归属。
+- [ ] 用户发送时在一个事务内建立 `pending` 回合、插入用户消息并更新会话时间与 `memory_revision`。
+- [ ] AI 正常完成时在一个事务内插入该回合唯一 AI 消息并把回合改为 `completed`；中断时按有无正文保存一次并标记 `interrupted`。
+- [ ] 无聊主动消息直接写入 `messages.round_id=NULL`，不创建回合。
+- [ ] 注册所需 Tauri 命令；验证同一回合不能插入两个相同角色、跨会话 round/message 关联被 Rust 拒绝。
+- [ ] 运行 `cargo check --manifest-path src-tauri/Cargo.toml`，通过后提交会话与回合仓储。
 
-`src-tauri/src/sessions.rs`:
-```rust
-use chrono::Utc;
-use rusqlite::{params, Connection};
-use serde::Serialize;
-
-#[derive(Serialize)]
-pub struct Session {
-    pub id: i64,
-    pub persona_id: i64,
-    pub title: String,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Serialize)]
-pub struct Message {
-    pub id: i64,
-    pub session_id: i64,
-    pub role: String,
-    pub content: String,
-    pub expression: Option<String>,
-    pub created_at: String,
-}
-
-pub fn create_session(conn: &Connection, persona_id: i64) -> Result<i64, String> {
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO sessions (persona_id, title, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-        params![persona_id, "新会话", now],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn list_sessions(conn: &Connection, persona_id: i64) -> Result<Vec<Session>, String> {
-    let mut stmt = conn
-        .prepare("SELECT id, persona_id, title, created_at, updated_at FROM sessions WHERE persona_id = ?1 ORDER BY updated_at DESC")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([persona_id], |r| {
-            Ok(Session {
-                id: r.get(0)?,
-                persona_id: r.get(1)?,
-                title: r.get(2)?,
-                created_at: r.get(3)?,
-                updated_at: r.get(4)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-}
-
-pub fn list_messages(conn: &Connection, session_id: i64) -> Result<Vec<Message>, String> {
-    let mut stmt = conn
-        .prepare("SELECT id, session_id, role, content, expression, created_at FROM messages WHERE session_id = ?1 ORDER BY id ASC")
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([session_id], |r| {
-            Ok(Message {
-                id: r.get(0)?,
-                session_id: r.get(1)?,
-                role: r.get(2)?,
-                content: r.get(3)?,
-                expression: r.get(4)?,
-                created_at: r.get(5)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-}
-
-pub fn append_message(
-    conn: &Connection,
-    session_id: i64,
-    role: &str,
-    content: &str,
-    expression: Option<&str>,
-) -> Result<i64, String> {
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO messages (session_id, role, content, expression, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![session_id, role, content, expression, now],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE sessions SET updated_at = ?1 WHERE id = ?2",
-        params![now, session_id],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(conn.last_insert_rowid())
-}
-
-pub fn update_title(conn: &Connection, session_id: i64, title: &str) -> Result<(), String> {
-    conn.execute("UPDATE sessions SET title = ?1 WHERE id = ?2", params![title, session_id])
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-```
-
-- [ ] **Step 2: 注册会话命令**
-
-`src-tauri/src/commands.rs` 增加：
-```rust
-#[tauri::command]
-pub fn create_session(state: tauri::State<'_, AppState>, persona_id: i64) -> Result<i64, String> {
-    let conn = state.conn.lock().map_err(|_| "状态锁失败".to_string())?;
-    crate::sessions::create_session(&conn, persona_id)
-}
-
-#[tauri::command]
-pub fn list_sessions(state: tauri::State<'_, AppState>, persona_id: i64) -> Result<Vec<crate::sessions::Session>, String> {
-    let conn = state.conn.lock().map_err(|_| "状态锁失败".to_string())?;
-    crate::sessions::list_sessions(&conn, persona_id)
-}
-
-#[tauri::command]
-pub fn list_messages(state: tauri::State<'_, AppState>, session_id: i64) -> Result<Vec<crate::sessions::Message>, String> {
-    let conn = state.conn.lock().map_err(|_| "状态锁失败".to_string())?;
-    crate::sessions::list_messages(&conn, session_id)
-}
-```
-`src-tauri/src/lib.rs` 顶部加 `mod sessions;`，并注册这三个命令。
-
-- [ ] **Step 3: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 4: 提交**
-
-```bash
-git add src-tauri/src/sessions.rs src-tauri/src/commands.rs src-tauri/src/lib.rs
-git commit -m "feat: 添加会话与消息持久化"
-```
 ---
-
 ## 阶段 6：提醒系统
 
 目标：一次性/重复提醒、运行中弹气泡、关闭期间到期下次询问、状态流转。
@@ -2856,7 +2723,7 @@ function RemindersTab() {
 
 - [ ] **Step 1.1: 补齐提供商设置与提醒状态交互**
 
-提供商列表接入 update_provider，编辑已保存项目；密钥留空保留、清除明确区分。添加独立记忆提供商选择器和“跟随聊天提供商”。调用后刷新状态，模型/API 使用 has_api_key 与 memory_is_active。
+提供商页面分为“聊天与记忆整合模型”和“Embedding 模型”。聊天提供商列表接入 update_provider，编辑已保存项目；密钥留空保留、清除明确区分。添加独立记忆提供商选择器和“跟随聊天提供商”。Embedding 模块显示不可删除的内置本地 `BAAI/bge-small-zh-v1.5`，并接入联网项的新增、编辑、删除、切换与测试入口；切换和索引重建逻辑由 Task 9.5 完成。调用后刷新状态，模型/API 使用 has_api_key、memory_is_active、kind、is_builtin 与 is_active。
 提醒页面接入规则和 occurrence：列出本次原定时间、下一次时间；完成按钮传 occurrence ID，删除才停止重复规则。补提醒选择从数据库加载，不能仅监听事件。
 
 - [ ] **Step 2: 构建验证**
@@ -2875,362 +2742,94 @@ git commit -m "feat: 添加设置窗"
 
 ## 阶段 9：记忆与记事本（会话级）
 
-目标：按会话维护记事本与短期/长期记忆；聊天上下文按新规则组装；记忆小窗可查看/编辑/合并。
+目标：实现聊天回合对应短期记忆、`k+1` 长期整合、可追溯来源与回退、长期记忆混合 RAG、会话级上下文和记忆小窗。完整规则以 `docs/记忆与旅行游记设计.md` 为准。
 
-### Task 9.1: 扩展数据模型
+### Task 9.1: 扩展记忆模型与全局设置
 
-**Files:**
-- Modify: `src-tauri/src/models.rs`
-- Modify: `src-tauri/src/db.rs`
-- Modify: `src-tauri/src/config.rs`
+**Files:** `src-tauri/src/models.rs`、`db.rs`、`config.rs`。
 
-- [ ] **Step 1: 添加模型**
+- [ ] 按 `db/schema.sql` 增加 `ShortMemory`、带 `title` 的 `LongMemory`、`LongMemorySource`、`LongMemoryEmbedding`、`Notebook` 模型，并让消息模型携带 `round_id`。
+- [ ] `ShortMemory` 包含来源回合和 `pending/integrated` 状态；`LongMemory` 包含简短标题、实际来源数量、覆盖消息和触发回合。
+- [ ] `AppSettings` 增加短期/长期记忆字数范围、`memory_merge_count`（默认 20）、`recent_message_count`（默认 30）、`recent_long_memory_count`（默认 30）、旅行游记字数范围、工具轮数和记事本上限。
+- [ ] 设置读写统一校验正整数与最小值不大于最大值；修改 `memory_merge_count` 只作用于以后尚未整合的短期记忆。
+- [ ] 运行 Rust 编译与设置往返测试。
 
-`src-tauri/src/models.rs` 追加：
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ShortMemory {
-    pub id: i64,
-    pub session_id: i64,
-    pub content: String,
-    pub source_type: String,
-    pub source_ref_id: i64,
-    pub created_at: String,
-}
+### Task 9.2: 记事本与只读旅行游记工具
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LongMemory {
-    pub id: i64,
-    pub session_id: i64,
-    pub content: String,
-    pub created_at: String,
-}
+**Files:** `src-tauri/src/ai/client.rs`、`ai/streaming.rs`、`notebook.rs`、`travel_journal_tools.rs`、`chat.rs`、`lib.rs`。
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Notebook {
-    pub session_id: i64,
-    pub content: String,
-    pub updated_at: String,
-}
-```
-Provider 及公开摘要同步 memory_is_active: bool；`providers.rs` 的 `list`/`create`/`set_active` 查询与字段同步 `providers.memory_is_active` 列（该列已包含在 `db.rs::init` 的建表语句中）。并在 `AppSettings` 增加字段：
-```rust
-pub short_memory_min_chars: usize,
-pub short_memory_max_chars: usize,
-pub long_memory_min_chars: usize,
-pub long_memory_max_chars: usize,
-pub merge_memory_min_chars: usize,
-pub merge_memory_max_chars: usize,
-pub tool_call_rounds: usize,
-pub notebook_max_chars: usize,
-```
-默认值在 `Default` 中补齐：短期 40–80，长期 80–160，合并 80–160，工具轮数 3，记事本 4000。
+- [ ] 保留 `read_notebook` / `update_notebook` 结构化工具和现有工具轮次上限。
+- [ ] 增加只读工具：列出当前会话旅行游记、按条件查找以前旅行、读取指定游记正文。
+- [ ] 所有工具由后端注入当前 `session_id` 并校验归属，模型参数不能绕过会话边界。
+- [ ] 流式解析正确拼接跨数据块的 tool_calls，按调用 ID 返回工具结果。
 
-- [ ] **Step 2: 确认建表**
-
-short_memories、short_memory_messages、long_memories、notebooks 与版本字段均已由完整 schema 初始化；本 Task 不重复建表，来源 ID 使用非空 i64。
-
-- [ ] **Step 3: 扩展设置读写**
-
-`src-tauri/src/config.rs` 的 `get_settings`/`save_settings` 增加这些键：`short_memory_min_chars`、`short_memory_max_chars`、`long_memory_min_chars`、`long_memory_max_chars`、`merge_memory_min_chars`、`merge_memory_max_chars`、`tool_call_rounds`、`notebook_max_chars`。读写方式与现有 `hungry_minutes` 一致。
-
-- [ ] **Step 4: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 5: 提交**
-
-```bash
-git add src-tauri/src/models.rs src-tauri/src/db.rs src-tauri/src/config.rs
-git commit -m "feat: 扩展记忆与记事本数据模型"
-```
-
-### Task 9.2: 记事本工具与聊天 function calling
-
-**Files:**
-- Modify: `src-tauri/src/ai/client.rs`
-- Modify: `src-tauri/src/ai/streaming.rs`
-- Create: `src-tauri/src/notebook.rs`
-- Modify: `src-tauri/src/chat.rs`
-- Modify: `src-tauri/src/lib.rs`
-
-- [ ] **Step 1: 在请求结构中加入 tools**
-
-`src-tauri/src/ai/client.rs` 的 `ChatRequest` 增加：
-```rust
-pub tools: Option<Vec<serde_json::Value>>,
-pub tool_choice: Option<String>,
-```
-并在构造请求时默认 `tools: None, tool_choice: None`。
-
-- [ ] **Step 2: 扩展流式解析支持 tool_calls**
-
-`src-tauri/src/ai/streaming.rs` 的 `next_delta` 在解析 `choices/0/delta` 时，同时收集：
-- `delta.content` → 文本。
-- `delta.tool_calls` 数组中的 `index`、`id`、`function.name`、`function.arguments`（参数是分片拼接）。
-把工具调用信息通过返回值一并输出。为保持简单，将返回值改为结构体：
-```rust
-pub struct Delta {
-    pub text: String,
-    pub tool_calls: Vec<ToolCallDelta>,
-}
-pub struct ToolCallDelta {
-    pub index: usize,
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub arguments: String,
-}
-```
-
-- [ ] **Step 3: 编写记事本仓储与工具执行**
-
-`src-tauri/src/notebook.rs`:
-```rust
-use crate::models::Notebook;
-use chrono::Utc;
-use rusqlite::{params, Connection};
-
-pub fn get(conn: &Connection, session_id: i64) -> Result<String, String> {
-    let row: Option<String> = conn
-        .query_row("SELECT content FROM notebooks WHERE session_id = ?1", [session_id], |r| r.get(0))
-        .ok();
-    Ok(row.unwrap_or_default())
-}
-
-pub fn save(conn: &Connection, session_id: i64, content: &str) -> Result<(), String> {
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO notebooks (session_id, content, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(session_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
-        params![session_id, content, now],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-pub fn apply_operation(current: &str, op: &str, section_index: Option<usize>, content: &str) -> Result<String, String> {
-    let mut parts: Vec<&str> = current.split("\n\n").filter(|p| !p.trim().is_empty()).collect();
-    match op {
-        "append" => Ok(format!("{current}{}{content}", if current.is_empty() { "" } else { "\n\n" })),
-        "replace" => {
-            let i = section_index.ok_or("缺少 section_index")?.saturating_sub(1);
-            if i >= parts.len() { return Err("段落序号超出范围".to_string()); }
-            parts[i] = content;
-            Ok(parts.join("\n\n"))
-        }
-        "delete" => {
-            let i = section_index.ok_or("缺少 section_index")?.saturating_sub(1);
-            if i >= parts.len() { return Err("段落序号超出范围".to_string()); }
-            parts.remove(i);
-            Ok(parts.join("\n\n"))
-        }
-        _ => Err("未知操作".to_string()),
-    }
-}
-```
-
-- [ ] **Step 4: 改造聊天命令以支持工具循环**
-
-`src-tauri/src/chat.rs` 的 `chat` 函数改为：先组装上下文（见 Task 9.4 的 `assemble`），然后循环最多 `tool_call_rounds` 次。同时把 `ai/client.rs` 的 `stream_chat` 改造为返回 `(String, Vec<ToolCallDelta>)`：正文仍逐字回调，同时累积工具调用。
-1. 调用改造后的 `stream_chat` 流式输出正文，并收集 tool_calls。
-2. 若有工具调用：执行 `read_notebook`（返回记事本全文）或 `update_notebook`（按结构化操作更新，并检查字数上限）；把工具结果作为 `role: "tool"` 消息追加，继续下一轮。
-3. 无工具调用则结束，返回完整文本。
-最终把 `expression` 决策保持在说话前，逻辑不变。
-
-- [ ] **Step 5: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add src-tauri/src/ai src-tauri/src/notebook.rs src-tauri/src/chat.rs src-tauri/src/lib.rs
-git commit -m "feat: 添加记事本工具与聊天 function calling"
-```
-
-### Task 9.3: 记忆生成、来源关联与事务
+### Task 9.3: 每轮短期记忆生成
 
 **Files:** `src-tauri/src/memory.rs`、`chat.rs`、`models.rs`、`commands.rs`、`lib.rs`。
 
-- [ ] 每个会话只运行一个自动整合任务。读取固定消息 ID、正文、summary_cursor 和 memory_revision 快照，再释放锁调用记忆 provider。
-- [ ] 最近 30 条之外的消息每 10 条生成一个摘要；chat 来源 ID 为 session_id，同时写 short_memory_messages 的精确消息关联。
-- [ ] AI 返回后开启短事务，验证会话和输入仍存在且游标/版本未变化；插入短期记忆、来源关联、更新游标及版本一同提交，失败全部回滚。快照过期则丢弃并按最新状态重新检查。
-- [ ] 固定 10 条短期记忆 ID 和内容生成长期记忆；提交前复核，在一个事务插入长期记忆并删除这组 ID，禁止生成后重查“最早 10 条”来删除。
-- [ ] 自动/手动记忆更新、消息新增/编辑/删除均增加 memory_revision。手动合并预览携带版本和 ID，确认替换时同样校验。
-- [ ] Rust 保存完整 AI 回复后触发后台整合，不在前端另行保存回复；整合失败仅提示，不进入休眠。
-- [ ] 验证整合期间编辑/删除输入、两个请求同时触发、插入摘要后模拟失败、用户确认过期合并预览，确认无误删/重复/部分提交。
+- [ ] 每个 `completed` 回合生成且只生成一条短期记忆；中断回合和主动消息不生成。
+- [ ] 生成输入固定为该回合的用户消息和 AI 回复，并使用以下原文作为系统约束：**短期记忆和长期记忆是中性事实记录，不使用人设口吻，不需要任何氛围总结或主观评价，必须只是如同剧本一样的叙事描述。**
+- [ ] 读取回合、消息与 `memory_revision` 快照后释放锁请求 AI；返回后重新校验并用短事务写入，避免重复或过期结果。
+- [ ] 短期记忆初始为 `pending`，整合后只改为 `integrated`，不删除。
+- [ ] 验证失败重试、重复调度、消息在生成期间被编辑和会话被删除。
 
-### Task 9.4: 上下文组装与记忆 CRUD 命令
+### Task 9.4: `k+1` 长期整合与回退关系
 
-**Files:**
-- Create: `src-tauri/src/context.rs`
-- Create: `src-tauri/src/memory_commands.rs`
-- Modify: `src-tauri/src/chat.rs`
-- Modify: `src-tauri/src/commands.rs`
-- Modify: `src-tauri/src/lib.rs`
+**Files:** `src-tauri/src/memory.rs`、`models.rs`、`commands.rs`。
 
-- [ ] **Step 1: 编写上下文组装**
+- [ ] 当同一会话出现第 `k+1` 条 `pending` 短期记忆时，固定取此前连续 `k` 条生成长期记忆；第 `k+1` 条保持 `pending`。
+- [ ] 同一次 AI 请求生成长期记忆的非空标题与正文；在一个事务中插入长期记忆、按顺序写入 `long_memory_sources`，并把来源短期记忆改为 `integrated`；保存 `source_count`、`covered_through_message_id` 和 `activated_by_round_id`。
+- [ ] 删除触发回合时，在同一事务删除对应长期记忆并把来源短期记忆恢复为 `pending`。
+- [ ] 正常整合不删除任何短期或旧长期记忆。不得实现长期记忆的自动上限、二次合并或上下文全量注入；提交后调度该长期记忆的全文与向量索引更新。
+- [ ] 验证 `k=20` 默认值、修改 k 后的未来行为、触发回退、快照过期和事务回滚。
 
-`src-tauri/src/context.rs`:
-```rust
-use crate::ai::client::ChatMessage;
-use crate::memory;
-use crate::models::AppSettings;
-use crate::notebook;
-use crate::sessions;
-use crate::state::AppState;
-use rusqlite::Connection;
-use tauri::Manager;
+### Task 9.5: Embedding 提供商与长期记忆混合检索
 
-pub fn assemble(
-    app: &tauri::AppHandle,
-    session_id: i64,
-    persona_prompt: &str,
-    user_profile: Option<&str>,
-    environment: &str,
-    tools: &str,
-    memory_params: &str,
-    _settings: &AppSettings,
-) -> Result<Vec<ChatMessage>, String> {
-    let state = app.state::<AppState>();
-    let conn = state.conn.lock().unwrap();
-    let long: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT content FROM long_memories WHERE session_id = ?1 ORDER BY id ASC").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([session_id], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-    };
-    let short: Vec<String> = {
-        let mut stmt = conn.prepare("SELECT content FROM short_memories WHERE session_id = ?1 ORDER BY id ASC").map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([session_id], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-    };
-    let recent = sessions::list_messages(&conn, session_id)?;
-    let recent = recent.into_iter().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>();
+**Files:** `src-tauri/src/embedding_providers.rs`、`embedding.rs`、`memory_search.rs`、`models.rs`、`db.rs`、`commands.rs`、`lib.rs`、`src/windows/SettingsWindow.tsx`、`src/api.ts`，以及随应用打包的 `resources/models/bge-small-zh-v1.5/`。
 
-    let mut out = vec![ChatMessage { role: "system".into(), content: "你是桌宠角色，按人设回复。".into() }];
-    out.push(ChatMessage { role: "system".into(), content: environment.to_string() });
-    out.push(ChatMessage { role: "system".into(), content: tools.to_string() });
-    out.push(ChatMessage { role: "system".into(), content: memory_params.to_string() });
-    if let Some(profile) = user_profile {
-        out.push(ChatMessage { role: "system".into(), content: format!("用户设定：{profile}") });
-    }
-    out.push(ChatMessage { role: "system".into(), content: format!("人设：{persona_prompt}") });
-    if !long.is_empty() { out.push(ChatMessage { role: "system".into(), content: format!("长期记忆：\n{}", long.join("\n")) }); }
-    if !short.is_empty() { out.push(ChatMessage { role: "system".into(), content: format!("短期记忆：\n{}", short.join("\n")) }); }
-    for m in recent { out.push(ChatMessage { role: m.role, content: m.content }); }
-    Ok(out)
-}
+- [ ] 首次启动幂等写入并启用不可删除的内置本地 `BAAI/bge-small-zh-v1.5`；模型资源随便携版打包，验证离线向量生成、维度与相同输入稳定性。
+- [ ] 增加 Embedding 提供商列表、新增、编辑、删除、切换和测试命令；联网项使用 OpenAI-compatible `/embeddings`，API Key 经 DPAPI 加密，当前项切换使用事务。
+- [ ] 创建并维护 `long_memories_fts`，使用 FTS5 `trigram` 索引标题与正文；为少于三个字符的中文检索词提供普通匹配兜底，并验证插入、编辑、重新整合、删除与 rebuild。
+- [ ] 创建 `long_memory_embeddings`，以归一化 float32 BLOB 保存当前模型向量和内容哈希；新增长期记忆后异步生成，标题/正文变化使旧向量失效，模型切换和导入后支持可恢复的后台重建。
+- [ ] 每次在当前会话的最近 `m` 条之外并行执行 FTS5 与向量候选检索，使用排名融合、ID 去重、相关阈值、数量上限和上下文预算筛选；第一版直接在 Rust 中计算当前会话向量相似度，不引入向量数据库。
+- [ ] 联网 Embedding 失败时本次降级为 FTS5，记录可见错误但不让聊天进入休眠；测试本地/联网切换、部分向量待建、跨会话隔离和降级路径。
 
-```
+### Task 9.6: 上下文组装与深层回忆工具
 
-- [ ] **Step 2: 让聊天命令改用上下文组装**
+**Files:** `src-tauri/src/context.rs`、`memory_tools.rs`、`chat.rs`、`commands.rs`、`lib.rs`。
 
-`src-tauri/src/commands.rs` 的 `chat` 不再接收 `persona_prompt` 和 `history`，改为接收 `session_id` 与 `user_text`。`chat.rs` 中：
+- [ ] 所有上下文查询限定当前 `session_id`。日常聊天和无聊主动消息复用同一组会话级上下文，主动消息只增加主动触发指令。
+- [ ] 最近消息原文按 `recent_message_count` 读取，默认 30，并确保当前用户消息只出现一次。
+- [ ] 只加入 `pending` 且其原回合消息已离开最近原文范围的短期记忆；`integrated` 短期记忆不直接加入。
+- [ ] 最近长期记忆按 `recent_long_memory_count` 读取，默认 30；标题和正文直接加入。较旧长期记忆只加入混合检索命中项，并与最近项按 ID 去重。
+- [ ] 加入当前会话最近 5 篇旅行游记标题，正文只允许通过只读工具按需读取。
+- [ ] 提供只读 `search_long_memories`、`open_long_memory`、`open_long_memory_sources`、`open_chat_round`；后端注入并校验当前 `session_id`，支持从候选标题逐层打开长期记忆、来源短期记忆和原始回合。
+- [ ] 验证普通聊天、一次混合检索后回复和多轮深层回忆三条路径，确保前两条只调用一次聊天 AI。
 
-1. 在 Rust 事务中保存当前用户消息一次并更新会话版本，再从 `sessions` 查询当前会话、所属人设和 `user_profile_id`；绑定用户设定时读取 `user_profiles.content`，未绑定为 `None`。
-2. 读取当前人设 prompt、环境文本、工具说明和记忆参数，调用 `context::assemble` 生成 `Vec<ChatMessage>`。
-3. 先用 `complete_json` 生成说话表情并 `emit("chat-start", ...)`。
-4. 用户消息已经由 Rust 保存，最近消息包含它；直接调用 stream_chat，不再次追加当前用户消息。
-5. 删除前端发送流程中的 appendMessage(user/assistant)；Rust 保存最终 AI 正文与表情一次。已有阶段的前端写库代码必须在本 Task 同步移除。
+### Task 9.7: 记忆命令与管理小窗
 
-前端 API 类型同步更新为 `chat(sessionId, userText)`，不再传历史数组；历史由 Rust 从数据库读取。
+**Files:** `src-tauri/src/memory_commands.rs`、`commands.rs`、`src/windows/MemoryWindow.tsx`、`src/App.tsx`、`src/api.ts`。
 
-- [ ] **Step 3: 编写记忆 CRUD 命令**
+- [ ] 短期/长期记忆提供列表和手动编辑；长期记忆卡片显示标题并可编辑标题与正文；不提供手动新建、删除或多条长期记忆合并命令。
+- [ ] 短期记忆提供“重新生成”，严格读取绑定回合；长期记忆提供“重新整合”，严格读取原 `long_memory_sources` 并同时生成标题和正文。
+- [ ] AI 结果先返回可编辑预览；确认时携带记录、来源和版本，过期则要求重新预览，覆盖后 ID 与来源不变。
+- [ ] 编辑或重新生成已整合短期记忆时提示长期记忆不会自动变化，并定位可重新整合的相关长期记忆。
+- [ ] 记忆小窗跟随 Rust 当前会话，短期项显示回合与整合状态，长期项显示来源、覆盖消息与触发回合；旅行游记不在该窗口展示。
+- [ ] 长期记忆编辑与重新整合提交后同步 FTS5，并使旧向量失效后异步补建；向量未完成时仍可使用关键词检索。
+- [ ] 运行前端构建和 Rust 检查。
 
-`src-tauri/src/memory_commands.rs` 增加 `list_short_memories`、`list_long_memories`、`get_notebook`、`save_notebook`、`update_short_memory`、`delete_short_memory`、`update_long_memory`、`delete_long_memory`、`merge_long_memories`。其中 `merge_long_memories` 接收 `ids: Vec<i64>` 和字数范围，调用记忆 AI 合并并返回结果文本；确认后由前端再次调用 `replace_long_memories` 完成替换。
-
-- [ ] **Step 4: 注册模块与命令**
-
-`src-tauri/src/lib.rs` 顶部加 `mod context; mod memory_commands;`，并注册这些命令。
-
-- [ ] **Step 5: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add src-tauri/src/context.rs src-tauri/src/memory_commands.rs src-tauri/src/chat.rs src-tauri/src/commands.rs src-tauri/src/lib.rs
-git commit -m "feat: 添加上下文组装、聊天接入与记忆 CRUD 命令"
-```
-
-### Task 9.5: 记忆管理小窗（前端）
-
-**Files:**
-- Modify: `src-tauri/src/commands.rs` 增加 `open_memory_window`
-- Modify: `src-tauri/capabilities/default.json` 增加 `"memory"` 窗口
-- Create: `src/windows/MemoryWindow.tsx`
-- Modify: `src/App.tsx`
-- Modify: `src/api.ts`
-
-- [ ] **Step 1: 添加记忆窗口命令**
-
-`src-tauri/src/commands.rs` 增加 `open_memory_window(app: tauri::AppHandle)`，用 `build_child_window(&app, "memory", "记忆", 560.0, 640.0)`；并在 `capabilities/default.json` 的 `windows` 数组加入 `"memory"`，注册命令。
-
-- [ ] **Step 2: 编写记忆小窗**
-
-`src/windows/MemoryWindow.tsx`：打开时从聊天窗同步的 `currentSessionId`（通过 Rust 全局状态或事件）读取；展示短期记忆列表、长期记忆列表、记事本文本域；短期/长期每条提供“编辑/删除”；长期记忆支持勾选连续项后“合并”，合并结果弹窗可编辑，确认后调用替换命令；短期记忆显示来源和来源 ID；手动合并失败在小窗内提示，确认携带选中记录版本，过期则要求重新预览。
-
-- [ ] **Step 3: 更新路由与 API**
-
-`src/App.tsx` 增加 `if (windowType === "memory") return <MemoryWindow />;`；`src/api.ts` 增加 `openMemoryWindow`、`listShortMemories`、`listLongMemories`、`getNotebook`、`saveNotebook`、`updateShortMemory`、`deleteShortMemory`、`updateLongMemory`、`deleteLongMemory`、`mergeLongMemories`、`replaceLongMemories`。
-
-- [ ] **Step 4: 构建验证**
-
-Run: `npm run build`
-Expected: 无错误。
-
-- [ ] **Step 5: 提交**
-
-```bash
-git add src-tauri/src/commands.rs src-tauri/capabilities/default.json src/windows/MemoryWindow.tsx src/App.tsx src/api.ts
-git commit -m "feat: 添加记忆管理小窗"
-```
-
-### Task 9.6: 聊天窗接入记忆上下文与记忆入口
-
-**Files:**
-- Modify: `src/windows/ChatWindow.tsx`
-- Modify: `src/api.ts`
-
-- [ ] **Step 1: 在聊天窗添加“记忆”入口并传递当前会话**
-
-`src/windows/ChatWindow.tsx` 顶部增加“记忆”按钮，点击调用 `openMemoryWindow()`；切换会话时调用新命令 `set_current_session(sessionId)`，供记忆小窗读取。
-
-- [ ] **Step 2: 暴露当前会话命令**
-
-`src-tauri/src/commands.rs` 增加 `set_current_session(state, session_id)` 与 `get_current_session(state)`，在 AppState 中维护 current_session，并在 settings.current_session_id 持久化；启动时校验恢复。切换命令按持久化设计第 3 节取消原会话旅行与待回信，所有窗口读取同一状态。
-
-- [ ] **Step 3: 构建验证**
-
-Run: `npm run build` 与 `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 4: 提交**
-
-```bash
-git add src/windows/ChatWindow.tsx src/api.ts src-tauri/src/commands.rs src-tauri/src/state.rs
-git commit -m "feat: 聊天窗接入记忆入口与当前会话同步"
-```
-
----
-
-### Task 9.7: 聊天请求、中断与可靠保存
+### Task 9.8: 聊天请求、中断与可靠保存
 
 **Files:** `src-tauri/src/chat.rs`、`ai/client.rs`、`ai/streaming.rs`、`state.rs`、`commands.rs`、`src/windows/ChatWindow.tsx`、`src/api.ts`。
 
-- [ ] 为聊天请求分配 request_id，同一会话只允许一个执行中的请求；start/delta/end/error 事件携带 session_id 和 request_id。
-- [ ] 暴露 cancel_chat(request_id)，覆盖表情请求、正文流、工具执行边界；前端发送按钮变为暂停。切换/删除会话或关闭聊天窗时取消当前请求。
-- [ ] Rust 保存收到的正文一次；无正文不插空消息，中断不增加亲密度、不执行完成后自调，已提交工具操作不回滚。丢失前端事件不影响持久化。
-- [ ] 正常发送顺序：Rust 保存用户消息 → 组装含它的最近 30 条 → 生成表情和正文 → Rust 保存 AI 消息 → 增加完整轮次亲密度 → 后台记忆。前端不追加重复用户消息或再次保存 AI。
-- [ ] 工具调用消息模型包含 tool_call_id 与 assistant.tool_calls，按调用 ID 拼接结果；设置轮次上限，超限不得无限递归。
-- [ ] 流解析保持跨网络块缓冲，支持 UTF-8 和 SSE 事件被拆分；不把网络块当完整事件，不丢弃与结束标志同批到达的正文。
-- [ ] 验证暂停前后、表情阶段取消、工具阶段取消、窗口关闭、请求晚到事件、重复发送以及正文仅保存一次；测试使用可控流，不依赖真实 API。
+- [ ] 为聊天请求分配 request_id，同一会话只允许一个执行中的请求；事件携带 session_id 与 request_id。
+- [ ] 暴露取消命令并覆盖表情请求、正文流与工具边界；切换/删除会话或关闭聊天窗时取消当前请求。
+- [ ] 正常流程：事务建立 pending 回合并保存用户消息 → 组装上下文 → 生成表情和正文 → 事务保存 AI 消息并完成回合 → 增加亲密度 → 后台生成本轮短期记忆。
+- [ ] 中断保留已经收到的正文一次，无正文不插空消息；回合不算完整，不增加亲密度、不生成人设自调或短期记忆，已提交工具操作不回滚。
+- [ ] 前端不重复保存用户或 AI 消息；窗口事件丢失不影响后端持久化。
+- [ ] 验证取消时机、晚到事件、重复发送、工具循环和正文仅保存一次。
 
 ---
-
 ## 阶段 10：会话与消息操作、默认人设、自启
 
 目标：补全会话删除/标题、消息删除/编辑/重说、用户设定 CRUD 与会话绑定、默认人设、开机自启与正式应用名。
@@ -3310,17 +2909,17 @@ git add src-tauri/src/sessions.rs src-tauri/src/commands.rs src-tauri/src/lib.rs
 git commit -m "feat: 添加会话删除、重命名与标题生成"
 ```
 
-### Task 10.2: 消息编辑、删除与重说
+### Task 10.2: 消息编辑、尾部删除与重说
 
 **Files:** `src-tauri/src/sessions.rs`、`memory.rs`、`chat.rs`、`commands.rs`、`src/windows/ChatWindow.tsx`、`src/api.ts`。
 
-- [ ] 编辑/删除消息前按 short_memory_messages 查固定关联短期记忆 ID；在一个事务内删除这些短期记忆、修改/删除消息、增加 memory_revision。后续消息、旅行短期记忆和长期记忆保留；不回退 summary_cursor。
-- [ ] 前端确认文案说明“相关短期记忆会删除，长期记忆需手动修改”，操作成功刷新消息与记忆窗口。
-- [ ] 暴露 regenerate_last_reply(session_id, message_id)，只有最后一条是 AI 且有对应用户消息才允许；组装上下文排除旧 AI 回复，不重复插入用户消息。
-- [ ] 新回复成功后事务校验最后一条和版本仍匹配，再覆盖原 AI 消息及表情、删除与旧消息关联的短期记忆；失败/中断保留旧回复。
-- [ ] 重说不重复增加亲密度，不重放已有有副作用工具；普通发送与重说各有明确保存路径。
-- [ ] 验证一条消息对应的短期记忆精确删除、无关摘要保留、摘要已转长期、重说失败、中断和消息被并发修改。
-
+- [ ] 编辑任意历史消息只更新原文和 `memory_revision`，不自动修改或删除短期记忆、长期记忆或旅行游记；尚未生成短期记忆的回合以后使用编辑后正文。
+- [ ] 删除只允许从聊天底部执行。最后完整回合在 AI 消息下显示“删除本轮”，一个事务删除两条消息、回合和对应短期记忆；底部只有待回复用户消息时删除该消息与未完整回合。
+- [ ] 若被删回合是 `activated_by_round_id`，同一事务删除相应长期记忆并把 `long_memory_sources` 指向的短期记忆恢复为 `pending`；操作成功后刷新消息与记忆窗口。
+- [ ] `regenerate_last_reply` 只接受最后完整回合，组装上下文时排除旧 AI 回复并保留用户消息一次。
+- [ ] 重说成功后保持原回合和消息 ID，更新 AI 回复、表情和本轮短期记忆；通过 `long_memory_sources` 找到并重新生成受影响长期记忆，提交前校验版本，最终替换使用一个短事务。
+- [ ] 重说失败或中断保留旧结果，不重复增加亲密度，不重放已有有副作用工具。
+- [ ] 验证尾部限制、触发回退、编辑不联动、重说涉及/不涉及长期记忆、生成失败和并发版本变化。
 ### Task 10.3: 开机自启与默认人设
 
 **Files:**
@@ -3615,7 +3214,7 @@ git add src-tauri/src/proactive.rs src-tauri/src/pet.rs src-tauri/src/lib.rs
 git commit -m "feat: 添加无聊主动消息"
 ```
 
-### Task 11.4: 提醒编辑、测试连接、短期记忆游标
+### Task 11.4: 提醒编辑、测试连接与待生成记忆恢复
 
 **Files:**
 - Modify: `src-tauri/src/reminders.rs`
@@ -3632,9 +3231,9 @@ git commit -m "feat: 添加无聊主动消息"
 
 `src-tauri/src/providers.rs` 增加 `test_connection(target: &ApiTarget) -> Result<(), String>`：发送使用所选模型的最小 chat 请求并验证响应；仅 models 列表可访问不能证明模型可用。`commands.rs` 暴露 `test_provider(input)` 临时构造 target 测试。
 
-- [ ] **Step 3: 短期记忆游标**
+- [ ] **Step 3: 待生成记忆恢复**
 
-`sessions.summary_cursor` 已包含在 `db.rs::init` 的建表语句中。`memory.rs` 的 `maybe_consolidate` 改为：读取 `summary_cursor`，只总结 `id > summary_cursor` 且属于最近 30 条之外的消息；生成短期记忆后把 `summary_cursor` 更新为当前已处理的最大消息 id。避免重复总结。
+`memory.rs` 扫描尚无短期记忆的 `completed` 回合，并按回合 ID 顺序补生成；`short_memories.round_id` 唯一约束阻止重复。中断回合与主动消息不参与。恢复任务继续遵守 `memory_revision` 快照校验。
 
 - [ ] **Step 4: 编译验证**
 
@@ -3645,7 +3244,7 @@ Expected: 无错误。
 
 ```bash
 git add src-tauri/src/reminders.rs src-tauri/src/commands.rs src-tauri/src/providers.rs src-tauri/src/memory.rs src-tauri/src/db.rs
-git commit -m "feat: 添加提醒编辑、测试连接与短期记忆游标"
+git commit -m "feat: 添加提醒编辑、测试连接与记忆恢复"
 ```
 
 ### Task 11.5: 桌面游走
@@ -4075,104 +3674,41 @@ git commit -m "feat: 添加饰品层与饰品管理"
 
 ---
 
-## 阶段 16：伴手礼与旅行总结
+## 阶段 16：伴手礼与旅行游记
 
-目标：返回礼物进入伴手礼管理；旅行总结写入短期记忆。
+目标：返回礼物进入伴手礼管理；正常返回生成独立的会话级旅行游记。
 
 ### Task 16.1: 伴手礼数据与管理
 
-**Files:**
-- Modify: `src-tauri/src/db.rs`
-- Modify: `src-tauri/src/models.rs`
-- Create: `src-tauri/src/souvenirs.rs`
-- Modify: `src-tauri/src/commands.rs`
-- Modify: `src/windows/TravelWindow.tsx`
+**Files:** `src-tauri/src/db.rs`、`models.rs`、`souvenirs.rs`、`commands.rs`、`src/windows/TravelWindow.tsx`。
 
-- [ ] **Step 1: 创建伴手礼表**
+- [ ] 按 `db/schema.sql` 接入 `souvenirs`；只保存普通文字礼物，可佩戴饰品进入 `accessories`。
+- [ ] 仅正常返回生成 1 件伴手礼；返回事务固定 gift_kind（10% accessory、90% text），完成状态与结果同事务写入，失败重试不重复抽取或发放。
+- [ ] 伴手礼支持查看、收藏、删除；不增加背包、数量、容量或使用机制。
+- [ ] 运行 Rust 检查与前端构建。
 
-按 `db/schema.sql` 创建 `souvenirs`；只保存普通文字礼物，可佩戴饰品进入 `accessories`。
+### Task 16.2: 旅行游记生成与恢复
 
-- [ ] **Step 2: 生成返回礼物**
+**Files:** `src-tauri/src/travel.rs`、`travel_journals.rs`、`models.rs`、`ai/client.rs`、`commands.rs`。
 
-仅正常返回生成 1 件伴手礼；在返回事务中抽取并固定 gift_kind（10% accessory、90% text），生成后事务写结果与 gift_state=done。取消旅行不生成，失败重试不得重新抽类型或重复发放。
+- [ ] 正常返回且回来信、礼物已保存后，读取该旅行的时间、时长、活动、往返信件和实际礼物，使用对应人设口吻生成一篇较详细的游记；取消旅行不生成。
+- [ ] 标题必须用一句话极精炼概括什么时候去了哪里、做了什么、有什么伴手礼、去了多久；正文使用独立的游记字数范围。
+- [ ] 游记写入 `travel_journals`，通过 `travel_id` 唯一关联，不写入短期记忆，不参与长期记忆整合；结果和 `journal_state=done` 同事务提交。
+- [ ] 启动、配置有效提供商或测试连接成功时扫描 returned 且 `journal_state=pending` 的任务；失败保留 pending，提交前复核状态。
+- [ ] 用户可编辑标题与正文，不提供单独删除或 AI 重新生成；会话删除时按外键级联。
+- [ ] 验证正常返回、取消、离线返回、失败重试与重复调度。
 
-- [ ] **Step 3: 增加伴手礼操作**
+### Task 16.3: 出行页与游记查询工具
 
-支持查看、收藏、删除；不做背包、数量、容量或使用机制。
+**Files:** `src/windows/TravelWindow.tsx`、`src-tauri/src/travel_journal_tools.rs`、`src/api.ts`、`context.rs`。
 
-- [ ] **Step 4: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Run: `npm run build`
-Expected: 无错误。
-
-- [ ] **Step 5: 提交**
-
-```bash
-git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/souvenirs.rs src-tauri/src/commands.rs src/windows/TravelWindow.tsx
-git commit -m "feat: 添加伴手礼数据与管理"
-```
-
-### Task 16.2: 旅行总结写入短期记忆
-
-**Files:**
-- Modify: `src-tauri/src/travel.rs`
-- Modify: `src-tauri/src/memory.rs`
-- Modify: `src-tauri/src/ai/client.rs`
-
-- [ ] **Step 1: 生成旅行总结**
-
-正常返回且回来信、礼物已保存后，使用记忆 provider 生成短期总结；读取持久化信件和礼物，不编造尚未生成结果。取消旅行不总结。
-
-- [ ] **Step 2: 写入短期记忆**
-
-以 source_type=travel、source_ref_id=travels.id 写入 short_memories，并在同一事务把 summary_state 设为 done、增加 memory_revision；参与后续长期整合。总结被合并或用户删除后保持 done，不再补生成。
-
-- [ ] **Step 3: 应用关闭期间返回的补生成**
-
-启动扫描正常 returned 且 summary_state=pending 的任务，按依赖顺序补生成；失败保持 pending 并提示，事务提交前重新检查状态。
-
-- [ ] **Step 4: 编译验证**
-
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
-
-- [ ] **Step 5: 提交**
-
-```bash
-git add src-tauri/src/travel.rs src-tauri/src/memory.rs src-tauri/src/ai/client.rs
-git commit -m "feat: 添加旅行总结短期记忆"
-```
-
-### Task 16.3: 记忆与出行页联动
-
-**Files:**
-- Modify: `src/windows/MemoryWindow.tsx`
-- Modify: `src/windows/TravelWindow.tsx`
-- Modify: `src/api.ts`
-
-- [ ] **Step 1: 记忆小窗显示旅行总结**
-
-短期记忆列表展示 `travel` 类型来源标记。
-
-- [ ] **Step 2: 出行页与记忆小窗会话联动**
-
-记忆小窗和出行页统一跟随 Rust 当前会话；在聊天窗/人设设置切换后刷新邮箱、伴手礼和记忆入口。出行页不增加独立会话选择器。
-
-- [ ] **Step 3: 编译验证**
-
-Run: `npm run build`
-Expected: 无错误。
-
-- [ ] **Step 4: 提交**
-
-```bash
-git add src/windows/MemoryWindow.tsx src/windows/TravelWindow.tsx src/api.ts
-git commit -m "feat: 添加记忆与出行页联动"
-```
+- [ ] 出行页跟随 Rust 当前会话，增加旅行游记列表、详情和编辑入口；记忆小窗不展示游记。
+- [ ] 上下文只直接加入当前会话最近 5 篇游记标题。
+- [ ] 提供只读工具列出当前会话游记、按条件查找以前旅行、读取指定游记正文，后端强制校验会话归属。
+- [ ] 切换会话后同时刷新邮箱、伴手礼、旅行游记和记忆入口，不增加独立会话选择器。
+- [ ] 运行前端构建与 Rust 检查。
 
 ---
-
 ## 阶段 17：导入导出与数据迁移
 
 目标：提供全量备份、指定会话、指定用户设定、人设资料包（分享用）和人设完整包（迁移用）的导出与导入。
@@ -4182,7 +3718,7 @@ git commit -m "feat: 添加记忆与出行页联动"
 **Files:** `src-tauri/src/import_export.rs`、`commands.rs`、`lib.rs`。
 
 - [ ] 按数据库与持久化设计第 9 节实现 manifest.json、data.json、files/，禁止混用按表分文件格式；manifest 记录格式/结构版本、类型、数量和文件清单。
-- [ ] 全量导出覆盖所有非密钥全局与会话数据，包括 settings、提供商配置、occurrences、短期消息关联、档位标记、旅行完成状态、信件回复状态。节日母表不导出，子表母表引用导出稳定 code。
+- [ ] 全量导出覆盖所有非密钥全局与会话数据，包括 settings、聊天/记忆/Embedding 提供商非密钥配置、occurrences、聊天回合、短期记忆、带标题的长期记忆及来源、档位标记、旅行完成状态、旅行游记和信件回复状态。节日母表、FTS5 索引、长期记忆向量与内置 Embedding 模型文件不导出，子表母表引用导出稳定 code。
 - [ ] 人设资料包仅定义和外观；人设完整包/会话包/带会话用户设定包带全所引用的人设定义、用户设定、背景图及会话级子记录，支持独立导入。
 - [ ] 非全量包不带钱包、账单、全局设置、提醒或提供商。任何包都不带 API Key 或和风密钥明文/密文。
 - [ ] 使用一致性读取快照与文件清单完成 ZIP；验证备份内容没有密钥，五种包关联均闭合。
@@ -4193,10 +3729,10 @@ git commit -m "feat: 添加记忆与出行页联动"
 
 - [ ] 导入摘要展示范围和全局替换影响。默认新建副本；资料包仅新建，其他覆盖模式明确选择同类型/父级下的目标，不能用名称匹配后自动覆盖多条。
 - [ ] 全量包用备份替换全局钱包、账单、settings、提醒与 occurrences、提供商配置；不叠加，不给人设复制钱包。部分包不动全局数据或现有密钥。
-- [ ] 按表建立 ID 映射，处理多态 source_ref_id、reply_to_id、消息关联、summary_cursor 与 settings.current_session_id；festival_id 通过 code 映射。保留已回复、档位已用、取消及任务完成状态。
-- [ ] 新导入提供商密钥为 NULL；全量密钥项清空并提示重新填写。重建当前项，保证部分唯一索引不冲突。
+- [ ] 按表建立 ID 映射，处理 session_id、round_id、message_id、short_memory_id、long_memory_id、covered_through_message_id、activated_by_round_id、travel_id、travel_journal_id、reply_to_id 与 settings.current_session_id；festival_id 通过 code 映射。保留整合状态、已回复、档位已用、取消及任务完成状态。
+- [ ] 新导入聊天、记忆及联网 Embedding 提供商密钥为 NULL；全量密钥项清空并提示重新填写。保证内置本地 Embedding 项存在并重建当前项，保证部分唯一索引不冲突。
 - [ ] 先验证版本、结构、字段、关系、图片大小和路径，暂存并使用唯一文件名；暂停后台写入，数据库同一事务完成覆盖、全局替换及所有关联写入。失败回滚并清理本次新文件，旧引用文件提交前不删除。
-- [ ] 提交后恢复调度，取消任务不得恢复。测试五种包往返、同名歧义、ID 重映射、密钥排除、全局替换、文件失败与数据库失败回滚，不能只运行编译检查。
+- [ ] 提交后先重建 FTS5，再异步重建长期记忆向量，然后恢复其他调度；索引失败不回滚已提交业务数据并可在下次启动续建。测试五种包往返、同名歧义、ID 重映射、密钥排除、全局替换、索引重建、文件失败与数据库失败回滚，不能只运行编译检查。
 
 ---
 
@@ -4346,7 +3882,7 @@ git commit -m "chore: 完成颜喵 YanMew 首版实现"
 
 ## 交付前检查
 
-- 规格覆盖：窗口/托盘、提供商、人设、人设本体颜色、聊天窗背景、用户设定、表情库（点击：开心/惊讶/害羞、饿、吃东西、困、无聊、思考）、流式聊天与暂停中断、function calling 记事本、会话记忆、桌宠状态、节日母表与节日子表、签到彩蛋、无聊主动消息、桌面游走、提醒、天气定位、错误休眠、默认人设、开机自启、人设自调、喵币与游戏、亲密度、饰品、旅行、写信、伴手礼、旅行总结、导入导出与数据迁移均有对应 Task。
+- 规格覆盖：窗口/托盘、提供商、人设、人设本体颜色、聊天窗背景、用户设定、表情库（点击：开心/惊讶/害羞、饿、吃东西、困、无聊、思考）、流式聊天与暂停中断、function calling 记事本、会话回合与记忆、桌宠状态、节日母表与节日子表、签到彩蛋、无聊主动消息、桌面游走、提醒、天气定位、错误休眠、默认人设、开机自启、人设自调、喵币与游戏、亲密度、饰品、旅行、写信、伴手礼、旅行游记、导入导出与数据迁移均有对应 Task。
 - 已确定：节日彩蛋完全离线——母表是内置静态数据，农历与节气日期每年查内置表推出后写回，不接任何日历接口，不做放假与调休。
 - 已确定：签到命中节日固定 10 喵币并直接展示节日祝福词（不调用 AI）；同时命中母表与子表时合并祝福词、金额仍为 10；纪念性节日不使用“快乐”文案。
 - 已确定：无聊主动消息取代原空闲气泡，触发概率与上下文由代码层决定；桌面游走在用户拖动、点击、聊天、睡觉、出门中、隐藏宠窗时暂停。
