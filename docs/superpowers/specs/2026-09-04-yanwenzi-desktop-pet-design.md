@@ -130,7 +130,11 @@
 - 喵币为全局用户级，删除会话不影响。
 - 喵币初始为 0。
 - 每日签到：本地时间每天 0 点刷新，无节日时随机获得 1–10 喵币；当天命中节日时固定 10 喵币并直接展示节日祝福词（见 2.15）。
-- 石头剪刀布：用户选择剪刀/石头/布，系统随机出；赢 +5、输 -4、平局 0；开始前余额必须 ≥ 4；每天最多 20 次。
+- 每日签到是颜喵应用唯一的全局签到，属于桌宠状态，不属于小游戏或插件协议；插件不能新增另一套应用签到、修改签到状态或写入签到类型流水。
+- 石头剪刀布是标准第一方插件，源码位于主仓库并随便携版提供；用户选择剪刀/石头/布，系统随机出，每天最多 20 次。取得喵币权限后赢 +5、输 -4、平局 0，开始前余额必须 ≥ 4；拒绝权限时按纯玩模式运行，不增减喵币，也不要求最低余额。
+- 第一版实现版本化插件协议、受限插件宿主、本地 `.yanmew-game` 安装、插件游戏局和钱包服务。石头剪刀布与用户安装的插件使用同一套 manifest、宿主 API、存档和结算边界，不提供绕过插件系统的专用实现。
+- 所有小游戏插件都可申请 `wallet.modify`。本地插件在安装时、随包插件在首次打开时明确展示并由用户决定；允许后插件通过 `wallet.changeCoins()` 增减喵币，主程序在同一事务更新余额并记录插件 ID、插件版本、游戏局 ID、数量和原因。拒绝后插件仍可纯玩。
+- 第一版不显示“官方收录”或其他推荐徽标。小游戏插件不提供 `ai.generate()`，也不能读取聊天、记忆、记事本、模型配置或 API Key。完整规则见 `docs/小游戏插件生态设计.md`。
 - 喵币目前只用于制作饰品；卖出饰品固定获得 10 喵币。
 
 ### 2.12 饰品
@@ -172,7 +176,7 @@
 
 - 导入导出放在“全局设置 > 通用 > 导入与导出”。
 - 支持五级导出：全量备份、人设资料包、人设完整包、会话包、用户设定包。
-- 全量备份包含全部非密钥业务数据及全局配置、聊天/记忆/Embedding 提供商非密钥配置、钱包和账单、提醒与触发记录，以及被引用背景图；内置节日母表不导出，由目标端生成。
+- 全量备份包含全部非密钥业务数据及全局配置、聊天/记忆/Embedding 提供商非密钥配置、钱包和账单、小游戏插件登记与权限、插件设置与私有存档、游戏局、提醒与触发记录，以及被引用背景图；内置节日母表不导出，由目标端生成，石头剪刀布程序包由目标应用随包提供。
 - 人设资料包只含人设定义、初始设定、颜色、自调开关、背景和表情库；不含会话或私密数据。
 - 人设完整包含所属全部会话级数据与引用的用户设定；会话包含该会话全部会话级数据、所属人设定义、绑定用户设定及背景；用户设定包可附带绑定会话及其人设定义，保证引用完整。
 - 会话级数据包括聊天回合、消息、短期记忆、带标题的长期记忆及来源关联、记事本、亲密度、饰品档位标记、节日子表、旅行任务状态、旅行游记、信件回复状态、饰品与伴手礼。全文索引和向量是可重建数据，不进入导出包；部分包不改变全局数据。
@@ -204,13 +208,14 @@
 ### 2.16 v1 不做
 
 - 联网搜索（留待后续迭代）。
+- 颜喵直接访问 GitHub、自动检查 Release 更新、应用内在线插件目录、“官方收录”徽标、独立插件网站和 `yanmew://` 一键安装；v1 支持本地插件包安装，但不在应用内联网找插件。
 - 图片素材型饰品/旅行礼物（v1 全部使用文字与颜文字）。
 - 节日放假安排与调休信息（不接日历接口，节日彩蛋完全离线）。
 
 ## 3. 技术架构
 
 - 桌面壳：Tauri 2（Rust 核心）+ React + TypeScript 前端。
-- Rust 核心模块：配置存储、API 与 Embedding 提供商管理、本地 Embedding 推理、长期记忆混合检索、人设管理、用户设定、表情库管理、AI 客户端、桌宠状态机（含桌面游走）、提醒调度、天气与定位服务、会话/记忆/记事本存储、喵币、饰品、旅行、邮箱、伴手礼、节日与内置农历表、导入导出。
+- Rust 核心模块：配置存储、API 与 Embedding 提供商管理、本地 Embedding 推理、长期记忆混合检索、人设管理、用户设定、表情库管理、AI 客户端、桌宠状态机（含桌面游走）、提醒调度、天气与定位服务、会话/记忆/记事本存储、喵币、小游戏插件宿主、饰品、旅行、邮箱、伴手礼、节日与内置农历表、导入导出。
 - 聊天 AI 与记忆整合 AI 拆成两个独立模块。
 - 本地数据：SQLite，建库脚本为 `db/schema.sql`，运行库为 `data/yanwenzi.db`。
 - 安全：API Key 使用 Windows DPAPI 加密存储。
@@ -218,7 +223,7 @@
 
 ## 4. 数据模型
 
-完整结构见 `db/schema.sql`，事务和恢复规则见 `docs/数据库与持久化设计.md`。表如下：
+当前结构见 `db/schema.sql`，事务和恢复规则见 `docs/数据库与持久化设计.md`。小游戏插件表是阶段 13 开发前必须同步到 schema 和旧库迁移的已确认增量。表如下：
 
 - `providers`：id、name、base_url、api_key_encrypted、model、is_active（聊天）、memory_is_active（全表无启用项时跟随聊天）。
 - `embedding_providers`：id、name、kind（local/online）、base_url、api_key_encrypted、model、is_builtin、is_active；默认本地模型由种子逻辑写入。
@@ -237,7 +242,11 @@
 - `reminders`：id、kind、schedule、content、status、fire_at、source、created_at。
 - `reminder_occurrences`：id、reminder_id、scheduled_at、status、delivery_state、completed_at、created_at；每次提醒的持久化状态。
 - `user_state`：id（固定为 1）、coins、updated_at。
-- `currency_ledger`：id、delta、reason、ref_id、created_at。
+- `currency_ledger`：id、delta、reason、ref_id、created_at；阶段 13 扩展通用插件游戏引用、插件 ID/版本、显示原因和唯一钱包请求 ID。
+- `game_plugins`（阶段 13 增加）：插件 ID、名称、作者、版本、API 版本、来源类型、包路径、包校验值、是否随包提供、启用状态、安装时间。
+- `game_permissions`（阶段 13 增加）：插件 ID、权限名、授权状态、授权时间、对应插件版本。
+- `game_runs`（阶段 13 增加）：游戏局 ID、插件 ID/版本、可选会话 ID、钱包授权快照、状态、结果、明细、累计喵币变化和时间。
+- `game_plugin_settings`、`game_plugin_data`（阶段 13 增加）：插件设置与按插件、作用域隔离的私有存档。
 - `accessories`：id、session_id、name、display_text、description、cost、source、travel_id、is_worn、created_at。
 - `travels`：id、session_id、status、started_at、planned_return_at、actual_return_at、cancelled_at、midway_letter_at、midway_letter_state、return_letter_state、gift_state、journal_state、gift_kind、created_at。
 - `travel_journals`：id、session_id、travel_id、title、content、created_at、updated_at；每次正常返回的旅行最多一篇。
@@ -367,6 +376,7 @@
 
 - 发布形态：Windows 便携版 zip，解压即用。
 - 代码：`src/`、`src-tauri/`。
+- 小游戏：主仓库 `plugins/first-party/` 保存项目维护者发布的插件；`plugins/bundled-games.json` 指定随便携版提供的插件，第一版包含石头剪刀布。
 - 建库脚本：`db/schema.sql`。
 - 运行数据库：应用目录下 `data/yanwenzi.db`（与可执行文件同目录，首次启动自动创建）。
 - 聊天窗背景图片：应用目录下 `data/chat_background/`，数据库只保存相对文件名和设置值。
@@ -387,3 +397,5 @@
 11. 导入、导出与数据迁移。
 12. 节日母表与节日子表、内置农历与节气数据表、签到彩蛋。
 13. 桌面游走与无聊主动消息。
+14. 小游戏插件宿主、本地插件安装，以及随便携版提供的石头剪刀布第一方插件。
+15. 后续版本：独立社区小游戏仓库、GitHub Release 自动安装与更新、推荐目录、独立轻量插件网站和一键唤起颜喵。

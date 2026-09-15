@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建一个 Windows 常驻桌宠应用“颜喵 YanMew”：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、用户设定、流式聊天（含暂停中断）、会话记忆与记事本、表情库、提醒、天气定位、人设自调、喵币与饰品、旅行/写信/伴手礼/旅行游记、导入导出与数据迁移。
+**Goal:** 构建一个 Windows 常驻桌宠应用“颜喵 YanMew”：透明置顶可拖动的颜文字形象，支持多 API 提供商、多人设、用户设定、流式聊天（含暂停中断）、会话记忆与记事本、表情库、提醒、天气定位、人设自调、喵币与饰品、小游戏插件、旅行/写信/伴手礼/旅行游记、导入导出与数据迁移。
 
-**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、饰品、旅行、信件、伴手礼与旅行游记；React + TypeScript 前端负责宠窗、聊天窗、设置窗的渲染与交互。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
+**Architecture:** Tauri 2（Rust 核心）负责窗口、SQLite、调度、天气定位、AI 客户端、喵币、小游戏插件宿主、饰品、旅行、信件、伴手礼与旅行游记；React + TypeScript 前端负责宠窗、聊天窗、设置窗、游戏中心与插件安装确认的渲染和交互。小游戏运行在受限 WebView，通过版本化桥接访问插件私有存档、游戏局和钱包服务。Rust 暴露 Tauri commands 给前端，AI 流式回复通过 events 推送到前端。数据用 SQLite 持久化，API Key 用 Windows DPAPI 加密。
 
 **Tech Stack:** Tauri 2、Rust、React 18、TypeScript、Vite、SQLite（rusqlite）、windows crate（DPAPI、定位）。
 
@@ -19,7 +19,7 @@
 - 每完成一个 Task 就提交一次，保持提交粒度与 Task 一致。
 - Windows 换行：仓库用 LF，Git 已配置自动转换，不要手动改 CRLF。
 - 本计划分 19 个阶段（阶段 0 到阶段 18），每个阶段结束时应用可编译运行。
-- 数据库结构只维护 `db/schema.sql`，初始化阶段建立完整结构；后续任务补齐模型、命令和交互，不重复增加已存在列。事务与备份协议统一遵守 `docs/数据库与持久化设计.md`。
+- 数据库结构只维护 `db/schema.sql`，初始化阶段建立当前已确认结构；后续任务补齐模型、命令和交互，不重复增加已存在列。小游戏统一核心是已知的待同步设计例外：阶段 13 开始编码前先更新 `db/schema.sql` 和数据库迁移，之后再按同一规则执行。事务与备份协议统一遵守 `docs/数据库与持久化设计.md`。
 - AI 请求不持有数据库锁或事务；读取快照、请求完成后短事务校验并提交。
 
 ## 项目结构（本计划将创建/修改的文件）
@@ -36,6 +36,7 @@
   - `src/windows/MemoryWindow.tsx`：记忆小窗。
   - `src/windows/TravelWindow.tsx`：出行/邮箱/伴手礼管理窗。
   - `src/windows/LetterWindow.tsx`：写信界面。
+  - `src/windows/GameCenterWindow.tsx`：游戏中心、插件安装和权限管理。
   - `src/components/Kaomoji.tsx`、`Bubble.tsx`、`ContextMenu.tsx`、`ErrorBadge.tsx`、`AccessoryLayer.tsx`。
 - `src-tauri/`：Rust 核心。
   - `src-tauri/Cargo.toml`、`tauri.conf.json`、`build.rs`、`capabilities/default.json`。
@@ -43,7 +44,11 @@
   - `src-tauri/src/db.rs`、`models.rs`、`config.rs`、`crypto.rs`。
   - `src-tauri/src/providers.rs`、`persona.rs`、`user_profiles.rs`、`expressions.rs`、`sessions.rs`、`memory.rs`、`memory_commands.rs`、`notebook.rs`、`context.rs`、`proactive.rs`、`festivals.rs`、`lunar.rs`。
   - `src-tauri/src/ai/mod.rs`、`ai/client.rs`、`ai/streaming.rs`。
-  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`import_export.rs`、`commands.rs`。
+  - `src-tauri/src/pet.rs`、`reminders.rs`、`weather.rs`、`location.rs`、`currency.rs`、`game_plugins.rs`、`game_host.rs`、`accessories.rs`、`travel.rs`、`letters.rs`、`souvenirs.rs`、`import_export.rs`、`commands.rs`。
+- `plugins/`：插件 SDK、模板、统一校验/打包工具、随包清单和第一方小游戏。
+  - `plugins/sdk/`、`plugins/template/`、`plugins/build/`。
+  - `plugins/bundled-games.json`：随便携版提供的插件清单。
+  - `plugins/first-party/rock-paper-scissors/`：石头剪刀布插件源码。
 
 ---
 
@@ -3435,9 +3440,9 @@ Expected: 无错误。
 git add src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/persona.rs src-tauri/src/commands.rs src/windows/ChatWindow.tsx src/windows/SettingsWindow.tsx src/api.ts src/types.ts
 git commit -m "feat: 添加按人设隔离的聊天窗背景设置"
 ```
-## 阶段 13：亲密度与喵币
+## 阶段 13：亲密度、全局签到、喵币与小游戏插件
 
-目标：会话亲密度、全局喵币、每日签到和石头剪刀布游戏。
+目标：会话亲密度、应用唯一的全局每日签到、全局喵币和可安装的小游戏插件系统；石头剪刀布作为标准第一方插件随便携版提供。全局签到不属于小游戏插件。
 
 ### Task 13.1: 亲密度与货币数据层
 
@@ -3498,7 +3503,7 @@ git add src-tauri/src/pet.rs src-tauri/src/commands.rs src/windows/PetWindow.tsx
 git commit -m "feat: 添加互动与聊天亲密度"
 ```
 
-### Task 13.3: 签到与石头剪刀布
+### Task 13.3: 应用全局每日签到（非小游戏）
 
 **Files:**
 - Modify: `src-tauri/src/currency.rs`
@@ -3508,27 +3513,138 @@ git commit -m "feat: 添加互动与聊天亲密度"
 
 - [ ] **Step 1: 实现每日签到**
 
-签到命令按本地日期判断当天是否已签到；无节日命中时随机发放 1–10 喵币，写入流水和余额。命中节日时的固定 10 喵币与祝福词在阶段 18 接入。
+颜喵只保留这一套应用级签到。签到命令按本地日期判断当天是否已签到；无节日命中时随机发放 1–10 喵币，写入全局流水和余额。命中节日时的固定 10 喵币与祝福词在阶段 18 接入。“桌宠状态”显示余额、亲密度与签到入口；游戏中心和插件协议不提供签到入口、签到状态或签到流水写入能力。
 
-- [ ] **Step 2: 实现石头剪刀布**
-
-`play_rps(choice)` 由系统随机出拳；赢 +5、输 -4、平局 0；开始前校验余额 ≥ 4，并统计当天游戏次数不超过 20。
-
-- [ ] **Step 3: 增加设置页入口**
-
-“设置 > 桌宠与内容 > 桌宠状态”显示喵币余额、签到按钮、石头剪刀布按钮和亲密度。
-
-- [ ] **Step 4: 编译验证**
+- [ ] **Step 2: 编译验证**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Run: `npm run build`
 Expected: 无错误。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 3: 提交**
 
 ```bash
 git add src-tauri/src/currency.rs src-tauri/src/commands.rs src/windows/SettingsWindow.tsx src/api.ts
-git commit -m "feat: 添加签到与石头剪刀布"
+git commit -m "feat: 添加每日签到"
+```
+
+### Task 13.4: 插件数据、权限与钱包事务
+
+**Files:**
+- Modify: `db/schema.sql`
+- Modify: `src-tauri/src/db.rs`
+- Modify: `src-tauri/src/models.rs`
+- Modify: `src-tauri/src/currency.rs`
+- Create: `src-tauri/src/game_plugins.rs`
+- Modify: `src-tauri/src/commands.rs`
+
+- [ ] **Step 1: 更新 schema 与旧库迁移**
+
+按 `docs/小游戏插件生态设计.md` 新增 `game_plugins`、`game_permissions`、`game_runs`、`game_plugin_settings`、`game_plugin_data`，并把 `currency_ledger` 的游戏引用改为通用插件游戏局引用。记录来源类型、是否随包提供、包校验值、钱包授权快照、插件 ID/版本、显示原因和唯一钱包请求 ID。新库与迁移库约束一致。
+
+- [ ] **Step 2: 实现插件登记与权限仓储**
+
+实现插件列表、版本登记、启用/停用、权限读取与修改。manifest 权限只是申请；用户授权独立保存。新增权限不能继承旧版本未曾取得的授权。
+
+- [ ] **Step 3: 实现游戏局生命周期**
+
+提供创建、读取和完成游戏局的内部服务。每局固定绑定插件 ID、插件版本、可选会话 ID 和开始时的钱包授权状态；重复完成保持幂等。
+
+- [ ] **Step 4: 实现插件钱包接口**
+
+`wallet.changeCoins()` 校验插件启用状态、版本、`wallet.modify` 授权、游戏局归属、唯一 `request_id`、整数 `delta` 和非负余额。在同一事务更新游戏局、插入账单和修改全局余额；重复请求不重复到账或扣款。`wallet.getBalance()` 只返回全局余额。
+
+- [ ] **Step 5: 验证事务与迁移**
+
+覆盖允许、拒绝、撤销、余额不足、重复请求、错误游戏局、插件版本不一致、迁移后约束和纯玩游戏局不写账单。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add db/schema.sql src-tauri/src/db.rs src-tauri/src/models.rs src-tauri/src/currency.rs src-tauri/src/game_plugins.rs src-tauri/src/commands.rs
+git commit -m "feat: 添加小游戏插件数据与钱包权限"
+```
+
+### Task 13.5: 插件宿主与本地安装
+
+**Files:**
+- Create: `src-tauri/src/game_host.rs`
+- Modify: `src-tauri/src/game_plugins.rs`
+- Modify: `src-tauri/src/commands.rs`
+- Modify: `src-tauri/src/lib.rs`
+- Modify: `src-tauri/tauri.conf.json`
+- Modify: `src-tauri/capabilities/default.json`
+- Create: `plugins/sdk/`
+- Create: `plugins/template/`
+- Create: `plugins/build/`
+
+- [ ] **Step 1: 固定 v1 manifest 与包格式**
+
+实现 `.yanmew-game` 校验：必填字段、稳定插件 ID、语义版本、`api_version`、入口路径、权限、存档作用域、文件类型、解压大小和路径越界检查。提供 SDK 类型、模拟宿主、模板和统一打包校验命令；不提供 `ai.generate()`。
+
+- [ ] **Step 2: 实现原子安装与更新**
+
+插件先解压到临时目录，完整校验后登记并原子切换。更新失败保留旧版本；新增权限等待用户确认。普通本地插件卸载时可保留或清除私有存档，历史游戏局和账单始终保留。
+
+- [ ] **Step 3: 实现受限 WebView 宿主**
+
+只向插件暴露 `game.ready/getContext/random/complete/close`、`storage.get/set/delete` 和 `wallet.getBalance/changeCoins`。不暴露任意 Tauri command、SQLite、系统命令、API Key、聊天、记忆或记事本。按插件 ID 隔离存档和窗口实例。
+
+- [ ] **Step 4: 暴露管理命令并验证**
+
+覆盖合法包安装、损坏包、路径越界、不兼容 API、更新回滚、权限拒绝、存档隔离、窗口关闭和插件异常不影响主程序。
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add src-tauri/src/game_host.rs src-tauri/src/game_plugins.rs src-tauri/src/commands.rs src-tauri/src/lib.rs src-tauri/tauri.conf.json src-tauri/capabilities/default.json plugins
+git commit -m "feat: 添加小游戏插件宿主与本地安装"
+```
+
+### Task 13.6: 随包石头剪刀布插件与游戏中心
+
+**Files:**
+- Create: `plugins/bundled-games.json`
+- Create: `plugins/first-party/rock-paper-scissors/`
+- Create: `src/windows/GameCenterWindow.tsx`
+- Modify: `src/App.tsx`
+- Modify: `src/windows/SettingsWindow.tsx`
+- Modify: `src/api.ts`
+- Modify: `src/types.ts`
+- Modify: `src-tauri/src/game_plugins.rs`
+- Modify: `src-tauri/src/game_host.rs`
+- Modify: `src-tauri/tauri.conf.json`
+
+- [ ] **Step 1: 实现标准石头剪刀布插件**
+
+在 `plugins/first-party/rock-paper-scissors/` 内实现界面、出拳、通过 `game.random()` 取得系统出拳、胜负计算和结果展示。每日最多 20 局。插件申请 `wallet.modify`；获授权时赢 +5、输 -4、平局 0 且开始前余额 ≥ 4，拒绝时进入不增减喵币且不要求最低余额的纯玩模式。
+
+- [ ] **Step 2: 接入随包构建与首次登记**
+
+统一插件构建流程生成 `.yanmew-game`，`bundled-games.json` 将石头剪刀布列为随包插件，Tauri 便携版资源包含同一个产物。启动时登记或升级随包版本；界面显示“随应用提供”，允许停用和清除私有存档，不允许永久卸载。
+
+- [ ] **Step 3: 实现首次权限确认**
+
+随包插件第一次打开时显示 `wallet.modify` 说明并保存允许或拒绝结果。撤销权限后拒绝尚未发生的钱包请求；已经成功提交的账单不回滚。
+
+- [ ] **Step 4: 实现游戏中心**
+
+展示随包和本地安装插件的名称、作者、版本、来源、简介、源码链接、存档作用域和权限；支持启动、启停、本地安装/更新、权限管理、存档清理、可卸载插件卸载、战绩与相关账单。第一版不显示“官方收录”，不连接 GitHub。
+
+- [ ] **Step 5: 完整验证**
+
+验证开发构建、便携版资源、首次登记、应用升级、首次授权、纯玩模式、正常结算、每日次数、余额不足、停用、清除存档、本地插件安装和主程序重启恢复。
+
+Run: `cargo test --manifest-path src-tauri/Cargo.toml`
+Run: `npm run test`
+Run: `npm run build`
+Expected: 全部通过，石头剪刀布与外部本地插件都由同一宿主运行。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add plugins src/windows/GameCenterWindow.tsx src/App.tsx src/windows/SettingsWindow.tsx src/api.ts src/types.ts src-tauri/src/game_plugins.rs src-tauri/src/game_host.rs src-tauri/tauri.conf.json
+git commit -m "feat: 添加随包石头剪刀布插件与游戏中心"
 ```
 
 ---
@@ -3892,5 +4008,6 @@ git commit -m "chore: 完成颜喵 YanMew 首版实现"
 - 已确定：天气采用 Open-Meteo 优先、和风天气兜底，和风 API Key 在设置中配置（DPAPI 加密存储）；`create_persona` 自动生成表情库依赖 provider 可用，无 provider 时静默跳过并在设置页提示手动生成。
 - 已确定：删除人设级联删除其会话与会话级数据；提醒到点由 AI 用人设语气润色、失败回退原文；关闭期间一次性提醒询问补/过期、重复提醒只补最近一次；宠窗默认右下角并记忆位置。
 - 已确定：喵币为全局用户级，不随会话删除；亲密度、节日子表、饰品、旅行、信件、伴手礼均为会话级，删除会话时级联删除。
+- 已确定：石头剪刀布从第一版就是主仓库第一方插件，并随便携版提供；第一版支持本地 `.yanmew-game` 安装，不显示“官方收录”、不直接连接 GitHub、不提供插件 AI 接口。第三方社区仓库以后单独建立，通过 Pull Request、自动检查和人工审查后供用户从浏览器下载。
 - 已确定：只有当前会话在家空闲时累计；切换取消旅行和待回信；正常关闭后启动按真实时间续算，取消任务不恢复。
 - 已确定：密钥不导出，新导入提供商重新填写；全量导入替换全局数据，部分包不改目标全局配置；人设资料包只新建副本并自动重命名，且包含聊天窗背景图和表情库。
