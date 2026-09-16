@@ -122,6 +122,12 @@ New-Item -ItemType Directory -Force -Path dist | Out-Null
 Compress-Archive -Path "src-tauri/target/release/yanwenzi.exe" -DestinationPath "dist/颜喵 YanMew-portable.zip"
 ```
 
+## 后续扩展
+
+- 语音功能放在首版完成后开发，不属于当前阶段 0–18。
+- 规划包含按人设绑定的本地唤醒词、实时流式语音识别、两个内置声线、兼容 TTS 模型导入、联网 ASR/TTS 提供商，以及后续本地音色克隆。
+- 语音模型与克隆参考音频存放在 `data/models/voice/`，不进入普通全量备份；详细规则见 `docs/语音扩展设计.md`。
+
 ## 数据与隐私（后续实现规划）
 
 - 便携版运行数据位于应用目录下的 `data/`：
@@ -140,6 +146,7 @@ Compress-Archive -Path "src-tauri/target/release/yanwenzi.exe" -DestinationPath 
 - 数据库与持久化设计：`docs/数据库与持久化设计.md`
 - 记忆与旅行游记设计：`docs/记忆与旅行游记设计.md`
 - 小游戏插件生态设计：`docs/小游戏插件生态设计.md`
+- 语音扩展设计：`docs/语音扩展设计.md`
 
 ## 常用命令
 
