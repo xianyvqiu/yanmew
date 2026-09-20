@@ -95,14 +95,17 @@ pub async fn get_settings(
 #[tauri::command]
 pub async fn save_settings(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     changes: crate::config::Settings,
 ) -> AppResult<crate::config::Settings> {
     authorize(&window)?;
-    storage(runtime.inner().clone(), move |s, _| {
+    let settings = storage(runtime.inner().clone(), move |s, _| {
         crate::config::save(&mut s.connection, changes)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -169,16 +172,19 @@ pub async fn create_persona(
 #[tauri::command]
 pub async fn update_persona(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     id: String,
     input: crate::persona::PersonaInput,
 ) -> AppResult<crate::persona::Persona> {
     authorize(&window)?;
     let id = parse_id(&id)?;
-    storage(runtime.inner().clone(), move |s, _| {
+    let persona = storage(runtime.inner().clone(), move |s, _| {
         crate::persona::save(&mut s.connection, Some(id), input)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(persona)
 }
 
 #[tauri::command]

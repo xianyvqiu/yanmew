@@ -1,0 +1,11 @@
+:root {
+  --ym-ease-standard: cubic-bezier(.2,0,0,1);
+  --ym-duration-fast: 100ms;
+  --ym-duration-normal: 160ms;
+  --ym-duration-slow: 240ms;
+}
+@keyframes ym-breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(2px) scale(1.01); } }
+@keyframes ym-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
+}

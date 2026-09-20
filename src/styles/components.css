@@ -1,0 +1,13 @@
+.ym-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 32px; padding: 4px 10px; border: 1px solid var(--ym-border-strong);
+  border-radius: var(--ym-radius-md); background: var(--ym-surface);
+  color: var(--ym-text-secondary); font-size: 13px; font-weight: 500; line-height: 1.4;
+  cursor: pointer; white-space: nowrap;
+  transition: background var(--ym-duration-normal), color var(--ym-duration-normal), opacity var(--ym-duration-normal);
+}
+.ym-button:hover:not(:disabled) { background: var(--ym-accent-subtle); color: var(--ym-accent-strong); border-color: var(--ym-focus); }
+.ym-button:active:not(:disabled) { background: var(--ym-accent-soft); }
+.ym-button:disabled { cursor: wait; color: var(--ym-text-disabled); }
+.ym-button svg { width: 16px; height: 16px; flex: 0 0 16px; }
+.ym-button[data-variant="danger"] { color: var(--ym-danger); }

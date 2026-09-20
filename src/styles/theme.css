@@ -1,0 +1,89 @@
+@import "./base.css";
+@import "./components.css";
+@import "./motion.css";
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --ym-canvas: #f2f0eb;
+  --ym-surface: #fffefa;
+  --ym-surface-muted: #f8f6f1;
+  --ym-surface-raised: #ffffff;
+
+  --ym-text: #242226;
+  --ym-text-secondary: #666168;
+  --ym-text-muted: #817b83;
+  --ym-text-disabled: #aaa5ab;
+
+  --ym-border: rgba(36, 34, 38, 0.10);
+  --ym-border-strong: rgba(36, 34, 38, 0.20);
+  --ym-focus: #9c5368;
+
+  --ym-accent: #e98fa6;
+  --ym-accent-soft: #f9dce4;
+  --ym-accent-subtle: #fff0f4;
+  --ym-accent-strong: #7b3f52;
+  --ym-on-accent: #3f202a;
+
+  --ym-success: #367a57;
+  --ym-success-soft: #e6f4ec;
+  --ym-warning: #8a6518;
+  --ym-warning-soft: #fff4d6;
+  --ym-danger: #b93e48;
+  --ym-danger-soft: #fde8e9;
+  --ym-info: #496b91;
+  --ym-info-soft: #e8f0f8;
+
+  --ym-pet-halo: rgba(255, 255, 255, 0.94);
+  --ym-scrim: rgba(20, 18, 22, 0.38);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ym-canvas: #111115;
+  --ym-surface: #1b1a1f;
+  --ym-surface-muted: #242329;
+  --ym-surface-raised: #29282e;
+
+  --ym-text: #f4f1f5;
+  --ym-text-secondary: #c2bcc5;
+  --ym-text-muted: #98919b;
+  --ym-text-disabled: #67626a;
+
+  --ym-border: rgba(255, 255, 255, 0.10);
+  --ym-border-strong: rgba(255, 255, 255, 0.22);
+  --ym-focus: #f0a9bc;
+
+  --ym-accent: #f0a9bc;
+  --ym-accent-soft: #4a2d37;
+  --ym-accent-subtle: #302128;
+  --ym-accent-strong: #ffd3de;
+  --ym-on-accent: #fff1f5;
+
+  --ym-success: #79c99b;
+  --ym-success-soft: #1d382a;
+  --ym-warning: #e2bd67;
+  --ym-warning-soft: #3a301d;
+  --ym-danger: #ff858b;
+  --ym-danger-soft: #442326;
+  --ym-info: #9ab8d9;
+  --ym-info-soft: #233244;
+
+  --ym-pet-halo: rgba(0, 0, 0, 0.68);
+  --ym-scrim: rgba(0, 0, 0, 0.58);
+}
+
+:root {
+  --ym-font-ui: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --ym-font-kaomoji: "Cascadia Mono", "Segoe UI Symbol", "Meiryo", Consolas, monospace;
+  --ym-font-body: 14px;
+  --ym-font-caption: 12px;
+  --ym-font-pet: 28px;
+  --ym-radius-md: 12px;
+  --ym-radius-lg: 16px;
+  --ym-radius-pill: 999px;
+  --ym-shadow-sm: 0 3px 12px -6px rgba(22, 18, 24, .20);
+  --ym-shadow-md: 0 12px 30px -12px rgba(22, 18, 24, .24), 0 2px 8px -4px rgba(22, 18, 24, .12);
+}

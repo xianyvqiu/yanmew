@@ -1,49 +1,38 @@
-html, body, #root {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  background: transparent;
-  overflow: hidden;
+.pet-window {
+  position: relative; width: 100%; height: 100%; overflow: hidden;
+  background: transparent; user-select: none;
 }
-
-.pet-window { position: relative; }
-
 .pet-face {
-  cursor: grab;
-  font: 48px/1.2 "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  white-space: nowrap;
-  padding: 4px 8px;
-  touch-action: none;
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  max-width: calc(100% - 32px); padding: 12px;
+  cursor: grab; touch-action: none; white-space: nowrap;
+  color: var(--ym-pet-color, var(--ym-accent-strong));
+  font: var(--ym-font-pet)/1.4 var(--ym-font-kaomoji); font-variant-ligatures: none;
+  text-shadow: -1px -1px 0 var(--ym-pet-halo), 0 -1px 0 var(--ym-pet-halo), 1px -1px 0 var(--ym-pet-halo),
+    -1px 0 0 var(--ym-pet-halo), 1px 0 0 var(--ym-pet-halo),
+    -1px 1px 0 var(--ym-pet-halo), 0 1px 0 var(--ym-pet-halo), 1px 1px 0 var(--ym-pet-halo);
 }
+.pet-window[data-ready="false"] { visibility: hidden; }
 .pet-face:active { cursor: grabbing; }
-.pet-error {
-  position: absolute;
-  top: 46px;
-  left: 12px;
-  right: 12px;
-  max-height: 54px;
-  overflow: auto;
-  overflow-wrap: anywhere;
-  border: 1px solid #c46060;
-  border-radius: 8px;
-  padding: 6px 10px;
-  color: #912b2b;
-  background: #fff6f3;
-  font: 12px/1.4 "Microsoft YaHei UI", sans-serif;
-}
-.pet-visibility:disabled { cursor: wait; opacity: .65; }
-.pet-visibility:focus-visible { outline: 2px solid #9d4564; outline-offset: 2px; }
-
+/* 动画只在固定命中区域内部进行，留白容纳光晕、呼吸和字体回退。 */
+.pet-expression { display: block; animation: ym-breathe 3.6s ease-in-out infinite; }
+.pet-window[data-dragging="true"] .pet-expression,
+.pet-window[data-error="true"] .pet-expression { animation-play-state: paused; }
 .pet-visibility {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 100px;
-  height: 32px;
-  border: 1px solid #d8d8d8;
-  border-radius: 8px;
-  background: #fff;
-  color: #333;
-  font: 14px sans-serif;
-  cursor: pointer;
+  position: absolute; top: 6px; right: 6px; width: 100px; height: 32px;
+  border-radius: var(--ym-radius-pill); padding-inline: 6px;
+  box-shadow: var(--ym-shadow-sm); opacity: .78;
 }
+.pet-visibility:hover, .pet-visibility:focus-visible,
+.pet-window[data-hidden="true"] .pet-visibility,
+.pet-window[data-error="true"] .pet-visibility { opacity: 1; }
+.pet-error {
+  position: absolute; top: 48px; left: 16px; right: 16px; max-height: 92px; padding: 10px 12px;
+  border: 1px solid var(--ym-danger); border-radius: var(--ym-radius-lg);
+  box-shadow: var(--ym-shadow-md); background: var(--ym-surface);
+  color: var(--ym-text-secondary); font-size: var(--ym-font-caption); line-height: 1.55;
+  animation: ym-appear var(--ym-duration-slow) var(--ym-ease-standard);
+}
+.pet-error strong { display: flex; gap: 6px; align-items: center; color: var(--ym-danger); font-weight: 600; }
+.pet-error svg { width: 16px; height: 16px; flex: 0 0 16px; }
+.pet-error p { max-height: 46px; overflow: auto; overflow-wrap: anywhere; margin: 4px 0 0; user-select: text; scrollbar-width: thin; }

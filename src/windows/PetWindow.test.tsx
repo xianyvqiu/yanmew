@@ -4,6 +4,7 @@ import PetWindow from "./PetWindow";
 import { newestSnapshot, type PetSnapshot } from "./usePetWindow";
 
 const startDragging = vi.fn();
+vi.mock("./usePetAppearance", () => ({ usePetAppearance: () => ({ error: "", ready: true }) }));
 const invoke = vi.fn();
 const stop = vi.fn();
 let receive: (event: { payload: PetSnapshot }) => void;
@@ -92,8 +93,10 @@ describe("PetWindow", () => {
     fireEvent.pointerMove(pet, { clientX: 13, clientY: 13, pointerId: 1 });
     expect(startDragging).not.toHaveBeenCalled();
 
-    fireEvent.pointerMove(pet, { clientX: 16, clientY: 10, pointerId: 1 });
-    fireEvent.pointerMove(pet, { clientX: 20, clientY: 10, pointerId: 1 });
+    await act(async () => {
+      fireEvent.pointerMove(pet, { clientX: 16, clientY: 10, pointerId: 1 });
+      fireEvent.pointerMove(pet, { clientX: 20, clientY: 10, pointerId: 1 });
+    });
 
     expect(startDragging).toHaveBeenCalledTimes(1);
   });
