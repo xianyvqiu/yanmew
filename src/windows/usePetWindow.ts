@@ -10,6 +10,8 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
   const [state, setState] = useState<PetSnapshot>({ hidden: false, revision: -1 });
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const operationPending = useRef(false);
   const mounted = useRef(false);
   const accept = useCallback((incoming: PetSnapshot) => {
     if (mounted.current) setState((current) => newestSnapshot(current, incoming));
@@ -34,7 +36,7 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
       } catch (cause) { if (!disposed) fail(cause); }
     })();
     return () => { disposed = true; mounted.current = false; unlisten?.(); };
-  }, [accept, fail]);
+  }, [accept, fail, connectionAttempt]);
 
   useEffect(() => {
     const element = root.current;
@@ -103,13 +105,15 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
   }, [root, state.revision, fail]);
 
   const toggleHidden = async () => {
-    if (pending) return;
+    if (operationPending.current || state.revision < 0) return;
+    operationPending.current = true;
     setPending(true); setError("");
     try { accept(await invoke<PetSnapshot>("set_pet_hidden", { hidden: !state.hidden })); }
     catch (cause) {
       fail(cause);
       try { accept(await invoke<PetSnapshot>("get_pet_window_state")); } catch (refreshError) { fail(refreshError); }
-    } finally { if (mounted.current) setPending(false); }
+    } finally { operationPending.current = false; if (mounted.current) setPending(false); }
   };
-  return { state, error, pending, toggleHidden, fail };
+  const retry = () => { setError(""); setConnectionAttempt((value) => value + 1); };
+  return { state, error, pending, toggleHidden, retry, fail };
 }

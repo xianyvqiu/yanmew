@@ -15,6 +15,48 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 describe("PetWindow", () => {
+  it("原生拖动吞掉释放事件后仍可再次拖动", async () => {
+    await act(async () => { render(<PetWindow />); });
+    const pet = screen.getByRole("img");
+    await act(async () => {
+      fireEvent.pointerDown(pet, { button: 0, clientX: 0, clientY: 0, pointerId: 1 });
+      fireEvent.pointerMove(pet, { clientX: 20, clientY: 0, pointerId: 1 });
+    });
+    await act(async () => {
+      fireEvent.pointerDown(pet, { button: 0, clientX: 0, clientY: 0, pointerId: 2 });
+      fireEvent.pointerMove(pet, { clientX: 20, clientY: 0, pointerId: 2 });
+    });
+    expect(startDragging).toHaveBeenCalledTimes(2);
+  });
+
+  it("首次连接失败显示错误并可重试恢复", async () => {
+    let failed = false;
+    invoke.mockImplementation(async (command) => {
+      if (command === "get_pet_window_state") {
+        if (!failed) { failed = true; throw new Error("连接中断"); }
+        return { hidden: false, revision: 0 };
+      }
+      return undefined;
+    });
+    await act(async () => { render(<PetWindow />); });
+    expect(screen.getByRole("alert").textContent).toContain("连接中断");
+    fireEvent.click(screen.getByRole("button", { name: "重试连接" }));
+    await screen.findByRole("button", { name: "隐藏宠窗" });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("建库失败显示可读错误且仍允许隐藏", async () => {
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "get_configuration_status") throw { code: "STORAGE_ERROR", message: "请检查数据目录权限" };
+      if (command === "get_pet_window_state") return { hidden: false, revision: 0 };
+      if (command === "set_pet_hidden") return { hidden: args.hidden, revision: 1 };
+    });
+    await act(async () => { render(<PetWindow />); });
+    expect(screen.getByRole("alert").textContent).toContain("请检查数据目录权限");
+    fireEvent.click(screen.getByRole("button", { name: "隐藏宠窗" }));
+    await screen.findByRole("button", { name: "显示宠窗" });
+  });
+
   beforeEach(() => {
     startDragging.mockReset().mockResolvedValue(undefined);
     invoke.mockReset().mockImplementation(async (command, args) => {

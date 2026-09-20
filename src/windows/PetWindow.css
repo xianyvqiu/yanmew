@@ -8,6 +8,32 @@ html, body, #root {
 
 .pet-window { position: relative; }
 
+.pet-face {
+  cursor: grab;
+  font: 48px/1.2 "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  white-space: nowrap;
+  padding: 4px 8px;
+  touch-action: none;
+}
+.pet-face:active { cursor: grabbing; }
+.pet-error {
+  position: absolute;
+  top: 46px;
+  left: 12px;
+  right: 12px;
+  max-height: 54px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid #c46060;
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #912b2b;
+  background: #fff6f3;
+  font: 12px/1.4 "Microsoft YaHei UI", sans-serif;
+}
+.pet-visibility:disabled { cursor: wait; opacity: .65; }
+.pet-visibility:focus-visible { outline: 2px solid #9d4564; outline-offset: 2px; }
+
 .pet-visibility {
   position: absolute;
   top: 6px;

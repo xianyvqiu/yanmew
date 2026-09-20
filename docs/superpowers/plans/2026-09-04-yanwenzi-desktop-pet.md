@@ -118,7 +118,13 @@
 
 ## 阶段 2：配置存储（SQLite、DPAPI、提供商与人设 CRUD）
 
-目标：Rust 端可持久化提供商、人设和参数，API Key 加密；前端设置页可增删改查与切换。
+目标：Rust 端可持久化提供商、人设和参数，API Key 加密；提供前端增删改查与切换的类型化接口，完整设置页在阶段 8 接入。
+
+当前实施进度：建库、版本识别、默认值、DPAPI、提供商与人设 CRUD、当前项选择、数值/主题设置、独立天气凭据接口和连接测试已实现。`src/api.ts` 可调用上述接口；设置窗口尚未实现。人设切换已具备旅行与待回信取消事务，未来聊天请求注册器接入后补取消进行中请求的验收。Embedding 当前仅初始化内置配置，尚未运行模型；插件包未构建，因此不登记可运行插件。
+
+当前命令约定：数据库 ID 使用十进制字符串；DTO 字段用 camelCase。`get_settings/save_settings` 只处理已登记的数值和主题键，批量更新原子提交；`get_weather_settings/save_weather_settings` 单独处理 Host 和密钥三态更新，返回 `apiHost/hasApiKey`。`current_session_id` 与窗口位置属于内部状态，不允许从通用设置写入。密钥输入为 `{ action: "keep" }`、`{ action: "clear" }` 或 `{ action: "set", value: "..." }`，省略时保留；列表不返回明文或密文。
+
+`test_provider_connection` 对保存的模型发送一次非流式短提示，连接超时 10 秒、总超时 30 秒，拒绝重定向，响应体上限 256 KiB；验证 HTTP 状态和实际聊天内容，不创建消息、不重试、不把上游正文作为错误展示。真实付费提供商需用户自行执行连接测试，本地自动测试只使用假服务。
 
 ### Task 2.1: 数据模型与数据库初始化
 
@@ -150,7 +156,7 @@
 
 **Files:** `src-tauri/src/providers.rs`、`persona.rs`、`config.rs`、`models.rs`、`commands.rs`、`lib.rs`、`src/api.ts`。
 
-- [ ] **Step 1: 提供商仓储与 DTO**
+- [x] **Step 1: 提供商仓储与 DTO**
 
 实现列表、新增、编辑、删除、测试、聊天当前项及记忆专用项选择。后端内部模型保存加密密钥；前端列表 DTO 只返回 `has_api_key`，不返回密文或明文。编辑时未提交密钥表示保留，清除使用独立标记。DPAPI 密文编码后持久化。
 
@@ -162,15 +168,15 @@
 
 默认人设禁止删除。其他人设删除在同一事务中先删除其会话范围内的长期记忆，再删除人设及剩余级联数据；删除当前项时切回默认人设并修正 `settings.current_session_id`。有默认人设会话时恢复最近更新项，无会话时清空当前会话设置。事务失败保留旧当前项，已取消的请求不自动重发。
 
-- [ ] **Step 3: 设置仓储**
+- [x] **Step 3: 设置仓储**
 
 实现 `get_settings` 与 `save_settings`；缺失键使用已确认默认值，非法值返回可定位的中文错误，不把解析失败静默变成零。保存前校验数值范围、最小值不大于最大值及主题枚举。批量修改使用同一事务，失败不部分生效。后续增加设置项时扩展同一模型与校验入口。
 
-- [ ] **Step 4: 注册命令与界面契约**
+- [x] **Step 4: 注册命令与界面契约**
 
 命令名与《前端设计文档》第 13.3 节统一：提供商使用 `list_providers`、`create_provider`、`update_provider`、`delete_provider`、`test_provider_connection`、`set_active_chat_provider`、`set_memory_provider`；人设使用 `list_personas`、`create_persona`、`update_persona`、`delete_persona`、`set_active_persona`。同时注册设置读取与保存命令。异步 AI 调用与连接测试不得跨网络等待持有数据库锁。
 
-- [ ] **Step 5: 验证**
+- [x] **Step 5: 验证**
 
 验证密钥不出现在前端 DTO、切换不存在目标不丢失旧当前项、当前提供商不可删、默认人设不可删、删除当前人设恢复默认上下文、事务失败回滚和设置校验。运行 Rust 测试及编译检查。
 

@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useRef, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { configurationApi, errorMessage } from "../api";
 import { usePetWindow } from "./usePetWindow";
 import "./PetWindow.css";
 
@@ -13,14 +14,29 @@ type PointerStart = {
 
 export default function PetWindow() {
   const root = useRef<HTMLDivElement>(null);
-  const { state, error, pending, toggleHidden, fail } = usePetWindow(root);
+  const { state, error, pending, toggleHidden, retry, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
   const draggingStarted = useRef(false);
+  const [startupError, setStartupError] = useState("");
+
+  useEffect(() => {
+    let disposed = false;
+    void configurationApi.status().catch((cause: unknown) => {
+      if (!disposed) setStartupError(`配置存储不可用：${errorMessage(cause)}。处理后请重新启动应用。`);
+    });
+    return () => { disposed = true; };
+  }, []);
 
   useEffect(() => {
     pointerStart.current = null;
     draggingStarted.current = false;
   }, [state.hidden]);
+
+  useEffect(() => {
+    const reset = () => { pointerStart.current = null; draggingStarted.current = false; };
+    window.addEventListener("blur", reset);
+    return () => window.removeEventListener("blur", reset);
+  }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || pointerStart.current) {
@@ -48,7 +64,14 @@ export default function PetWindow() {
     }
 
     draggingStarted.current = true;
-    void Promise.resolve(getCurrentWindow().startDragging()).catch(fail);
+    // 原生拖动可能接管并吞掉 pointerup；结束后不能残留旧指针。
+    const activePointer = start;
+    void getCurrentWindow().startDragging().catch(fail).finally(() => {
+      if (pointerStart.current === activePointer) {
+        pointerStart.current = null;
+        draggingStarted.current = false;
+      }
+    });
   };
 
   const resetPointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -76,14 +99,15 @@ export default function PetWindow() {
       <button
         className="pet-visibility"
         data-pet-interactive
-        disabled={pending || state.revision < 0}
-        onClick={() => { void toggleHidden(); }}
+        disabled={pending || (state.revision < 0 && !error)}
+        onClick={() => { void (state.revision < 0 ? retry() : toggleHidden()); }}
         title={error || undefined}
         aria-description={error || undefined}
         style={error ? { color: "#b91c1c" } : undefined}
       >
-        {state.hidden ? "显示宠窗" : "隐藏宠窗"}
+        {state.revision < 0 ? (error ? "重试连接" : "正在连接…") : state.hidden ? "显示宠窗" : "隐藏宠窗"}
       </button>
+      {(error || startupError) && !state.hidden && <div className="pet-error" data-pet-interactive role="alert">{error || startupError}</div>}
       {!state.hidden && <div
         data-pet-interactive
         aria-label="颜文字桌宠"
@@ -93,7 +117,7 @@ export default function PetWindow() {
         onPointerMove={handlePointerMove}
         onPointerUp={resetPointer}
         role="img"
-        style={{ cursor: "grab", fontSize: 48, lineHeight: 1, touchAction: "none" }}
+        className="pet-face"
       >
         (・ω・)
       </div>}

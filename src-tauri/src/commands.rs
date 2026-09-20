@@ -1,4 +1,275 @@
 use crate::pet_region::{self, Rect};
+
+use crate::{
+    error::{parse_id, AppError, AppResult},
+    runtime::{Runtime, Store},
+};
+use tauri::{State, WebviewWindow};
+
+#[tauri::command]
+pub async fn get_current_context(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<crate::persona::Context> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| {
+        crate::persona::context(&s.connection, s.context_revision)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn get_weather_settings(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<crate::config::WeatherSettings> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| {
+        crate::config::get_weather(&s.connection)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn save_weather_settings(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    input: crate::config::WeatherInput,
+) -> AppResult<crate::config::WeatherSettings> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), move |s, p| {
+        crate::config::save_weather(&mut s.connection, input, p)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn test_provider_connection(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let config = storage(runtime.inner().clone(), move |s, p| {
+        crate::providers::connection_test_config(&s.connection, id, p)
+    })
+    .await?;
+    crate::providers::test_connection(config).await
+}
+
+fn authorize(window: &WebviewWindow) -> AppResult<()> {
+    if window.label() != "main" {
+        return Err(AppError::new("PERMISSION_DENIED", "此窗口无权管理应用配置"));
+    }
+    Ok(())
+}
+async fn storage<T: Send + 'static>(
+    runtime: Runtime,
+    action: impl FnOnce(&mut Store, &dyn crate::platform::contracts::SecretProtector) -> AppResult<T>
+        + Send
+        + 'static,
+) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(move || runtime.read(action))
+        .await
+        .map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn get_configuration_status(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<()> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |_, _| Ok(())).await
+}
+#[tauri::command]
+pub async fn get_settings(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<crate::config::Settings> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| {
+        crate::config::get(&s.connection)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn save_settings(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    changes: crate::config::Settings,
+) -> AppResult<crate::config::Settings> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::config::save(&mut s.connection, changes)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_providers(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<Vec<crate::providers::Provider>> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| {
+        crate::providers::list(&s.connection)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn create_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    input: crate::providers::ProviderInput,
+) -> AppResult<crate::providers::Provider> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), move |s, p| {
+        crate::providers::save(&mut s.connection, None, input, p)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn update_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+    input: crate::providers::ProviderInput,
+) -> AppResult<crate::providers::Provider> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |s, p| {
+        crate::providers::save(&mut s.connection, Some(id), input, p)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn list_personas(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<Vec<crate::persona::Persona>> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| {
+        crate::persona::list(&s.connection)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn create_persona(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    input: crate::persona::PersonaInput,
+) -> AppResult<crate::persona::Persona> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::persona::save(&mut s.connection, None, input)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn update_persona(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+    input: crate::persona::PersonaInput,
+) -> AppResult<crate::persona::Persona> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::persona::save(&mut s.connection, Some(id), input)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::providers::delete(&mut s.connection, id)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn set_active_chat_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::providers::select(&mut s.connection, Some(id), false)
+    })
+    .await
+}
+#[tauri::command]
+pub async fn set_memory_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: Option<String>,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::providers::select(&mut s.connection, id, true)
+    })
+    .await
+}
+async fn change_persona(
+    app: AppHandle,
+    runtime: Runtime,
+    id: i64,
+    delete: bool,
+) -> AppResult<crate::persona::Context> {
+    let (context, changed) = storage(runtime, move |s, _| {
+        let before = crate::persona::context(&s.connection, s.context_revision)?;
+        if delete {
+            crate::persona::delete(&mut s.connection, id)?;
+        } else {
+            crate::persona::select(&mut s.connection, id)?;
+        }
+        let mut after = crate::persona::context(&s.connection, s.context_revision)?;
+        let changed =
+            before.persona_id != after.persona_id || before.session_id != after.session_id;
+        if changed {
+            s.context_revision += 1;
+            after.context_revision = s.context_revision;
+        }
+        Ok((after, changed))
+    })
+    .await?;
+    // 事务已提交；窗口可通过列表重新获取权威当前项。
+    if changed && app.emit("window_context_changed", &context).is_err() {
+        eprintln!("上下文变化通知发送失败，请刷新窗口");
+    }
+    Ok(context)
+}
+#[tauri::command]
+pub async fn set_active_persona(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<crate::persona::Context> {
+    authorize(&window)?;
+    change_persona(app, runtime.inner().clone(), parse_id(&id)?, false).await
+}
+#[tauri::command]
+pub async fn delete_persona(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<crate::persona::Context> {
+    authorize(&window)?;
+    change_persona(app, runtime.inner().clone(), parse_id(&id)?, true).await
+}
+
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager};
@@ -159,8 +430,10 @@ mod tests {
     }
     #[test]
     fn old_regions_are_rejected_after_mode_changes() {
-        let mut state = PetState::default();
-        state.region = Some(vec![[1, 2, 3, 4]]);
+        let mut state = PetState {
+            region: Some(vec![[1, 2, 3, 4]]),
+            ..Default::default()
+        };
         state.commit_hidden(true, Some(LogicalSize::new(320.0, 240.0)));
         assert!(!state.accepts_region(0));
         assert!(state.accepts_region(1));

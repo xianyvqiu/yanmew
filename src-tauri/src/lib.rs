@@ -1,6 +1,14 @@
 use std::io;
 mod commands;
+mod config;
+mod crypto;
+mod db;
+mod error;
+mod persona;
 mod pet_region;
+mod platform;
+mod providers;
+mod runtime;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -23,12 +31,35 @@ pub(crate) fn show_pet_window(app: &AppHandle) -> Result<(), Box<dyn std::error:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime = runtime::Runtime::initialize(
+        platform::windows::paths::application_paths(),
+        std::sync::Arc::new(platform::windows::secrets::Dpapi),
+    );
     tauri::Builder::default()
+        .manage(runtime)
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::get_pet_window_state,
             commands::set_pet_hidden,
-            commands::update_pet_regions
+            commands::update_pet_regions,
+            commands::get_configuration_status,
+            commands::get_current_context,
+            commands::get_settings,
+            commands::get_weather_settings,
+            commands::save_weather_settings,
+            commands::save_settings,
+            commands::list_providers,
+            commands::test_provider_connection,
+            commands::create_provider,
+            commands::update_provider,
+            commands::delete_provider,
+            commands::set_active_chat_provider,
+            commands::set_memory_provider,
+            commands::list_personas,
+            commands::create_persona,
+            commands::update_persona,
+            commands::delete_persona,
+            commands::set_active_persona
         ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "显示宠窗", true, None::<&str>)?;
