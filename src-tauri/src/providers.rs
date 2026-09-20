@@ -31,54 +31,26 @@ pub fn connection_test_config(
         api_key: key.map(|v| protector.unprotect(&v)).transpose()?,
     })
 }
-pub async fn test_connection(config: ConnectionTest) -> AppResult<()> {
-    validate_url(&config.base_url)?;
-    let failed = || {
-        AppError::new(
-            "PROVIDER_UNAVAILABLE",
-            "连接测试失败，请检查接口地址、网络和模型配置",
-        )
-    };
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| failed())?;
-    let mut request=client.post(format!("{}/chat/completions",config.base_url.trim_end_matches('/'))).json(&serde_json::json!({"model":config.model,"messages":[{"role":"user","content":"请回复 OK"}],"stream":false}));
-    if let Some(key) = config.api_key {
-        request = request.bearer_auth(key);
-    }
-    let mut response = request.send().await.map_err(|_| failed())?;
-    if !response.status().is_success() {
-        return Err(AppError::new(
-            "PROVIDER_UNAVAILABLE",
-            format!(
-                "提供商返回 HTTP {}，请检查密钥、模型权限及服务状态",
-                response.status().as_u16()
+pub async fn test_connection(
+    client: &crate::ai::client::AiClient,
+    config: ConnectionTest,
+) -> AppResult<()> {
+    let cancel = crate::state::Cancellation::default();
+    cancel
+        .wait(
+            std::time::Duration::from_secs(30),
+            client.complete(
+                &config,
+                &crate::ai::provider::GenerateRequest {
+                    messages: vec![crate::ai::provider::Message::new("user", "请回复 OK")],
+                    max_tokens: 32,
+                    tools: vec![],
+                    json: false,
+                },
+                &cancel,
             ),
-        ));
-    }
-    // 不读取无限响应，也不把上游错误正文（可能含凭据）传给前端。
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| failed())? {
-        if body.len() + chunk.len() > 262144 {
-            return Err(AppError::new("PROVIDER_UNAVAILABLE", "连接测试响应过大"));
-        }
-        body.extend_from_slice(&chunk);
-    }
-    let value: serde_json::Value = serde_json::from_slice(&body)
-        .map_err(|_| AppError::new("PROVIDER_UNAVAILABLE", "提供商未返回有效的 JSON 回复"))?;
-    if value
-        .pointer("/choices/0/message/content")
-        .and_then(|v| v.as_str())
-        .is_none_or(|v| v.trim().is_empty())
-    {
-        return Err(AppError::new(
-            "PROVIDER_UNAVAILABLE",
-            "提供商未返回有效的聊天内容，请检查模型与接口兼容性",
-        ));
-    }
+        )
+        .await?;
     Ok(())
 }
 
@@ -248,7 +220,7 @@ mod tests {
         for (status, body, success) in [
             (
                 "200 OK",
-                r#"{"choices":[{"message":{"content":"OK"}}]}"#,
+                r#"{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}]}"#,
                 true,
             ),
             ("200 OK", r#"{"choices":[]}"#, false),
@@ -267,11 +239,15 @@ mod tests {
                     .starts_with("POST /v1/chat/completions "));
                 write!(stream,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
             });
-            let result = tauri::async_runtime::block_on(test_connection(ConnectionTest {
-                base_url: format!("http://{address}/v1"),
-                model: "fake-model".into(),
-                api_key: None,
-            }));
+            let client = crate::ai::client::AiClient::new(Default::default()).unwrap();
+            let result = tauri::async_runtime::block_on(test_connection(
+                &client,
+                ConnectionTest {
+                    base_url: format!("http://{address}/v1"),
+                    model: "fake-model".into(),
+                    api_key: None,
+                },
+            ));
             assert_eq!(result.is_ok(), success);
             if let Err(e) = result {
                 assert!(!e.message.contains("private upstream"));

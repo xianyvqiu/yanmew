@@ -1,0 +1,234 @@
+use crate::{
+    ai::{
+        client::AiClient,
+        provider::{Choice, Delta, Finish, GenerateRequest, Message},
+        streaming::protocol,
+    },
+    error::{AppError, AppResult},
+    expressions::validate_expression,
+    providers::{self, ConnectionTest},
+    runtime::Runtime,
+    state::RequestLease,
+};
+use rusqlite::OptionalExtension;
+use serde::{Deserialize, Serialize};
+
+/// 只能由后端读取权威数据后构造；不是 Tauri 命令输入，也不序列化密钥。
+pub struct PreparedReply {
+    persona_id: i64,
+    session_id: i64,
+    context_revision: u64,
+    prompt: String,
+    config: ConnectionTest,
+    messages: Vec<Message>,
+    lease: RequestLease,
+}
+pub fn prepare_reply(
+    runtime: &Runtime,
+    persona_id: i64,
+    session_id: i64,
+    context_revision: u64,
+    input: String,
+) -> AppResult<PreparedReply> {
+    if input.trim().is_empty() {
+        return Err(AppError::validation("input", "消息不能为空"));
+    }
+    runtime.read(|s,p| {
+        let context=crate::persona::context(&s.connection,s.context_revision)?;
+        if context.persona_id!=persona_id.to_string() || context.session_id!=Some(session_id.to_string()) || context.context_revision!=context_revision {return Err(AppError::new("CONTEXT_CHANGED","当前人设或会话已经改变，请重新发送"));}
+        let prompt=s.connection.query_row("SELECT p.prompt FROM sessions s JOIN personas p ON p.id=s.persona_id WHERE s.id=?1 AND p.id=?2",[session_id,persona_id],|r|r.get::<_,String>(0)).optional()?.ok_or_else(AppError::not_found)?;
+        if s.connection.query_row("SELECT EXISTS(SELECT 1 FROM travels WHERE session_id=?1 AND status='away')",[session_id],|r|r.get::<_,bool>(0))? {return Err(AppError::new("VALIDATION_ERROR","当前人设正在出门，只能按出行规则写信"));}
+        let provider_id=s.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请先配置当前聊天提供商"))?;
+        let config=providers::connection_test_config(&s.connection,provider_id,p)?;
+        let count:usize=crate::config::get(&s.connection)?["recent_message_count"].parse().map_err(|_|AppError::storage())?;
+        let mut stmt=s.connection.prepare("SELECT role,content FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2")?;
+        let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message{role:r.get(0)?,content:r.get(1)?}))?.collect::<Result<Vec<_>,_>>()?;
+        messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input));
+        let lease=runtime.requests.start(format!("chat:{session_id}"),persona_id)?;
+        Ok(PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease})
+    })
+}
+#[derive(Serialize, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ReplyEventKind {
+    Expression { expression: String },
+    Text { text: String },
+    Finished { finish: Finish },
+    Cancelled,
+    Failed { code: String, message: String },
+}
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyEvent {
+    pub request_id: String,
+    pub persona_id: String,
+    pub session_id: String,
+    pub context_revision: u64,
+    pub seq: u64,
+    #[serde(flatten)]
+    pub kind: ReplyEventKind,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Expression {
+    expression: String,
+}
+
+/// 本阶段只负责生成与事件；阶段 5 的回合服务接收结果后按实际终态落库。
+pub async fn run_reply(
+    client: &AiClient,
+    prepared: PreparedReply,
+    mut sink: impl FnMut(ReplyEvent) -> AppResult<()>,
+) -> AppResult<Choice> {
+    let mut seq = 0;
+    let mut emit = |kind| {
+        seq += 1;
+        sink(ReplyEvent {
+            request_id: prepared.lease.id.to_string(),
+            persona_id: prepared.persona_id.to_string(),
+            session_id: prepared.session_id.to_string(),
+            context_revision: prepared.context_revision,
+            seq,
+            kind,
+        })
+    };
+    let result:AppResult<Choice>=async {
+        let expression_request=GenerateRequest{messages:vec![Message::new("system","只返回 JSON：{\"expression\":\"颜文字\"}。生成符合当前人设和对话的单行颜文字，不解释；最多 14 个半角宽度，非 ASCII 字符按 2 计算。"),Message::new("user",format!("人设：{}\n用户消息：{}",prepared.prompt,prepared.messages.last().map(|m|m.content.as_str()).unwrap_or("")))],max_tokens:256,tools:vec![],json:true};
+        let expression:Expression=client.structured(&prepared.config,&expression_request,&prepared.lease.cancel,|v:&Expression|validate_expression(&v.expression)).await?;
+        prepared.lease.cancel.check()?;emit(ReplyEventKind::Expression{expression:expression.expression})?;
+        let request=GenerateRequest{messages:prepared.messages,max_tokens:4096,tools:vec![],json:false};
+        let mut choices=client.stream(&prepared.config,&request,&prepared.lease.cancel,|delta| {
+            match delta {Delta::Text{choice_index:0,text}=>emit(ReplyEventKind::Text{text}),_=>Err(protocol())}
+        }).await?;
+        if choices.len()!=1 {return Err(protocol());}
+        let choice=choices.remove(0);
+        if choice.index!=0 || choice.finish==Finish::ToolCalls || (choice.finish==Finish::Stop && choice.content.trim().is_empty()) {return Err(protocol());}
+        prepared.lease.cancel.check()?;Ok(choice)
+    }.await;
+    match result {
+        Ok(choice) => {
+            emit(ReplyEventKind::Finished {
+                finish: choice.finish.clone(),
+            })?;
+            Ok(choice)
+        }
+        Err(error) => {
+            let kind = if error.code == "CANCELLED" {
+                ReplyEventKind::Cancelled
+            } else {
+                ReplyEventKind::Failed {
+                    code: error.code.into(),
+                    message: error.message.clone(),
+                }
+            };
+            let _ = emit(kind);
+            Err(error)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::tests::{client, finish_event, text_event, Response, Server};
+    use serde_json::json;
+    #[test]
+    fn expression_precedes_text_and_one_terminal_has_monotonic_events() {
+        tauri::async_runtime::block_on(async {
+            let server = Server::new(vec![
+                Response::json(json!({"expression":"(^_^)"})),
+                Response::sse(&(text_event("你好") + &text_event("喵") + &finish_event("stop"))),
+            ]);
+            let runtime = crate::runtime::test_runtime(&server.url);
+            let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
+            assert!(prepare_reply(&runtime, 1, 1, 0, "repeat".into()).is_err());
+            let mut events = vec![];
+            let choice = run_reply(&client(), prepared, |event| {
+                events.push(event);
+                Ok(())
+            })
+            .await
+            .unwrap();
+            assert_eq!(choice.content, "你好喵");
+            assert!(matches!(events[0].kind, ReplyEventKind::Expression { .. }));
+            assert!(matches!(
+                events.last().unwrap().kind,
+                ReplyEventKind::Finished {
+                    finish: Finish::Stop
+                }
+            ));
+            for (i, event) in events.iter().enumerate() {
+                assert_eq!(event.seq, i as u64 + 1);
+                assert_eq!(event.request_id, events[0].request_id);
+            }
+            let requests = server.requests.lock().unwrap();
+            assert_eq!(requests[0]["max_tokens"], 256);
+            assert_eq!(requests[1]["max_tokens"], 4096);
+            drop(requests);
+            assert_eq!(
+                runtime
+                    .read(|s, _| Ok(s.connection.query_row(
+                        "SELECT count(*) FROM messages",
+                        [],
+                        |r| r.get::<_, i64>(0)
+                    )?))
+                    .unwrap(),
+                0
+            );
+            server.finish();
+        });
+    }
+    #[test]
+    fn cancelling_after_expression_sends_no_body_request() {
+        tauri::async_runtime::block_on(async {
+            let server = Server::new(vec![Response::json(json!({"expression":"(^_^)"}))]);
+            let runtime = crate::runtime::test_runtime(&server.url);
+            let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
+            let cancel = prepared.lease.cancel.clone();
+            let mut kinds = vec![];
+            let error = run_reply(&client(), prepared, |event| {
+                if matches!(event.kind, ReplyEventKind::Expression { .. }) {
+                    cancel.cancel();
+                }
+                kinds.push(event.kind);
+                Ok(())
+            })
+            .await
+            .unwrap_err();
+            assert_eq!(error.code, "CANCELLED");
+            assert_eq!(kinds.len(), 2);
+            assert!(matches!(kinds[1], ReplyEventKind::Cancelled));
+            assert_eq!(server.requests.lock().unwrap().len(), 1);
+            server.finish();
+        });
+    }
+    #[test]
+    fn invalid_context_is_rejected_before_network_and_stream_failure_is_terminal() {
+        tauri::async_runtime::block_on(async {
+            let server = Server::new(vec![
+                Response::json(json!({"expression":"(^_^)"})),
+                Response::sse(&text_event("部分回复")),
+            ]);
+            let runtime = crate::runtime::test_runtime(&server.url);
+            assert!(prepare_reply(&runtime, 1, 1, 99, "hi".into()).is_err());
+            assert!(prepare_reply(&runtime, 2, 1, 0, "hi".into()).is_err());
+            let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
+            let mut events = vec![];
+            assert!(run_reply(&client(), prepared, |event| {
+                events.push(event);
+                Ok(())
+            })
+            .await
+            .is_err());
+            assert!(matches!(
+                events.last().unwrap().kind,
+                ReplyEventKind::Failed { .. }
+            ));
+            assert!(!events
+                .iter()
+                .any(|e| matches!(e.kind, ReplyEventKind::Finished { .. })));
+            assert!(prepare_reply(&runtime, 1, 1, 0, "retry".into()).is_ok());
+            server.finish();
+        });
+    }
+}

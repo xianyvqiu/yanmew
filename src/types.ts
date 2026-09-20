@@ -16,6 +16,7 @@ export type Persona = {
   isActive: boolean; isBuiltin: boolean; expressions: Record<string, unknown> | null;
 };
 export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean };
+export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type NumericSettingKey =
   | "hungry_minutes" | "bored_minutes" | "sleep_idle_minutes" | "sleep_min_minutes" | "sleep_max_minutes"

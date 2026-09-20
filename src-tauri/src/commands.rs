@@ -7,6 +7,32 @@ use crate::{
 use tauri::{State, WebviewWindow};
 
 #[tauri::command]
+pub async fn generate_expressions(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<crate::expressions::ExpressionLibrary> {
+    authorize(&window)?;
+    let result =
+        crate::expressions::generate_persona_expressions(runtime.inner().clone(), parse_id(&id)?)
+            .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
+}
+#[tauri::command]
+pub async fn cancel_expression_generation(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    runtime.requests.cancel_key(&format!("expressions:{id}"));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_current_context(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,
@@ -54,7 +80,7 @@ pub async fn test_provider_connection(
         crate::providers::connection_test_config(&s.connection, id, p)
     })
     .await?;
-    crate::providers::test_connection(config).await
+    crate::providers::test_connection(&runtime.ai.clone()?, config).await
 }
 
 fn authorize(window: &WebviewWindow) -> AppResult<()> {
@@ -140,8 +166,13 @@ pub async fn update_provider(
 ) -> AppResult<crate::providers::Provider> {
     authorize(&window)?;
     let id = parse_id(&id)?;
+    let requests = runtime.requests.clone();
     storage(runtime.inner().clone(), move |s, p| {
-        crate::providers::save(&mut s.connection, Some(id), input, p)
+        let result = crate::providers::save(&mut s.connection, Some(id), input, p)?;
+        if result.is_active {
+            requests.cancel_all();
+        }
+        Ok(result)
     })
     .await
 }
@@ -160,14 +191,51 @@ pub async fn list_personas(
 #[tauri::command]
 pub async fn create_persona(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     input: crate::persona::PersonaInput,
 ) -> AppResult<crate::persona::Persona> {
     authorize(&window)?;
-    storage(runtime.inner().clone(), move |s, _| {
+    let persona = storage(runtime.inner().clone(), move |s, _| {
         crate::persona::save(&mut s.connection, None, input)
     })
-    .await
+    .await?;
+    let id = parse_id(&persona.id)?;
+    let available = storage(runtime.inner().clone(), |s, _| {
+        Ok(s.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM providers WHERE is_active=1)",
+            [],
+            |r| r.get::<_, bool>(0),
+        )?)
+    })
+    .await;
+    let available = match available {
+        Ok(value) => value,
+        Err(error) => {
+            let _ = app.emit(
+                "expression_generation_failed",
+                serde_json::json!({"personaId":id.to_string(),"error":error}),
+            );
+            false
+        }
+    };
+    if available {
+        let runtime = runtime.inner().clone();
+        tauri::async_runtime::spawn(async move {
+            match crate::expressions::generate_persona_expressions(runtime, id).await {
+                Ok(_) => {
+                    let _ = app.emit("configuration_changed", ());
+                }
+                Err(error) => {
+                    let _ = app.emit(
+                        "expression_generation_failed",
+                        serde_json::json!({"personaId":id.to_string(),"error":error}),
+                    );
+                }
+            }
+        });
+    }
+    Ok(persona)
 }
 #[tauri::command]
 pub async fn update_persona(
@@ -179,8 +247,11 @@ pub async fn update_persona(
 ) -> AppResult<crate::persona::Persona> {
     authorize(&window)?;
     let id = parse_id(&id)?;
+    let requests = runtime.requests.clone();
     let persona = storage(runtime.inner().clone(), move |s, _| {
-        crate::persona::save(&mut s.connection, Some(id), input)
+        let result = crate::persona::save(&mut s.connection, Some(id), input)?;
+        requests.cancel_persona(id);
+        Ok(result)
     })
     .await?;
     let _ = app.emit("configuration_changed", ());
@@ -208,8 +279,18 @@ pub async fn set_active_chat_provider(
 ) -> AppResult<()> {
     authorize(&window)?;
     let id = parse_id(&id)?;
+    let requests = runtime.requests.clone();
     storage(runtime.inner().clone(), move |s, _| {
-        crate::providers::select(&mut s.connection, Some(id), false)
+        let same = s.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM providers WHERE id=?1 AND is_active=1)",
+            [id],
+            |r| r.get::<_, bool>(0),
+        )?;
+        crate::providers::select(&mut s.connection, Some(id), false)?;
+        if !same {
+            requests.cancel_all();
+        }
+        Ok(())
     })
     .await
 }
@@ -232,10 +313,12 @@ async fn change_persona(
     id: i64,
     delete: bool,
 ) -> AppResult<crate::persona::Context> {
+    let requests = runtime.requests.clone();
     let (context, changed) = storage(runtime, move |s, _| {
         let before = crate::persona::context(&s.connection, s.context_revision)?;
         if delete {
             crate::persona::delete(&mut s.connection, id)?;
+            requests.cancel_persona(id);
         } else {
             crate::persona::select(&mut s.connection, id)?;
         }
@@ -243,6 +326,7 @@ async fn change_persona(
         let changed =
             before.persona_id != after.persona_id || before.session_id != after.session_id;
         if changed {
+            requests.cancel_persona(parse_id(&before.persona_id)?);
             s.context_revision += 1;
             after.context_revision = s.context_revision;
         }

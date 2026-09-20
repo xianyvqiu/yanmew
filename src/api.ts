@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ExpressionLibrary } from "./types";
 import type { CurrentContext, Persona, PersonaInput, Provider, ProviderInput, RecordId, Settings, WeatherInput, WeatherSettings } from "./types";
 
 export const configurationApi = {
@@ -17,6 +18,8 @@ export const configurationApi = {
   setMemoryProvider: (id: RecordId | null) => invoke<void>("set_memory_provider", { id }),
   listPersonas: () => invoke<Persona[]>("list_personas"),
   createPersona: (input: PersonaInput) => invoke<Persona>("create_persona", { input }),
+  generateExpressions: (id: RecordId) => invoke<ExpressionLibrary>("generate_expressions", { id }),
+  cancelExpressionGeneration: (id: RecordId) => invoke<void>("cancel_expression_generation", { id }),
   updatePersona: (id: RecordId, input: PersonaInput) => invoke<Persona>("update_persona", { id, input }),
   deletePersona: (id: RecordId) => invoke<CurrentContext>("delete_persona", { id }),
   setPersona: (id: RecordId) => invoke<CurrentContext>("set_active_persona", { id }),

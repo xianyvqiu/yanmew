@@ -1,14 +1,18 @@
 use std::io;
+pub mod ai;
+pub mod chat;
 mod commands;
 mod config;
 mod crypto;
 mod db;
 mod error;
+mod expressions;
 mod persona;
 mod pet_region;
 mod platform;
 mod providers;
 mod runtime;
+pub mod state;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -57,6 +61,8 @@ pub fn run() {
             commands::set_memory_provider,
             commands::list_personas,
             commands::create_persona,
+            commands::generate_expressions,
+            commands::cancel_expression_generation,
             commands::update_persona,
             commands::delete_persona,
             commands::set_active_persona
@@ -100,6 +106,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("启动颜喵失败")
+        .run(|app, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                app.state::<runtime::Runtime>().requests.shutdown();
+            }
+        });
 }

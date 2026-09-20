@@ -13,6 +13,8 @@ pub struct Store {
 pub struct Runtime {
     pub store: Arc<Mutex<AppResult<Store>>>,
     pub secrets: Arc<dyn SecretProtector>,
+    pub ai: AppResult<crate::ai::client::AiClient>,
+    pub requests: crate::state::RequestManager,
 }
 impl Runtime {
     pub fn initialize(paths: AppResult<AppPaths>, secrets: Arc<dyn SecretProtector>) -> Self {
@@ -25,6 +27,8 @@ impl Runtime {
         Self {
             store: Arc::new(Mutex::new(store)),
             secrets,
+            ai: crate::ai::client::AiClient::new(Default::default()),
+            requests: Default::default(),
         }
     }
     pub fn read<T>(
@@ -34,5 +38,39 @@ impl Runtime {
         let mut guard = self.store.lock().map_err(|_| AppError::storage())?;
         let store = guard.as_mut().map_err(|e| e.clone())?;
         action(store, self.secrets.as_ref())
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn test_runtime(url: &str) -> Runtime {
+    struct Secret;
+    impl SecretProtector for Secret {
+        fn protect(&self, value: &str) -> AppResult<String> {
+            Ok(value.into())
+        }
+        fn unprotect(&self, value: &str) -> AppResult<String> {
+            Ok(value.into())
+        }
+    }
+    let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+    crate::db::initialize(&mut connection).unwrap();
+    connection
+        .execute(
+            "INSERT INTO providers(name,base_url,model,is_active) VALUES('test',?1,'fake-model',1)",
+            [url],
+        )
+        .unwrap();
+    connection.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'测试','a','a')",[]).unwrap();
+    connection
+        .execute("INSERT INTO settings VALUES('current_session_id','1')", [])
+        .unwrap();
+    Runtime {
+        store: Arc::new(Mutex::new(Ok(Store {
+            connection,
+            context_revision: 0,
+        }))),
+        secrets: Arc::new(Secret),
+        ai: Ok(crate::ai::tests::client()),
+        requests: Default::default(),
     }
 }
