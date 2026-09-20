@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>颜喵 · 数据库完整类图</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif;color:#24324a;background:#f5f7fb}button,input,select{font:inherit}button,select,input{border:1px solid #d8e0ed;border-radius:8px;background:white;color:inherit;padding:7px 12px}button{cursor:pointer}button:hover{background:#edf2ff;border-color:#818cf8}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a5b4fc}header{padding:20px 26px 14px;background:white;border-bottom:1px solid #e2e8f0}h1{font-size:24px;margin:0;color:#172554}header p{margin:4px 0 12px;color:#64748b}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#search{width:220px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 370px;height:calc(100vh - 169px);min-height:480px}#viewport{overflow:auto;position:relative;touch-action:pan-x pan-y;background:radial-gradient(#dbe3f0 .8px,transparent .8px);background-size:18px 18px}#drawing{display:block;max-width:none}#drawing .card{cursor:pointer}#drawing .card:hover{filter:drop-shadow(0 4px 8px #bcc6da)}aside{background:white;border-left:1px solid #dbe3f0;padding:20px;overflow:auto}h2{font-size:19px;margin:0 0 4px}h3{font-size:15px;margin:24px 0 8px}p{margin:8px 0}code{font-family:Consolas,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:#f3f6fb;padding:12px;border-radius:8px}.tag{display:inline-block;border-radius:5px;background:#eef2ff;padding:2px 8px;color:#4338ca;font-size:12px}.muted{color:#64748b;font-size:12px}.relation{display:block;width:100%;text-align:left;margin:8px 0;padding:10px;font-size:12px;overflow-wrap:anywhere}.relation strong{color:#4338ca}.field{padding:8px 0;border-bottom:1px solid #eef2f7;font-size:12px}.field code{font-size:13px;color:#0f172a}.note{padding:12px;background:#eff6ff;border-radius:8px;font-size:12px}.status{margin-left:auto;color:#64748b;font-size:12px}a{color:#4338ca}details{margin-top:12px}summary{cursor:pointer;font-weight:600}.zoom{min-width:45px;text-align:center}.empty{padding:30px}#source{display:none}@media(max-width:850px){.layout{grid-template-columns:1fr;height:auto}#viewport{height:65vh}aside{height:55vh;border-top:1px solid #dbe3f0}header{padding:14px}.status{margin-left:0}h1{font-size:21px}}@media print{header,.toolbar,aside{display:none}.layout{display:block;height:auto}#viewport{overflow:visible;height:auto}#drawing{width:100%!important;height:auto!important}}
+</style>
+<header>
+<h1>颜喵 · 数据库完整类图</h1>
+<p>一个 SQLite 数据库 · 每张表一个类框 · 完整 V1 设计蓝图，非功能完成清单</p>
+<div class="toolbar">
+<select id="group" aria-label="业务模块"><option value="all">全库 · 30 张表</option></select>
+<input id="search" placeholder="搜索表名、中文名或字段" aria-label="搜索表或字段" list="tableNames"><datalist id="tableNames"></datalist>
+<button id="find">查找</button><button id="minus" aria-label="缩小">−</button><span class="zoom" id="zoomLabel"></span><button id="plus" aria-label="放大">＋</button><button id="fit">适应宽度</button>
+<label><input id="allEdges" type="checkbox" checked>全部连线</label>
+<button id="download">导出当前 SVG</button><span class="status" id="status"></span>
+</div>
+</header>
+<main class="layout"><div id="viewport"><svg id="drawing" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="数据库表字段及关系类图"></svg></div><aside id="detail"></aside></main>
+<div id="source">__SVG__</div>
+<script id="schemaData" type="application/json">__DATA__</script>
+<script>
+'use strict';
+const D=JSON.parse(document.getElementById('schemaData').textContent);
+const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let selected=null, scale=.8, width=1300, height=1000, shown=[], positions={};
+for(const g of D.groups){const o=document.createElement('option');o.value=g.name;o.textContent=g.name;$('group').append(o)}
+for(const t of Object.values(D.tables)){const o=document.createElement('option');o.value=t.name;o.label=t.title;$('tableNames').append(o)}
+function el(tag,attrs={}){const e=document.createElementNS(NS,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);return e}
+function text(x,y,value,size=16,color='#334155'){const e=el('text',{x,y,'font-size':size,fill:color,'font-family':'Microsoft YaHei,Arial,sans-serif'});e.textContent=value;return e}
+function relation(e){return e.logical?`${e.id} · 逻辑关联：${e.label}`:`${e.id} · ${e.child} (${e.cols.join(', ')}) → ${e.parent} (${e.refs.join(', ')}) · 子 ${e.child_many} : 父 ${e.parent_many} · DELETE ${e.delete} · UPDATE ${e.update}`}
+function render(){
+ const svg=$('drawing');svg.replaceChildren();
+ const src=$('source').querySelector('svg');svg.append(src.querySelector('defs').cloneNode(true));
+ const style=el('style');style.textContent='text{font-family:"Microsoft YaHei",Arial,sans-serif}.mono{font-family:Consolas,monospace}.card:hover rect{stroke-width:3}';svg.append(style);
+ const group=$('group').value;const groups=group==='all'?D.groups:D.groups.filter(g=>g.name===group);
+ shown=groups.flatMap(g=>g.tables);positions={};let y=60;const cols=group==='all'?4:2;width=cols*635+70;
+ svg.append(text(40,30,group==='all'?'全部表 · 按业务域排列':group,23,'#172554'));
+ for(const g of groups){svg.append(text(40,y+24,g.name,20,g.color));y+=50;
+  for(let start=0;start<g.tables.length;start+=cols){const row=g.tables.slice(start,start+cols);let rowH=0;
+   row.forEach((name,i)=>{const p=D.positions[name];positions[name]={x:40+i*635,y,w:p.w,h:p.h};rowH=Math.max(rowH,p.h)});y+=rowH+80;
+  }
+ }
+ height=y;svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.append(el('rect',{x:0,y:40,width,height:height-40,fill:'#f5f7fb',opacity:0}));
+ const edgeGroup=el('g');svg.append(edgeGroup);
+ const visibleEdges=D.edges.filter(e=>positions[e.child]&&positions[e.parent]&&($('allEdges').checked||e.child===selected||e.parent===selected));
+ visibleEdges.forEach((e,i)=>{
+  const a=positions[e.child],b=positions[e.parent],x1=a.x+a.w,y1=a.y+42,x2=b.x+b.w,y2=b.y+42,lane=Math.max(x1,x2)+12+(i%7)*5;
+  const path=el('path',{d:e.child===e.parent?`M${x1} ${y1} h34 v60 h-34`:`M${x1} ${y1} H${lane} V${y2} H${x2}`,fill:'none',stroke:e.logical?'#d97706':'#6366f1','stroke-width':2,'marker-end':'url(#arrow)',opacity:!selected||e.child===selected||e.parent===selected?0.8:0.15});
+  if(e.logical)path.setAttribute('stroke-dasharray','7 5');const title=el('title');title.textContent=relation(e);path.append(title);edgeGroup.append(path);edgeGroup.append(text(x1+4,y1-8,e.id,11,'#475569'));
+ });
+ for(const name of shown){const p=positions[name],old=D.positions[name],card=src.querySelector(`[data-table="${name}"]`).cloneNode(true);card.removeAttribute('id');card.setAttribute('transform',`translate(${p.x-old.x},${p.y-old.y})`);card.setAttribute('tabindex','0');card.setAttribute('role','button');card.setAttribute('aria-label',name+' '+D.tables[name].title);
+  if(selected){const related=D.edges.some(e=>(e.child===selected&&e.parent===name)||(e.parent===selected&&e.child===name));card.setAttribute('opacity',name===selected||related?1:.35);if(name===selected){const r=card.querySelector('rect');r.setAttribute('fill','#eef2ff');r.setAttribute('stroke-width',3)}}
+  card.addEventListener('click',()=>select(name,false));card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(name,false)}});svg.append(card);
+ }
+ $('status').textContent=`当前 ${shown.length} 张表 · ${D.edges.filter(e=>!e.logical).length} 组外键 / 全库`;
+ zoom();
+}
+function zoom(){scale=Math.max(.15,Math.min(2.5,scale));$('drawing').style.width=width*scale+'px';$('drawing').style.height=height*scale+'px';$('zoomLabel').textContent=Math.round(scale*100)+'%'}
+function fit(){scale=($('viewport').clientWidth-24)/width;zoom()}
+function select(name,scroll=true){selected=name;if(!shown.includes(name))$('group').value=D.tables[name].group;render();details(name);if(scroll){const p=positions[name];$('viewport').scrollTo({left:Math.max(0,p.x*scale-30),top:Math.max(0,p.y*scale-25),behavior:'smooth'})}}
+function details(name){
+ const t=D.tables[name],edges=D.edges.filter(e=>e.child===name||e.parent===name);
+ const fieldHTML=t.columns.map(c=>`<div class="field"><code>${escape(c.name)}</code><br>${escape(c.type||'FTS5 列')} · ${c.pk?'PK 第 '+c.pk+' 列 · ':''}${c.nn?'非空':'SQLite 允许 NULL'}${c.default!==null?' · 默认 '+escape(c.default):''}${c.comment?'<br><span class="muted">'+escape(c.comment)+'</span>':''}</div>`).join('');
+ $('detail').innerHTML=`<span class="tag">${escape(t.group)}</span><h2>${escape(t.title)}</h2><code>${name}</code><p class="muted">${t.columns.length} 个字段 · ${t.virtual?'FTS5 虚拟索引，可重建':'SQLite 业务表'}</p><div class="note">${t.virtual?'FTS 的隐式 rowid 对应 long_memories.id；session_id 为 UNINDEXED，标题和正文参加检索。':'类框中的 ? 表示 SQLite 允许 NULL。复合主键／外键按整组理解，不是多个独立关系。'}</div><h3>关联关系（点击跳转）</h3><div id="relations"></div><h3>字段详情</h3>${fieldHTML}<details><summary>唯一约束与查询索引 · ${t.indexes.length}</summary>${t.indexes.map(i=>'<pre>'+escape(i.sql||`${i.origin==='pk'?'PRIMARY KEY':'UNIQUE'} (${i.columns.join(', ')})`)+'</pre>').join('')||'<p>无普通表索引。</p>'}</details><details><summary>完整建表 SQL（含 CHECK）</summary><pre>${escape(t.ddl)}</pre></details>${t.triggers.length?'<details><summary>同步触发器 · '+t.triggers.length+'</summary>'+t.triggers.map(s=>'<pre>'+escape(s)+'</pre>').join('')+'</details>':''}<h3>读图说明</h3><p class="muted">实线／R：物理外键，子表指向父表。虚线／L：逻辑关联，不产生数据库级联。父端 1 或 0..1 由外键列空值约束判断；子端 0..1 或 0..* 由主键和非条件唯一约束判断，额外条件见索引。跨模块连线在全库视图中显示。</p><p class="muted">TEXT 主键在 SQLite 普通表中并不自动等于 NOT NULL；此图忠实反映建库脚本。业务输入还须由 Rust 校验。</p>`;
+ for(const e of edges){const other=e.child===name?e.parent:e.child,b=document.createElement('button');b.className='relation';b.innerHTML=`<strong>${escape(e.id+' · '+D.tables[other].title)}</strong><br>${escape(relation(e))}`;b.onclick=()=>select(other);$('relations').append(b)}
+ if(!edges.length)$('relations').textContent='独立表，无已列出的关联。';
+}
+function intro(){
+ $('detail').innerHTML=`<span class="tag">结构来源：db/schema.sql</span><h2>先选模块，再点表</h2><p>所有字段都在类框中。点击任意表，查看它的外键、唯一约束、默认值、CHECK 与完整建表语句。</p><div class="note">29 张业务表 + 1 张 FTS5 虚拟表；${D.edges.filter(e=>!e.logical).length} 组物理外键，${D.edges.filter(e=>e.logical).length} 组逻辑关联。SQLite 内部表与 FTS 影子表不属于业务表，语音规划表尚未纳入当前结构。</div><h3>怎样查看</h3><p>使用上方模块菜单缩小范围；搜索支持字段名。放大后可用滚动条或触控板移动。勾选“全部连线”查看当前模块所有关联，选中表时默认只显示相关连线。</p><h3>删除规则</h3><p><b>CASCADE</b>：删除父记录时删除子记录。<br><b>SET NULL</b>：子记录保留，引用置空。<br><b>RESTRICT</b>：存在引用时立即阻止删除。<br><b>NO ACTION</b>：本图外键未声明延迟检查，在语句结束时检查完整性。</p><h3>关键边界</h3><p>小游戏与钱包属于全局。出行记录是游记、信件和礼物的共同根节点，删除游记不会删除同次出行的信件或礼物。</p><p>删除会话须先按事务规则清理长期记忆，避免短期记忆来源的 RESTRICT 阻止级联。跨表同会话、状态转换等业务校验仍以数据库设计文档为准。</p><p class="muted">此页面完全离线，不依赖 CDN。索引及约束由 SQLite 实际解析；更改 schema 后运行生成脚本刷新。</p><details><summary>来源校验值 SHA-256</summary><pre>${D.sha256}</pre></details>`;
+}
+function search(){const q=$('search').value.trim().toLowerCase();if(!q)return;const candidates=Object.values(D.tables).filter(t=>t.name.toLowerCase().includes(q)||t.title.includes(q)||t.columns.some(c=>c.name.includes(q)));if(candidates.length===1){select(candidates[0].name);return}if(!candidates.length){$('detail').innerHTML='<h2>没有匹配结果</h2><p>尝试表名、中文名或字段名。</p>';return}$('detail').innerHTML='<h2>搜索结果</h2><p class="muted">点击一项定位。</p>';for(const t of candidates){const b=document.createElement('button');b.className='relation';b.textContent=t.title+' · '+t.name;b.onclick=()=>select(t.name);$('detail').append(b)}}
+ $('group').onchange=()=>{selected=null;render();fit();$('viewport').scrollTo(0,0);intro()};$('allEdges').onchange=render;$('plus').onclick=()=>{scale*=1.2;zoom()};$('minus').onclick=()=>{scale/=1.2;zoom()};$('fit').onclick=fit;$('find').onclick=search;$('search').onkeydown=e=>{if(e.key==='Enter')search()};
+ $('download').onclick=()=>{const clone=$('drawing').cloneNode(true);clone.removeAttribute('style');clone.setAttribute('width',width);clone.setAttribute('height',height);clone.setAttribute('xmlns',NS);const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='颜喵数据库类图-'+$('group').value+'.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+ $('group').value=D.groups[0].name;render();fit();intro();
+</script>
+</html>

@@ -11,5 +11,6 @@ Thumbs.db
 my_doc/
 data/
 AGENTS.md
-.worktrees/
 .superpowers/
+__pycache__/
+*.pyc

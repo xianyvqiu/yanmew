@@ -1,0 +1,388 @@
+classDiagram
+direction LR
+class providers {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT base_url
+  TEXT api_key_encrypted
+  TEXT model
+  INTEGER is_active
+  INTEGER memory_is_active
+}
+class embedding_providers {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT kind
+  TEXT base_url
+  TEXT api_key_encrypted
+  TEXT model
+  INTEGER is_builtin
+  INTEGER is_active
+}
+class personas {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT prompt
+  TEXT initial_prompt
+  INTEGER self_evolve_enabled
+  TEXT last_evolved_at
+  TEXT color
+  TEXT chat_bg_file
+  INTEGER chat_bg_opacity
+  INTEGER chat_bg_blur
+  INTEGER is_active
+  INTEGER is_builtin
+  TEXT expressions
+}
+class user_profiles {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT content
+  TEXT created_at
+  TEXT updated_at
+}
+class sessions {
+  <<table>>
+  INTEGER id PK
+  INTEGER persona_id FK
+  INTEGER user_profile_id FK
+  TEXT title
+  TEXT created_at
+  TEXT updated_at
+  INTEGER memory_revision
+  INTEGER craft_tier_1_used
+  INTEGER craft_tier_2_used
+  INTEGER craft_tier_3_used
+  INTEGER intimacy
+  TEXT last_return_at
+  INTEGER travel_trigger_remaining_seconds
+}
+class chat_rounds {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  TEXT status
+  TEXT created_at
+  TEXT completed_at
+}
+class messages {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER round_id FK
+  TEXT role
+  TEXT content
+  TEXT expression
+  TEXT created_at
+}
+class settings {
+  <<table>>
+  TEXT key PK
+  TEXT value
+}
+class short_memories {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER round_id FK
+  TEXT content
+  TEXT integration_state
+  TEXT created_at
+  TEXT updated_at
+}
+class long_memories {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  TEXT title
+  TEXT content
+  INTEGER source_count
+  INTEGER activated_by_round_id FK
+  TEXT created_at
+  TEXT updated_at
+}
+class long_memories_fts {
+  <<FTS5>>
+  FTS title
+  FTS content
+  FTS session_id
+}
+class long_memory_embeddings {
+  <<table>>
+  INTEGER long_memory_id PK FK
+  INTEGER session_id FK
+  TEXT model_key
+  INTEGER dimensions
+  BLOB vector
+  TEXT content_hash
+  TEXT updated_at
+}
+class long_memory_sources {
+  <<table>>
+  INTEGER long_memory_id PK FK
+  INTEGER short_memory_id PK FK
+  INTEGER source_order
+}
+class notebooks {
+  <<table>>
+  INTEGER session_id PK FK
+  TEXT content
+  TEXT updated_at
+}
+class reminders {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT kind
+  TEXT schedule
+  TEXT content
+  TEXT status
+  TEXT fire_at
+  TEXT source
+  TEXT created_at
+}
+class reminder_occurrences {
+  <<table>>
+  INTEGER id PK
+  INTEGER reminder_id FK
+  TEXT scheduled_at
+  TEXT status
+  TEXT delivery_state
+  TEXT completed_at
+  TEXT created_at
+}
+class user_state {
+  <<table>>
+  INTEGER id PK
+  INTEGER coins
+  TEXT updated_at
+}
+class game_plugins {
+  <<table>>
+  TEXT plugin_id PK
+  TEXT name
+  TEXT description
+  TEXT author
+  TEXT installed_version
+  TEXT api_version
+  INTEGER storage_version
+  TEXT source_type
+  TEXT package_path
+  TEXT package_sha256
+  TEXT repository
+  TEXT homepage
+  TEXT release_page
+  TEXT network_origins_json
+  INTEGER is_bundled
+  TEXT package_status
+  INTEGER is_enabled
+  TEXT installed_at
+  TEXT updated_at
+}
+class game_permissions {
+  <<table>>
+  TEXT plugin_id PK FK
+  TEXT permission PK
+  TEXT permission_scope PK
+  TEXT decision
+  TEXT plugin_version
+  TEXT decided_at
+}
+class game_plugin_settings {
+  <<table>>
+  TEXT plugin_id PK FK
+  TEXT setting_key PK
+  TEXT value_json
+  TEXT updated_at
+}
+class game_plugin_data {
+  <<table>>
+  TEXT plugin_id PK FK
+  TEXT data_key PK
+  TEXT value_json
+  INTEGER storage_version
+  TEXT updated_at
+}
+class game_runs {
+  <<table>>
+  INTEGER id PK
+  TEXT plugin_id
+  TEXT plugin_name
+  TEXT plugin_version
+  INTEGER wallet_permission_granted
+  TEXT status
+  TEXT outcome
+  TEXT details_json
+  INTEGER coin_delta
+  TEXT started_at
+  TEXT ended_at
+}
+class currency_ledger {
+  <<table>>
+  INTEGER id PK
+  INTEGER delta
+  TEXT reason
+  INTEGER ref_id
+  INTEGER game_run_id FK
+  TEXT plugin_id FK
+  TEXT plugin_version FK
+  TEXT plugin_display_reason
+  TEXT wallet_request_id
+  TEXT created_at
+}
+class travels {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  TEXT status
+  TEXT started_at
+  TEXT planned_return_at
+  TEXT actual_return_at
+  TEXT cancelled_at
+  TEXT midway_letter_at
+  TEXT midway_letter_state
+  TEXT return_letter_state
+  TEXT gift_state
+  TEXT journal_state
+  TEXT gift_kind
+  TEXT facts_state
+  TEXT destination
+  TEXT activities_json
+  INTEGER facts_version
+  TEXT facts_ready_at
+  TEXT gift_snapshot_json
+  TEXT created_at
+}
+class travel_journals {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER travel_id FK
+  TEXT title
+  TEXT content
+  TEXT created_at
+  TEXT updated_at
+}
+class accessories {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  TEXT name
+  TEXT display_text
+  TEXT description
+  INTEGER cost
+  TEXT source
+  INTEGER travel_id FK
+  INTEGER is_worn
+  TEXT created_at
+}
+class letters {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER travel_id FK
+  TEXT sender
+  TEXT content
+  INTEGER reply_to_id FK
+  INTEGER has_been_replied
+  TEXT reply_due_at
+  TEXT reply_state
+  TEXT letter_kind
+  INTEGER is_favorite
+  INTEGER is_read
+  TEXT created_at
+}
+class souvenirs {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER travel_id FK
+  TEXT content
+  TEXT note
+  INTEGER is_favorite
+  TEXT created_at
+}
+class festival_catalog {
+  <<table>>
+  INTEGER id PK
+  TEXT code
+  TEXT name
+  INTEGER year
+  TEXT calendar_type
+  INTEGER solar_month
+  INTEGER solar_day
+  INTEGER lunar_month
+  INTEGER lunar_day
+  INTEGER is_leap_month
+  TEXT solar_term
+  TEXT blessing
+  INTEGER is_memorial
+  TEXT note
+}
+class session_festivals {
+  <<table>>
+  INTEGER id PK
+  INTEGER session_id FK
+  INTEGER festival_id FK
+  TEXT kind
+  TEXT name
+  INTEGER year
+  TEXT calendar_type
+  INTEGER solar_month
+  INTEGER solar_day
+  INTEGER lunar_month
+  INTEGER lunar_day
+  INTEGER is_leap_month
+  TEXT blessing
+  TEXT note
+  TEXT source
+  TEXT created_at
+  TEXT updated_at
+}
+sessions "0..*" --> "0..1" user_profiles : R01 user_profile_id / SET NULL
+sessions "0..*" --> "1" personas : R02 persona_id / CASCADE
+chat_rounds "0..*" --> "1" sessions : R03 session_id / CASCADE
+messages "0..*" --> "0..1" chat_rounds : R04 round_id / CASCADE
+messages "0..*" --> "1" sessions : R05 session_id / CASCADE
+short_memories "0..1" --> "1" chat_rounds : R06 round_id / CASCADE
+short_memories "0..*" --> "1" sessions : R07 session_id / CASCADE
+long_memories "0..1" --> "1" chat_rounds : R08 activated_by_round_id / CASCADE
+long_memories "0..*" --> "1" sessions : R09 session_id / CASCADE
+long_memory_embeddings "0..*" --> "1" sessions : R10 session_id / CASCADE
+long_memory_embeddings "0..1" --> "1" long_memories : R11 long_memory_id / CASCADE
+long_memory_sources "0..1" --> "1" short_memories : R12 short_memory_id / RESTRICT
+long_memory_sources "0..*" --> "1" long_memories : R13 long_memory_id / CASCADE
+notebooks "0..1" --> "1" sessions : R14 session_id / CASCADE
+reminder_occurrences "0..*" --> "1" reminders : R15 reminder_id / CASCADE
+game_permissions "0..*" --> "1" game_plugins : R16 plugin_id / CASCADE
+game_plugin_settings "0..*" --> "1" game_plugins : R17 plugin_id / CASCADE
+game_plugin_data "0..*" --> "1" game_plugins : R18 plugin_id / CASCADE
+currency_ledger "0..*" --> "0..1" game_runs : R19 game_run_id / RESTRICT
+currency_ledger "0..*" --> "0..1" game_runs : R20 game_run_id, plugin_id, plugin_version / NO ACTION
+travels "0..*" --> "1" sessions : R21 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R22 travel_id / CASCADE
+travel_journals "0..*" --> "1" sessions : R23 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R24 travel_id, session_id / NO ACTION
+accessories "0..*" --> "0..1" travels : R25 travel_id / SET NULL
+accessories "0..*" --> "1" sessions : R26 session_id / CASCADE
+accessories "0..*" --> "0..1" travels : R27 travel_id, session_id / NO ACTION
+letters "0..*" --> "0..1" letters : R28 reply_to_id / SET NULL
+letters "0..*" --> "0..1" travels : R29 travel_id / SET NULL
+letters "0..*" --> "1" sessions : R30 session_id / CASCADE
+letters "0..*" --> "0..1" travels : R31 travel_id, session_id / NO ACTION
+souvenirs "0..*" --> "0..1" travels : R32 travel_id / SET NULL
+souvenirs "0..*" --> "1" sessions : R33 session_id / CASCADE
+souvenirs "0..*" --> "0..1" travels : R34 travel_id, session_id / NO ACTION
+session_festivals "0..*" --> "0..1" festival_catalog : R35 festival_id / SET NULL
+session_festivals "0..*" --> "1" sessions : R36 session_id / CASCADE
+settings ..> sessions : L01 logical
+game_runs ..> game_plugins : L02 logical
+currency_ledger ..> game_plugins : L03 logical
+currency_ledger ..> user_state : L04 logical
+currency_ledger ..> accessories : L05 logical
+long_memories_fts ..> long_memories : L06 logical
+long_memory_embeddings ..> embedding_providers : L07 logical
