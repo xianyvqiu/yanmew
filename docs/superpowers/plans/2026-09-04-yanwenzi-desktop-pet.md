@@ -230,6 +230,21 @@
 
 ### Task 4.1: 桌宠状态机核心
 
+先完成持久化底层，再接状态调度与宠窗交互，分别记录验收，不因仓储完成就标记整个阶段完成。
+
+- [x] `session_pet_states` 一会话一行，记录独立的饥饿/无互动有效毫秒数、本周期分支、睡眠结束时刻、最近操作时刻和状态版本；复用已有 SQLite 连接和事务。
+- [x] 数据库版本 1 到 2：升级前生成一致性备份，事务补表及现有会话初始记录；验证旧数据保留、失败回滚、新旧库结构一致、会话创建和删除联动。
+- [x] 仓储支持查询、有效时间检查点、点击/摸摸、喂食、分支保存和睡眠到期恢复。写入校验当前会话/上下文版本及状态版本，拒绝迟到、重复和出门中的互动；不复用 memory_revision。
+- [x] `pet.rs` 业务核心读取全局参数，以同一事务保存计时和分支；默认 45 分钟二选一，不同阈值先到先进入，已选分支不重抽，睡眠到期开始新周期。点击/摸摸/喂食与亲密度 +1 原子保存，纯唤醒不奖励。用注入时间和随机序列验证边界、失效上下文及失败回滚。
+- [x] 调度器使用排除系统暂停的单调时间，只累计当前会话有效运行区间，定期保存；人设切换和退出前结算旧区间。离线不补算饥饿/无聊，睡眠按保存的 UTC 结束时刻恢复。后续会话切换入口复用同一协调流程。
+- [x] 接入现有宠窗及人设切换入口；提供商错误独立管理，不写进会话桌宠状态、不因切换解除。
+- [x] 亲密度上限 999：互动原子封顶、数据库插入/更新保护、四档设置限制为 1–999 严格递增；版本 3 升级备份后截断旧超限值，验证失败回滚。
+- [ ] Windows 人工验收：系统挂起/恢复、拖动与点击穿透、多 DPI、退出后重启；自动测试不替代原生交互验收。
+
+当前实现边界：仓储、业务、控制器、每秒调度、Windows 时钟/随机源、启动恢复、人设切换协调和宠窗事件已接通。点击互动，右键菜单提供喂食/摸摸和亲密度数值；故障感叹号可展开错误并测试连接恢复。创建会话自动建状态，删除会话自动清理，首次运行不隐式创建会话。会话管理入口在阶段 5 接入，设置与聊天页面在后续窗口阶段接入；本阶段不实现无聊主动消息或游走。自动测试覆盖假时钟和故障，原生人工验收仍待完成。
+
+调度实现约定：平台层提供 UTC、排除系统暂停的有效单调时间及随机源，runtime 持锁采样并串行调用 `pet::advance`；互动命令先结算操作前区间，再调用 `pet::interact`。切换前结算旧上下文，切换后恢复目标睡眠并建立新锚点；退出前保存最后区间。前端不能传入累计增量、亲密度奖励或自行决定睡眠分支。保存失败不发布成功事件，重试不能重复累计；隐藏/拖动边界即使保存失败仍阻止跨区间空闲累计。上下文变化时旧增量不能投递给新会话。故障休眠状态独立于会话保存，定时循环不清除错误；只有配置有效提供商或显式连接测试成功才恢复，旧测试结果不能清除新错误。
+
 1. 分开保存上次喂食、最近互动、睡眠结束时刻、当前活动、主流程错误和出行状态；饥饿不使用互动时间代替喂食时间。
 2. 饥饿默认 120 分钟，无聊默认 45 分钟；睡眠持续时间默认 60–120 分钟，进入睡眠时只抽取一次。无互动入睡阈值 `sleep_idle_minutes` 默认 45 分钟，与无聊默认阈值相同，到点随机选择无聊或睡眠，用户可在全局“时间与桌宠”设置中修改；与睡眠持续时间分开保存。
 3. Dormant 只能由显式恢复流程解除；定时循环不覆盖它。出门、聊天/工具处理中和用户互动等约束按产品规格判断；一次循环只提交一次有效状态变化，不每秒重复弹同一气泡。
@@ -249,13 +264,15 @@
 
 **Files:** `src-tauri/src/sessions.rs`、`models.rs`、`commands.rs`、`lib.rs`。
 
-- [ ] 按 `db/schema.sql` 建立 `Session`、`ChatRound`、`Message` 模型；消息包含可空 `round_id`。
-- [ ] 提供会话新建、列表、标题更新和按 ID 顺序读取消息的仓储接口，所有操作验证会话归属。
-- [ ] 用户发送时在一个事务内建立 `pending` 回合、插入用户消息并更新会话时间与 `memory_revision`。
-- [ ] AI 正常完成时在一个事务内插入该回合唯一 AI 消息并把回合改为 `completed`；中断时按有无正文保存一次并标记 `interrupted`。
-- [ ] 无聊主动消息直接写入 `messages.round_id=NULL`，不创建回合。
-- [ ] 注册所需 Tauri 命令；验证同一回合不能插入两个相同角色、跨会话 round/message 关联被 Rust 拒绝。
-- [ ] 运行 `cargo check --manifest-path src-tauri/Cargo.toml`，通过后完成本任务验收。
+- [x] 按 `db/schema.sql` 建立 `Session`、`ChatRound`、`Message` 模型；消息包含可空 `round_id`。
+- [x] 提供会话新建、列表、切换、标题更新和按 ID 顺序分页读取消息的仓储接口，所有操作验证会话归属。
+- [x] 用户发送仓储入口在一个事务内建立 `pending` 回合、插入用户消息并更新会话时间与 `memory_revision`。
+- [x] AI 正常完成仓储入口在一个事务内插入该回合唯一 AI 消息并把回合改为 `completed`；中断时按有无正文保存一次并标记 `interrupted`。已完成或已中断终态重复提交只返回原结果。
+- [x] 无聊主动消息仓储入口直接写入 `messages.round_id=NULL`，不创建回合。
+- [x] 注册会话管理和历史查询 Tauri 命令；回合终态只暴露为 Rust 业务 API，不允许前端伪造。验证同会话只存在一个 pending、同一回合不能写两个相同角色、跨会话 round/message 写入被 Rust 拒绝。
+- [x] Rust 全量测试、Clippy 严格检查及前端构建通过，完成本任务验收。
+
+当前实现边界：`models.rs` 与 `sessions.rs` 已提供持久化服务；`list_sessions/create_session/set_active_session/rename_session/list_messages` 已注册并在 `api.ts` 封装。创建或切换会话先结算旧桌宠状态，在切换事务内取消旧会话已开始旅行和待回信，提交后取消旧聊天请求、递增上下文版本并恢复目标桌宠状态。启动把没有运行请求的遗留 pending 回合收束为 interrupted，一次恢复只递增一次版本。阶段 8 建立聊天窗口，阶段 9.8 才把已有 AI 流式服务与回合仓储串成完整发送流程；当前不提供可直接聊天的页面，也不把生成事件误称为已保存消息。会话删除及完整记忆级联回退仍按阶段 10 实现。
 
 ---
 ## 阶段 6：提醒系统
@@ -264,26 +281,31 @@
 
 ### Task 6.1: 提醒规则与每次触发记录
 
+当前实现边界（2026-09-28）：提醒规则 CRUD、日/周/月日期计算、在线调度、启动离线补偿、触发记录分页、展示确认、手动状态管理和汇总接口已接入 SQLite，并注册 Tauri 命令和前端 API。循环提醒跟随电脑当前时区，跳过不存在时刻，重复时刻只采用第一次。现有唯一后台循环先补偿再调度，提交后通知页面；queued/missed 未展示记录始终可重查。一次性最新记录在没有未来计划时与规则同步状态，操作旧记录不覆盖重新安排的计划。AI 润色、提醒页面/气泡、启动汇总 UI、聊天工具接入尚未完成，不能将阶段 6 整体标为完成。
+
 **Files:** `src-tauri/src/reminders.rs`、`models.rs`、`commands.rs`、`lib.rs`。
 
-- [ ] 从完整 schema 接入 reminders 与 reminder_occurrences 模型；提醒规则包含非空 name 和详情 content，触发记录保存 scheduled_at、status、delivery_state。
-- [ ] 实现规则 CRUD 和下一次时间计算。日/周/月规则统一本地日期计算、UTC 保存；月度不存在的日期跳过。重复规则 status 保持 pending，删除才永久停止。
+- [x] 从完整 schema 接入 reminders 与 reminder_occurrences 模型；提醒规则包含非空 name 和详情 content，触发记录保存 scheduled_at、status、delivery_state。
+- [x] 实现规则 CRUD 和下一次时间计算。日/周/月规则统一本地日期计算、UTC 保存；月度不存在的日期跳过。重复规则 status 保持 pending，删除才永久停止。
 - [ ] 在线调度事务：插入唯一 occurrence(queued) 并推进 fire_at；一次性 fire_at 可置 NULL，但原时间已经存到 occurrence。后台 AI 润色在事务外执行，失败固定回退为“`{提醒名}事件提醒：{提醒详情}{提醒时间}`”。
 - [ ] 重启先恢复已存在但尚未展示的 queued occurrence，再处理 missed 汇总；不得把已入队记录丢弃或重复创建。投递事件丢失时前端可主动查询，展示确认接口只更新 delivery_state。
-- [ ] 启动补偿先于常规循环：所有错过的一次性提醒分别写 missed occurrence；每个重复规则只为最近一次错过时间写一条 missed occurrence 并推进到未来，其余跳过。两者均用唯一约束避免重复。
-- [ ] 暴露 `get_missed_reminder_summary`、`ack_missed_reminder_summary`、`list_reminder_occurrences`、`update_reminder_occurrence_status` 和 `complete_reminder_occurrence`。完成重复提醒只改本次，完成一次性同时更新规则。
+- [x] 启动补偿先于常规循环：所有错过的一次性提醒分别写 missed occurrence；每个重复规则只为最近一次错过时间写一条 missed occurrence 并推进到未来，其余跳过。两者均用唯一约束避免重复。
+- [x] 暴露 `get_missed_reminder_summary`、`ack_missed_reminder_summary`、`list_reminder_occurrences`、`update_reminder_occurrence_status` 和 `complete_reminder_occurrence`。完成重复提醒只改本次，一次性仅最新记录且无未来计划时同步规则。
 - [ ] 前端启动后主动读取 missed 汇总，显示“你离开这段时间，{提醒名称1-n}过期了！”。确认展示后更新 delivery_state，避免下次启动重复弹出；未修改状态的记录继续保留在提醒页面。
 - [ ] 验证：启动时监听未就绪、多个一次性提醒、同一循环错过多次、汇总只展示一次、手动修改状态、重复点击完成、调度与补偿同时发生、月末无日期、删除规则级联记录。事务失败不推进游标。
 
 ### Task 6.2: 聊天提醒工具
 
-**Files:** `src-tauri/src/reminder_extract.rs`、`chat.rs`、`commands.rs`、`lib.rs`。
+**Files:** `src-tauri/src/reminder_extract.rs`、`reminder_extract/tests.rs`、`state.rs`、`lib.rs`；阶段 9 再通过 `ai/tool_registry.rs`、`ai/tool_loop.rs` 与 `chat.rs` 接入，不新增前端工具执行 command。
 
-- [ ] 提供 `create_reminder` function calling 工具，支持一次性及 daily/weekly/monthly 结构，输入上下文包含当前本地时间与时区。
-- [ ] 解析结果交由 Rust 校验日期、循环规则和内容；没有明确时间时请用户补充，不保存无法触发的空时间提醒。
-- [ ] 工具调用写入规则后返回 ID；阶段 9 工具循环注册该工具，前端设置页显示结果。不要依靠前端额外猜测用户消息是否要求提醒。
-- [ ] 数据库锁仅用于取配置和保存结果，不跨 AI await 持有；模型解析失败不写半成品。
-- [ ] 验证一次性、每天、每周和每月聊天创建，以及缺失时间、非法规则；执行 Rust 测试与编译。
+- [x] 提供 `create_reminder` function calling 工具定义与受限处理器，支持一次性及 daily/weekly/monthly；时间上下文函数提供当前本地时间、星期和 UTC 偏移。
+- [x] 解析结果交由 Rust 校验日期、循环规则和内容；没有明确时间时返回需补充时间的错误，不保存无法触发的空时间提醒。
+- [x] 复用提醒事务写入 `source=chat` 后返回真实 ID；同一请求的同一工具调用防重复执行，切换上下文或取消后拒绝新写入，提交后才通知页面。
+- [x] 数据库锁仅用于同步校验和保存结果，不跨 AI await 持有；模型解析失败不写半成品。
+- [x] 验证四种类型、缺失时间、非法规则、调用重复/冲突、取消、跨请求/跨会话及数据库失败；本地假模型验证 SSE 解析后真实落库。六项专项测试及 Rust 编译通过。
+- [ ] 阶段 9 工具循环注册该工具并加入时间上下文，前端设置页显示结果。普通聊天每个请求只建立一个处理器并跨轮保留；重说不注册写入工具；不要依靠前端猜测用户消息是否要求提醒。
+
+当前边界：后台处理器已完成，现有 `chat::run_reply` 仍使用无工具的传输流程，聊天 UI、工具结果回传模型及真实供应商语言理解尚未联调；不能称为已交付的聊天提醒交互。阶段 6.1 的 AI 润色与提醒界面也仍待接入。
 
 ---
 
@@ -306,6 +328,20 @@
 
 接口依据：[和风 API Host 配置](https://dev.qweather.com/docs/configuration/api-host/)、[身份认证](https://dev.qweather.com/docs/configuration/authentication/)。供应商接入时再次核对官方接口，不把第三方旧示例当作稳定契约。
 
+当前完成边界（阶段 7 后端）：
+
+- [x] `LocationSource` 平台端口、`location.rs` 门面及 Windows 实现。前台主线程发起权限请求，异步等待；授权和定位合计最多 30 秒，原生定位最多 20 秒，只接受最多 60 秒的系统位置缓存。取消同时取消原生操作。
+- [x] Open-Meteo `/v1/forecast` 获取 current，WMO 映射与 Unix 秒时间解析；失败后仅在 Host/Key 齐全时尝试和风 `/v7/weather/now`，按 `now.text` 解析和风描述，兼容分钟及秒精度观测时间。缺失温度保持 null。
+- [x] 每家服务最多 10 秒，连接最多 5 秒；拒绝重定向；解压后的响应最多 256 KiB；支持和风默认 Gzip；Key 仅位于请求头，不返回前端或错误信息。
+- [x] 运行期缓存携带经纬度、定位时间、来源、观测时间、接收时间。接收不超过 30 分钟且观测不超过 60 分钟为有效；时间回拨或超龄标记 stale。刷新失败有有效缓存标记 cached，无缓存标记 unavailable。位置仅使用实测坐标，不伪造城市名称。
+- [x] `get_weather` / `refresh_weather(contextRevision)` / `cancel_weather_refresh` 与 TypeScript 封装；请求租约随退出或上下文切换取消，提交前再次检查 revision；修改天气配置取消旧请求并清空缓存。
+- [x] 固定响应验证主服务、兜底、双失败、字段缺失、Gzip、拒绝定位、取消、旧上下文和缓存时效；不访问真实位置与在线服务。
+- [ ] 阶段 8 设置页接入定位授权、刷新/取消及状态显示；前端只接收当前 contextRevision 的结果，窗口关闭取消其发起的刷新。
+- [ ] 阶段 9 上下文服务读取天气快照并携带状态、来源和观测时间，不在每条聊天回复前等待天气刷新；stale/cached 不作为当前事实。
+- [ ] Windows 实机验证授权允许/拒绝、位置服务关闭、无定位硬件与真实网络。旧版和风 v7 官方已提示未来弃用，发布前复核支持情况；新版 v1 的时间语义需单独核对后迁移，不用请求时刻冒充观测时间。
+
+天气缓存是可重建外部资料，只驻留内存，不进数据库及备份，重启初始为 unavailable；用户配置与密钥仍按阶段 2 持久化，不新增数据库迁移。详细接口与状态见《实施接口与验收约定》阶段 7。
+
 ## 阶段 8：多窗口与前端交互
 
 目标：宠窗、聊天窗、设置窗可用；事件与命令在前端打通。除固定画布的主宠窗外，主要二级窗口可拖动、可缩放并按容器宽度响应式重排。
@@ -314,12 +350,14 @@
 
 实施位置：现有 Rust 窗口命令、`lib.rs`、capabilities 和前端路由。
 
-- [ ] 使用固定窗口标识创建聊天、设置等主程序二级窗口；已有窗口只显示并聚焦，不新建重复实例。窗口标识与前端路由集中维护。
-- [ ] 按前端设计配置可缩放、拖动、最小尺寸和关闭行为；关闭二级窗口只关闭该窗口，应用退出只走明确的退出命令。
-- [ ] 窗口先订阅再读取 `get_current_context`，按 contextRevision 过滤乱序响应；切换人设/会话后刷新所有会话级页面。
-- [ ] 已有主宠窗的透明、命中区域、拖动与托盘注册保持不变；增量注册命令，不复制一套新的 run/setup。
-- [ ] 主程序窗口与插件窗口使用不同能力边界，插件不得复用主程序全部 capabilities。
+- [x] 使用固定 `chat` / `settings` 标识创建聊天、设置窗口；主线程串行查找/创建，已有窗口显示、恢复并聚焦。前端根据原生窗口标签选择页面，不用 URL 参数赋权。
+- [x] 普通系统标题栏窗口，可拖动和缩放，最小逻辑尺寸 360×420；聊天默认 800×640，设置默认 960×700，首次创建按主显示器工作区与 DPI 限制尺寸。关闭只关闭二级窗口。
+- [x] `useCurrentContext` 先订阅再查询，读取完成再次核对 revision，过滤旧请求与旧事件；重新聚焦补查，卸载释放监听。
+- [x] 保留宠窗透明、命中区域、拖动与托盘注册，增量添加聊天/设置按钮；隐藏后仍只保留恢复按钮。托盘设置入口可用。
+- [x] 后端配置命令仅允许 `main/chat/settings`，新增精确标签的 `content-windows` capability，不将权限授予插件窗口。
 - [ ] 验证重复打开、关闭重开、切换过程中返回旧请求、事件丢失后查询恢复、最小窗口布局与 DPI。
+
+当前交付边界：窗口基础、会话新建/切换/改名/历史分页及主题设置已接入既有 SQLite 命令；聊天发送、完整设置表单和其他窗口尚未开放。会话页面旧响应、卸载、分页去重与焦点补查已有定向自动测试；原生窗口重复聚焦、关闭重开和真实 DPI 仍需 Windows 实机验收。Task 8.2–8.6 仅上述对应部分已接入，不将整体阶段标记完成。
 
 ### Task 8.2: 前端类型与 API 封装
 
@@ -512,10 +550,13 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 - [ ] 只加入 `pending` 且其原回合消息已离开最近原文范围的短期记忆；`integrated` 短期记忆不直接加入。
 - [ ] 最近长期记忆按 `recent_long_memory_count` 读取，默认 30；标题和正文直接加入。较旧长期记忆只加入混合检索命中项，并与最近项按 ID 去重。
 - [ ] 加入当前会话最近 5 篇旅行游记标题，正文只允许通过只读工具按需读取。
+- [ ] 把上下文构建实现为明确流水线：先使用本次输入与当前对话主题执行混合 RAG，再按“系统与环境规则 → 用户设定 → 人设 → 记事本 → 最近长期 → RAG 旧长期 → 未整合短期 → 游记标题 → 最近原文 → 本次输入”构造初始 `messages`；测试同一记忆和本次输入不重复。
+- [ ] 主请求必须同时构造 `messages` 与当前可用的 `tools` 定义；不把工具说明文字误当成可执行工具，也不注册未实现工具或空实现。
 - [ ] 提供只读 `search_long_memories`、`open_long_memory`、`open_long_memory_sources`、`open_chat_round`；后端注入并校验当前 `session_id`，支持从候选标题逐层打开长期记忆、来源短期记忆和原始回合。
-- [ ] 验证普通聊天、一次混合检索后回复和多轮深层回忆三条路径，确保前两条只调用一次聊天 AI。
+- [ ] 工具循环把 assistant tool call 与对应 tool result 成对追加到 `messages`，复用原请求 ID、上下文快照和取消信号；每轮重算剩余上下文预算，达到 `tool_call_rounds`、取消、超时或预算边界时安全终止，不保存伪完整回复。
+- [ ] 验证普通聊天、一次混合检索后回复和多轮深层回忆三条路径，确保前两条正文只调用一次聊天 AI；独立颜文字、联网 Embedding 和深层工具往返分别计数并在测试断言中区分。
 
-- [ ] 上下文超过容量时，按《记忆与旅行游记设计》第 6 节缩减本次较旧内容并通知前端，不改数据库记忆或用户设置；测试固定部分超限、缩减后可发送以及最低必要内容仍超限。
+- [ ] 上下文超过容量时，按《记忆与旅行游记设计》第 6.2 节缩减本次较旧内容并通知前端，不改数据库记忆或用户设置；测试固定部分超限、缩减后可发送以及最低必要内容仍超限。
 
 ### Task 9.7: 记忆命令与管理小窗
 
@@ -557,13 +598,13 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 - [ ] **Step 1: 添加删除会话与标题命令**
 
-`src-tauri/src/sessions.rs` 增加可序列化的 `SessionDeleteResult { current_session_id: Option<i64> }`、`delete_session(conn: &mut Connection, session_id: i64) -> Result<SessionDeleteResult, String>` 和 `rename_session(conn: &Connection, session_id: i64, title: &str) -> Result<(), String>`。
+`src-tauri/src/sessions.rs` 增加可序列化的 `SessionDeleteResult { current_session_id: Option<i64> }` 和 `delete_session(conn: &mut Connection, session_id: i64) -> Result<SessionDeleteResult, String>`。`rename_session` 后端命令与 1–100 字符校验已在阶段 5 实现，本阶段复用，不再建立第二套改名入口。
 
 `delete_session` 使用一个事务校验会话存在并读取所属人设，先删除目标会话的长期记忆以解除短期来源上的 RESTRICT 引用，再删除会话及剩余级联数据；若删的是 `settings.current_session_id`，则从同一人设剩余会话中选择最近更新项并写回，没有剩余项时删除该设置键。小游戏插件、授权、设置、存档、游戏局与喵币账单均为全局数据，不参与删除事务。数据库函数返回新的当前会话 ID；命令提交后递增内存中的 context revision，并广播 `window_context_changed` 供所有已打开窗口刷新。调用命令前先中断该会话正在执行的聊天请求。
 
 - [ ] **Step 2: 暴露命令**
 
-`src-tauri/src/commands.rs` 暴露 `delete_session(session_id) -> SessionDeleteResult` 与 `rename_session(session_id, title)` 并注册到 `lib.rs`。删除命令依次中断目标会话的聊天请求、调用上述事务函数、递增 context revision、广播 `window_context_changed`，再把新的当前会话 ID 返回前端；任一步在数据库提交前失败都不得改变当前会话。
+`src-tauri/src/commands.rs` 暴露 `delete_session(session_id) -> SessionDeleteResult` 并注册到 `lib.rs`；已有 `rename_session` 直接接入会话列表。删除命令依次中断目标会话的聊天请求、调用上述事务函数、递增 context revision、广播 `window_context_changed`，再把新的当前会话 ID 返回前端；任一步在数据库提交前失败都不得改变当前会话。
 
 - [ ] **Step 3: 会话标题 AI 生成**
 
@@ -729,7 +770,7 @@ Expected: 无错误。
 
 - [ ] **Step 1: 分离喂食计时**
 
-`PetRuntime` 增加 `last_feed: Mutex<Instant>`。`register_interaction` 的 `feed` 分支同时更新 `last_feed` 与 `last_interaction`。饥饿判断使用 `last_feed.elapsed()`，无聊/睡觉使用 `last_interaction.elapsed()`。
+复用阶段 4 的 `session_pet_states` 与 `pet_store`，不得另建只存内存的 last_feed/last_interaction 计时。饥饿判断使用已提交检查点加尚未提交的有效增量，无聊/睡眠判断使用当前会话的无互动累计；单调时钟只测量当前运行区间。喂食同时重置两项累计，点击/摸摸只重置无互动；操作与亲密度变更组合为同一事务。睡眠复用已持久化的 sleep_until，离线和非当前时间不补算有效计时。
 
 - [ ] **Step 2: 状态气泡事件**
 
@@ -993,6 +1034,8 @@ Expected: 无错误。
 
 
 ### Task 13.2: 互动增加亲密度
+
+统一规则：会话亲密度为 0–999，固定上限 999。点击/摸摸/喂食的封顶奖励服务已在阶段 4 实现，命令复用 `pet::interact`；聊天成功事务复用 `pet::rewarded_intimacy`，不重复实现加法。999 时行为正常完成但不再加分，重说与重复完成不奖励。数据库保护、导入校验和前端“当前值 / 999”保持一致；四档设置严格递增且不得大于 999。
 
 **Files:**
 - Modify: `src-tauri/src/pet.rs`
@@ -1307,6 +1350,8 @@ Expected: 无错误。
 
 **Files:** `src-tauri/src/import_export.rs`、`commands.rs`、`lib.rs`。
 
+- [ ] 全量包及包含会话的完整包导出 `session_pet_states`，恢复有效时长、分支与 sleep_until；不导出运行期单调时钟锚点。人设资料包和插件使用数据包不含此表。
+
 - [ ] 按数据库与持久化设计第 12 节实现 manifest.json、data.json、files/，禁止混用按表分文件格式；manifest 记录格式/结构版本、类型、数量和文件清单。
 - [ ] 全量导出覆盖所有非密钥全局与会话数据，包括 settings、聊天/记忆/Embedding 提供商非密钥配置、occurrences、聊天回合、短期记忆、带标题的长期记忆及来源、档位标记、旅行完成状态、旅行游记、信件回复状态、插件登记/权限/设置/存档/游戏局与账单。插件登记保存 GitHub 仓库、项目主页、Release 页面和声明的联网 origin；授权按权限作用域导出。节日母表、FTS5 索引、长期记忆向量、内置 Embedding 模型文件和用户安装的 `.yanmew-game` 程序包不导出，子表母表引用导出稳定 code。
 - [ ] 插件使用数据包只导出所选插件的登记快照、来源链接、manifest 权限与联网 origin 声明、设置和私有存档；不导出 `.yanmew-game`、游戏局、插件账单或钱包余额。
@@ -1317,6 +1362,8 @@ Expected: 无错误。
 ### Task 17.2: 导入、映射与原子提交
 
 **Files:** `src-tauri/src/import_export.rs`、`commands.rs`、`src/windows/SettingsWindow.tsx`、`src/api.ts`。
+
+- [ ] 导入会话后，将包内桌宠状态写入触发器已创建的对应行，重映射 session_id；若支持的旧格式未含此表，则保留零计时初始值并在导入说明中明确，不推算历史时长。睡眠到期检查与普通恢复共用 `pet_store`，不重抽时长。
 
 - [ ] 导入摘要展示范围和全局替换影响。默认新建副本；资料包仅新建，其他覆盖模式明确选择同类型/父级下的目标，不能用名称匹配后自动覆盖多条。
 - [ ] 全量包用备份替换全局钱包、账单、settings、提醒与 occurrences、提供商配置，以及小游戏插件登记、逐 scope 权限、设置、存档和游戏局；不叠加，不给人设复制钱包或插件数据。人设资料包、人设完整包、会话包和用户设定包不动任何插件数据、其他全局数据或现有密钥；独立插件使用数据包按下一条处理。

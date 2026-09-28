@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / 'db/schema.sql'
 OUT = ROOT / 'docs'
 GROUPS = [
-    ('人设与全局配置', '#6366f1', ['personas', 'sessions', 'user_profiles', 'providers', 'embedding_providers', 'settings']),
+    ('人设与全局配置', '#6366f1', ['personas', 'sessions', 'session_pet_states', 'user_profiles', 'providers', 'embedding_providers', 'settings']),
     ('聊天、记忆与检索', '#0284c7', ['chat_rounds', 'messages', 'short_memories', 'long_memories', 'long_memory_sources', 'long_memory_embeddings', 'long_memories_fts', 'notebooks']),
     ('出行与旅行内容', '#0d9488', ['travels', 'travel_journals', 'letters', 'accessories', 'souvenirs']),
     ('小游戏插件与钱包', '#d97706', ['game_plugins', 'game_permissions', 'game_plugin_settings', 'game_plugin_data', 'game_runs', 'currency_ledger', 'user_state']),
@@ -19,6 +19,7 @@ GROUPS = [
 NAMES = dict(zip(
     'personas sessions user_profiles providers embedding_providers settings chat_rounds messages short_memories long_memories long_memory_sources long_memory_embeddings long_memories_fts notebooks travels travel_journals letters accessories souvenirs game_plugins game_permissions game_plugin_settings game_plugin_data game_runs currency_ledger user_state reminders reminder_occurrences festival_catalog session_festivals'.split(),
     '人设 会话 用户设定 聊天及记忆提供商 向量模型提供商 全局设置 聊天回合 消息原文 短期记忆 长期记忆 长期记忆来源 向量缓存 全文检索索引 会话记事本 出行记录 旅行游记 信件 饰品 文字伴手礼 插件登记 插件授权 插件设置 插件存档 历史游戏局 喵币账单 全局钱包 提醒规则 提醒触发记录 内置节日 会话节日'.split()))
+NAMES['session_pet_states'] = '会话桌宠状态'
 
 
 def extract():
@@ -123,7 +124,7 @@ def make_svg(data):
          '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#64748b"/></marker></defs>',
          '<rect width="100%" height="100%" fill="#f5f7fb"/>',
          '<text x="60" y="65" font-size="34" fill="#172554" font-weight="700">颜喵 · 数据库完整类图</text>',
-         '<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 29 张业务表 + 1 张 FTS5 虚拟表 · V1 设计蓝图 · 来源 db/schema.sql</text>']
+         '<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 30 张业务表 + 1 张 FTS5 虚拟表 · V1 设计蓝图 · 来源 db/schema.sql</text>']
     for y, g in bands:
         s.append(f'<text x="60" y="{y+24}" fill="{g["color"]}" font-size="25" font-weight="700">{esc(g["name"])}</text>')
     s.append('<g id="edges">')

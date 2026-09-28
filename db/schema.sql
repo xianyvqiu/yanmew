@@ -39,6 +39,7 @@
 --                        persona_id      → personas.id        级联删除
 --                        user_profile_id → user_profiles.id  置空
 --   chat_rounds         session_id    → sessions.id          级联删除
+--   session_pet_states session_id    → sessions.id          一对一，级联删除；有效计时与睡眠恢复
 --   messages            session_id / round_id → sessions.id / chat_rounds.id
 --   short_memories      session_id    → sessions.id          级联删除
 --                        round_id      → chat_rounds.id       级联删除
@@ -153,12 +154,47 @@ CREATE TABLE IF NOT EXISTS sessions (
     craft_tier_1_used              INTEGER NOT NULL DEFAULT 0 CHECK (craft_tier_1_used IN (0, 1)), -- 1=第一档制作机会已使用，0=尚未使用
     craft_tier_2_used              INTEGER NOT NULL DEFAULT 0 CHECK (craft_tier_2_used IN (0, 1)), -- 1=第二档制作机会已使用，0=尚未使用
     craft_tier_3_used              INTEGER NOT NULL DEFAULT 0 CHECK (craft_tier_3_used IN (0, 1)), -- 1=第三档制作机会已使用，0=尚未使用
-    intimacy                      INTEGER NOT NULL DEFAULT 0 CHECK (intimacy >= 0),          -- 当前会话亲密度
+    intimacy                      INTEGER NOT NULL DEFAULT 0 CHECK (intimacy >= 0),          -- 当前会话亲密度，整数 0–999；上下限及整数类型由下方触发器共同保护
     last_return_at                TEXT,                                -- 最近一次旅行回来时间 RFC3339，可空
     travel_trigger_remaining_seconds INTEGER CHECK (travel_trigger_remaining_seconds > 0), -- 下次出行剩余的有效在线秒数；出门中可空
     FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE CASCADE,
     FOREIGN KEY (user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
+
+-- 会话亲密度范围保护；使用触发器便于旧库原地升级，不重建会话及其外键子树。
+CREATE TRIGGER IF NOT EXISTS sessions_intimacy_insert BEFORE INSERT ON sessions
+WHEN typeof(NEW.intimacy) <> 'integer' OR NEW.intimacy NOT BETWEEN 0 AND 999
+BEGIN
+    SELECT RAISE(ABORT, 'intimacy must be an integer between 0 and 999');
+END;
+CREATE TRIGGER IF NOT EXISTS sessions_intimacy_update BEFORE UPDATE OF intimacy ON sessions
+WHEN typeof(NEW.intimacy) <> 'integer' OR NEW.intimacy NOT BETWEEN 0 AND 999
+BEGIN
+    SELECT RAISE(ABORT, 'intimacy must be an integer between 0 and 999');
+END;
+
+-- 会话桌宠状态：有效运行计时与真实时间睡眠分开保存。
+CREATE TABLE IF NOT EXISTS session_pet_states (
+    session_id          INTEGER PRIMARY KEY, -- 所属会话，主键兼外键；一会话一行，删除会话级联删除
+    hunger_elapsed_ms   INTEGER NOT NULL DEFAULT 0 CHECK (hunger_elapsed_ms >= 0), -- 距上次喂食累计的有效运行毫秒，离线及非当前时间不累计
+    idle_elapsed_ms     INTEGER NOT NULL DEFAULT 0 CHECK (idle_elapsed_ms >= 0), -- 本周期无互动的有效运行毫秒，合法互动或醒来归零
+    idle_branch         TEXT NOT NULL DEFAULT 'none' CHECK (idle_branch IN ('none', 'bored', 'sleeping')), -- none=尚未选择；bored=本周期无聊；sleeping=本周期睡眠
+    sleep_until         TEXT, -- 睡眠结束 UTC RFC3339，仅 sleeping 非空；关闭与切换期间仍自然经过
+    last_fed_at         TEXT, -- 最近实际喂食 UTC RFC3339；未知为 NULL，不用于推算离线计时
+    last_interacted_at  TEXT, -- 最近实际互动 UTC RFC3339；未知为 NULL，点击不清饥饿
+    state_revision      INTEGER NOT NULL DEFAULT 0 CHECK (state_revision >= 0), -- 本状态写入版本，拒绝重复或迟到提交，不影响 memory_revision
+    updated_at          TEXT NOT NULL, -- 最近状态提交 UTC RFC3339；初始值取会话创建时刻
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    CHECK ((idle_branch = 'sleeping' AND sleep_until IS NOT NULL AND length(sleep_until) > 0)
+        OR (idle_branch != 'sleeping' AND sleep_until IS NULL))
+);
+
+CREATE TRIGGER IF NOT EXISTS sessions_create_pet_state
+AFTER INSERT ON sessions
+BEGIN
+    INSERT INTO session_pet_states(session_id, updated_at)
+    VALUES (NEW.id, NEW.created_at);
+END;
 
 -- ------------------------------------------------------------
 -- 4. 聊天回合与消息
@@ -206,10 +242,10 @@ CREATE TABLE IF NOT EXISTS messages (
 --   travel_journal_max_chars           旅行游记最大字数，默认 350
 --   tool_call_rounds                  AI 单次回复最多工具调用轮数，默认 3
 --   notebook_max_chars                记事本建议最大字数，默认 4000；只约束 AI 维护，不设数据库硬限制
---   intimacy_threshold_1              第一档亲密度，默认 10
---   intimacy_threshold_2              第二档亲密度，默认 50
---   intimacy_threshold_3              第三档亲密度，默认 150
---   intimacy_threshold_4              第四档亲密度，默认 300
+--   intimacy_threshold_1              第一档亲密度，默认 10；四档均为 1–999 整数且严格递增
+--   intimacy_threshold_2              第二档亲密度，默认 50；范围及排序同上
+--   intimacy_threshold_3              第三档亲密度，默认 150；范围及排序同上
+--   intimacy_threshold_4              第四档亲密度，默认 300；范围及排序同上
 --   accessory_cost_1                  第一档饰品价格，默认 20
 --   accessory_cost_2                  第二档饰品价格，默认 50
 --   accessory_cost_3                  第三档饰品价格，默认 120
@@ -343,13 +379,18 @@ CREATE TABLE IF NOT EXISTS notebooks (
 -- 9. 提醒
 -- kind: once / daily / weekly / monthly
 -- schedule: 重复规则 JSON；一次性提醒为 NULL。
---   每天：{"repeat":"daily","time":"09:00"}
---   每周：{"repeat":"weekly","weekdays":[1,3,5],"time":"09:00"}（1=周一 … 7=周日）
---   每月：{"repeat":"monthly","days":[1,15],"time":"09:00"}
+--   每天：{"version":1,"repeat":"daily","time":"09:00"}
+--   每周：{"version":1,"repeat":"weekly","weekdays":[1,3,5],"time":"09:00"}（1=周一 … 7=周日）
+--   每月：{"version":1,"repeat":"monthly","days":[1,15],"time":"09:00"}
+--   后端追加 next_local_at（如 "2026-09-29T09:00:00"），保存下一次当地日历游标；不接受用户修改。
+--   缺 version 的旧数据按 1 读取；缺 next_local_at 时沿用 fire_at，首次推进时补齐。
+-- 循环时间跟随电脑当前时区；时区变化时重算待触发游标的 UTC，已入队 scheduled_at 不变。
+-- 月度不存在日期、夏令时不存在时刻均跳过；重复当地时刻只使用第一次。
 -- status: pending / done / expired
 -- fire_at 保存下一次待入队触发时间；同事务建立 occurrence 后才推进/置空。
 -- 重复提醒 status 始终为 pending；完成/过期仅更新本次 occurrence，永久停止须删除 reminders。
--- 一次性提醒完成/过期时同步更新本表；原到期时间由 occurrence.scheduled_at 永久保留。
+-- 一次性最新触发记录完成/过期且无未来计划时同步本表；旧记录不覆盖重新安排的提醒。
+-- 原到期时间由 occurrence.scheduled_at 永久保留。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS reminders (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键

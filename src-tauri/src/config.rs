@@ -162,6 +162,9 @@ pub fn validate(values: &Settings) -> AppResult<()> {
         if key == "travel_accessory_chance_percent" && number > 100 {
             return Err(AppError::validation(key, "概率必须在 0–100 之间"));
         }
+        if key.starts_with("intimacy_threshold_") && i64::from(number) > crate::pet::MAX_INTIMACY {
+            return Err(AppError::validation(key, "亲密度档位不能超过上限 999"));
+        }
     }
     let number = |k: &str| -> AppResult<i64> {
         values

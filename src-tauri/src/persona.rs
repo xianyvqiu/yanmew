@@ -133,8 +133,10 @@ fn select_in_transaction(c: &Connection, id: i64) -> AppResult<()> {
         return Ok(());
     }
     // 保留已生成的信件和事实，仅取消离开会话中尚未完成的旅行任务。
-    c.execute("UPDATE travels SET status='cancelled',cancelled_at=?1,midway_letter_state=CASE WHEN midway_letter_state='pending' THEN 'cancelled' ELSE midway_letter_state END,return_letter_state='cancelled',gift_state='cancelled',journal_state='cancelled',facts_state=CASE WHEN facts_state='pending' THEN 'cancelled' ELSE facts_state END WHERE status='away' AND session_id=(SELECT CAST(value AS INTEGER) FROM settings WHERE key='current_session_id')",[chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)])?;
-    c.execute("UPDATE letters SET reply_state='cancelled' WHERE reply_state='pending' AND session_id=(SELECT CAST(value AS INTEGER) FROM settings WHERE key='current_session_id')",[])?;
+    crate::sessions::cancel_current_travel_and_replies(
+        c,
+        &chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    )?;
     c.execute("UPDATE personas SET is_active=0 WHERE is_active=1", [])?;
     c.execute("UPDATE personas SET is_active=1 WHERE id=?1", [id])?;
     c.execute("DELETE FROM settings WHERE key='current_session_id'", [])?;

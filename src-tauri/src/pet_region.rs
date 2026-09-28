@@ -1,5 +1,109 @@
 use serde::Deserialize;
 
+// 仅安装在主宠窗；保留 Tauri 的焦点处理，阻止系统重画不存在的标题栏。
+#[cfg(windows)]
+unsafe extern "system" fn pet_frame_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    message: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    subclass_id: usize,
+    _: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::{
+        Foundation::{LPARAM, LRESULT},
+        UI::{
+            Shell::{DefSubclassProc, RemoveWindowSubclass},
+            WindowsAndMessaging::{WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT},
+        },
+    };
+    match message {
+        WM_NCPAINT => LRESULT(0),
+        WM_NCACTIVATE => unsafe { DefSubclassProc(hwnd, message, wparam, LPARAM(-1)) },
+        _ => unsafe {
+            if message == WM_NCDESTROY {
+                let _ = RemoveWindowSubclass(hwnd, Some(pet_frame_proc), subclass_id);
+            }
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        },
+    }
+}
+
+#[cfg(windows)]
+fn frameless_style(style: u32) -> u32 {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
+    };
+    style & !(WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0)
+}
+
+#[cfg(windows)]
+pub fn enforce_frameless(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows::Win32::{
+        Foundation::HWND,
+        Graphics::Dwm::{DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY},
+        UI::WindowsAndMessaging::{
+            GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        },
+    };
+
+    window
+        .set_decorations(false)
+        .map_err(|e| format!("关闭宠窗装饰失败：{e}"))?;
+    let hwnd = HWND(
+        window
+            .hwnd()
+            .map_err(|e| format!("获取宠窗句柄失败：{e}"))?
+            .0,
+    );
+    let current = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    // 相同回调与 ID 重复安装只更新现有项，不会在托盘恢复时叠加。
+    if !unsafe {
+        windows::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(pet_frame_proc), 1, 0)
+    }
+    .as_bool()
+    {
+        return Err("安装宠窗无边框绘制处理失败".into());
+    }
+    let expected = frameless_style(current);
+    if expected != current {
+        unsafe { SetWindowLongPtrW(hwnd, GWL_STYLE, expected as isize) };
+        let actual = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+        if frameless_style(actual) != actual {
+            return Err("Windows 未能移除宠窗标题栏样式".into());
+        }
+    }
+    let policy = DWMNCRP_DISABLED;
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_POLICY,
+            (&policy as *const _) as *const core::ffi::c_void,
+            std::mem::size_of_val(&policy) as u32,
+        )
+        .map_err(|e| format!("关闭宠窗非客户区绘制失败：{e}"))?;
+        SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+        .map_err(|e| format!("刷新宠窗无边框样式失败：{e}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn enforce_frameless(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_decorations(false)
+        .map_err(|e| format!("关闭宠窗装饰失败：{e}"))
+}
+
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct Rect {
     pub x: f64,
@@ -129,6 +233,19 @@ pub fn apply(_: &tauri::WebviewWindow, _: Option<&[[i32; 4]]>) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn frameless_style_removes_only_native_frame_bits() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME, WS_VISIBLE,
+        };
+        let frame =
+            WS_CAPTION.0 | WS_THICKFRAME.0 | WS_SYSMENU.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0;
+        let original = frame | WS_VISIBLE.0;
+        let result = frameless_style(original);
+        assert_eq!(result & frame, 0);
+        assert_ne!(result & WS_VISIBLE.0, 0);
+    }
     #[test]
     fn rounds_outward_once_for_dpi() {
         let r = Rect {

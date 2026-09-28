@@ -70,7 +70,44 @@ pub struct RequestLease {
     key: String,
     owner: RequestManager,
 }
+impl RequestLease {
+    /// 副作用工具必须属于这一个仍活动的请求，不能借用其他会话或生成任务的租约。
+    pub(crate) fn require_scope(
+        &self,
+        manager: &RequestManager,
+        key: &str,
+        persona_id: i64,
+    ) -> AppResult<()> {
+        self.cancel.check()?;
+        let active = self
+            .owner
+            .0
+            .active
+            .lock()
+            .map_err(|_| AppError::storage())?;
+        if !Arc::ptr_eq(&self.owner.0, &manager.0)
+            || self.key != key
+            || !active
+                .get(key)
+                .is_some_and(|request| request.id == self.id && request.persona_id == persona_id)
+        {
+            return Err(AppError::new(
+                "CONTEXT_CHANGED",
+                "工具调用不属于当前聊天请求",
+            ));
+        }
+        Ok(())
+    }
+}
 impl RequestManager {
+    pub fn is_active(&self, key: &str) -> AppResult<bool> {
+        Ok(self
+            .0
+            .active
+            .lock()
+            .map_err(|_| AppError::storage())?
+            .contains_key(key))
+    }
     pub fn start(&self, key: String, persona_id: i64) -> AppResult<RequestLease> {
         let mut active = self.0.active.lock().map_err(|_| AppError::storage())?;
         if self.0.stopping.load(Ordering::Acquire) {

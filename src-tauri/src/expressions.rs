@@ -86,9 +86,12 @@ struct Snapshot {
     previous: Option<String>,
     provider: ProviderStamp,
     config: ConnectionTest,
+    health: crate::pet::controller::HealthToken,
 }
 fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
     runtime.read(|s, p| {
+        let health = s.pet.health(&s.connection, p)?;
+        s.pet.require_ai()?;
         let (name, prompt, previous) = s
             .connection
             .query_row(
@@ -109,6 +112,7 @@ fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
                 previous,
                 provider,
                 config,
+                health,
             },
             lease,
         ))
@@ -147,7 +151,17 @@ pub async fn generate_persona_expressions(
         .ai
         .clone()?
         .structured(&snapshot.config, &input, &lease.cancel, validate_library)
-        .await?;
+        .await;
+    if let Err(error) = &result {
+        if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {
+            let _ = runtime.read(|s, p| {
+                s.pet.health(&s.connection, p)?;
+                s.pet.complete_health(&snapshot.health, &Err(error.clone()));
+                Ok(())
+            });
+        }
+    }
+    let result = result?;
     tauri::async_runtime::spawn_blocking(move || {
         save(&runtime, &snapshot, &lease, &result)?;
         Ok(result)

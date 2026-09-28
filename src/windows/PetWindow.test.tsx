@@ -2,14 +2,21 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PetWindow from "./PetWindow";
 import { newestSnapshot, type PetSnapshot } from "./usePetWindow";
+import type { PetActivity } from "../types";
 
 const startDragging = vi.fn();
 vi.mock("./usePetAppearance", () => ({ usePetAppearance: () => ({ error: "", ready: true }) }));
 const invoke = vi.fn();
 const stop = vi.fn();
 let receive: (event: { payload: PetSnapshot }) => void;
+let receiveActivity: (event: { payload: PetActivity }) => void;
+const initialActivity: PetActivity = {personaId:"1",sessionId:"1",contextRevision:0,revision:1,activity:"normal",expression:"(・ω・)",intimacy:998,sleepUntil:null,error:null,canInteract:true,canWander:true};
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: async (_name: string, callback: typeof receive) => { receive = callback; return stop; } }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: async (name: string, callback: unknown) => {
+  if (name === "pet-window-state") receive = callback as typeof receive;
+  if (name === "pet-activity-changed") receiveActivity = callback as typeof receiveActivity;
+  return stop;
+} }));
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging }),
@@ -61,6 +68,8 @@ describe("PetWindow", () => {
   beforeEach(() => {
     startDragging.mockReset().mockResolvedValue(undefined);
     invoke.mockReset().mockImplementation(async (command, args) => {
+      if (command === "get_pet_activity") return initialActivity;
+      if (command === "interact_pet") return {...initialActivity,intimacy:999,revision:2,expression:"(^_^)"};
       if (command === "get_pet_window_state") return { hidden: false, revision: 0 };
       if (command === "set_pet_hidden") return { hidden: args.hidden, revision: args.hidden ? 1 : 2 };
       return undefined;
@@ -75,12 +84,39 @@ describe("PetWindow", () => {
     expect(screen.getByText("(・ω・)")).toBeTruthy();
   });
 
+  it("单击调用当前会话互动，右键显示满值并仍可喂食", async () => {
+    await act(async () => { render(<PetWindow />); });
+    const pet=screen.getByRole("img");
+    await act(async () => {
+      fireEvent.pointerDown(pet,{button:0,clientX:10,clientY:10,pointerId:1});
+      fireEvent.pointerUp(pet,{clientX:10,clientY:10,pointerId:1});
+    });
+    expect(invoke).toHaveBeenCalledWith("interact_pet",{input:{personaId:"1",sessionId:"1",contextRevision:0,action:"click"}});
+    fireEvent.contextMenu(pet);
+    expect(screen.getByText("亲密度 999 / 999 · 已达上限")).toBeTruthy();
+    await act(async () => {fireEvent.click(screen.getByRole("button",{name:"喂食"}));});
+    expect(invoke).toHaveBeenCalledWith("interact_pet",{input:{personaId:"1",sessionId:"1",contextRevision:0,action:"feed"}});
+  });
+
+  it("状态旧事件不覆盖新会话，出门禁用互动", async () => {
+    await act(async () => {render(<PetWindow />);});
+    await act(async () => {
+      receiveActivity({payload:{...initialActivity,sessionId:"2",contextRevision:1,revision:4,activity:"away",expression:"喵喵出门啦",canInteract:false}});
+      receiveActivity({payload:{...initialActivity,revision:2}});
+    });
+    expect(screen.getByText("喵喵出门啦")).toBeTruthy();
+    fireEvent.contextMenu(screen.getByRole("img"));
+    expect((screen.getByRole("button",{name:"喂食"}) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("左键单击颜文字时不开始拖动", async () => {
     await act(async () => { render(<PetWindow />); });
     const pet = screen.getByText("(・ω・)");
 
-    fireEvent.pointerDown(pet, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
-    fireEvent.pointerUp(pet, { clientX: 10, clientY: 10, pointerId: 1 });
+    await act(async () => {
+      fireEvent.pointerDown(pet, { button: 0, clientX: 10, clientY: 10, pointerId: 1 });
+      fireEvent.pointerUp(pet, { clientX: 10, clientY: 10, pointerId: 1 });
+    });
 
     expect(startDragging).not.toHaveBeenCalled();
   });
@@ -173,7 +209,7 @@ describe("PetWindow", () => {
     const pet = screen.getByRole("img");
     fireEvent.pointerDown(pet, { button: 0, clientX: 0, clientY: 0, pointerId: 1 });
     fireEvent.pointerMove(pet, { clientX: 20, clientY: 0, pointerId: 1 });
-    await waitFor(() => expect(screen.getByRole("button").title).toContain("宠窗操作失败"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "隐藏宠窗" }).title).toContain("宠窗操作失败"));
   });
 
   it("隐藏调用失败后回读权威状态并保留恢复入口", async () => {
@@ -183,7 +219,7 @@ describe("PetWindow", () => {
     });
     await act(async () => { render(<PetWindow />); });
     fireEvent.click(screen.getByRole("button", { name: "显示宠窗" }));
-    await waitFor(() => expect(screen.getByRole("button").title).toContain("调整尺寸失败"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "显示宠窗" }).title).toContain("调整尺寸失败"));
     expect(screen.queryByRole("img")).toBeNull();
     expect(invoke.mock.calls.filter(([command]) => command === "get_pet_window_state")).toHaveLength(2);
   });
@@ -194,7 +230,7 @@ describe("PetWindow", () => {
     await act(async () => { render(<PetWindow />); });
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("update_pet_regions", {
       revision: 0, scale: window.devicePixelRatio,
-      rects: [{ x: 10, y: 20, width: 30, height: 40 }, { x: 10, y: 20, width: 30, height: 40 }],
+      rects: Array.from({ length: 4 }, () => ({ x: 10, y: 20, width: 30, height: 40 })),
     }));
     x = 50;
     await act(async () => { screen.getByRole("img").style.transform = "translateX(40px)"; });
@@ -203,5 +239,16 @@ describe("PetWindow", () => {
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(resolve)); });
     expect(invoke.mock.calls.filter(([command]) => command === "update_pet_regions")).toHaveLength(2);
     bounds.mockRestore();
+  });
+  it("聊天与设置入口只导航，不触发桌宠互动或拖动", async () => {
+    await act(async () => { render(<PetWindow />); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "聊天" }));
+      fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    });
+    expect(invoke).toHaveBeenCalledWith("focus_or_create_window", { page: "chat" });
+    expect(invoke).toHaveBeenCalledWith("focus_or_create_window", { page: "settings" });
+    expect(invoke.mock.calls.some(([command]) => command === "interact_pet")).toBe(false);
+    expect(startDragging).not.toHaveBeenCalled();
   });
 });

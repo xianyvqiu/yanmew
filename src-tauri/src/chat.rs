@@ -22,6 +22,8 @@ pub struct PreparedReply {
     config: ConnectionTest,
     messages: Vec<Message>,
     lease: RequestLease,
+    runtime: Runtime,
+    health: crate::pet::controller::HealthToken,
 }
 pub fn prepare_reply(
     runtime: &Runtime,
@@ -34,6 +36,9 @@ pub fn prepare_reply(
         return Err(AppError::validation("input", "消息不能为空"));
     }
     runtime.read(|s,p| {
+        runtime.settle_pet(s,p)?;
+        let health=s.pet.health(&s.connection,p)?;
+        s.pet.require_ai()?;
         let context=crate::persona::context(&s.connection,s.context_revision)?;
         if context.persona_id!=persona_id.to_string() || context.session_id!=Some(session_id.to_string()) || context.context_revision!=context_revision {return Err(AppError::new("CONTEXT_CHANGED","当前人设或会话已经改变，请重新发送"));}
         let prompt=s.connection.query_row("SELECT p.prompt FROM sessions s JOIN personas p ON p.id=s.persona_id WHERE s.id=?1 AND p.id=?2",[session_id,persona_id],|r|r.get::<_,String>(0)).optional()?.ok_or_else(AppError::not_found)?;
@@ -43,9 +48,13 @@ pub fn prepare_reply(
         let count:usize=crate::config::get(&s.connection)?["recent_message_count"].parse().map_err(|_|AppError::storage())?;
         let mut stmt=s.connection.prepare("SELECT role,content FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2")?;
         let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message{role:r.get(0)?,content:r.get(1)?}))?.collect::<Result<Vec<_>,_>>()?;
+        drop(stmt);
         messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input));
         let lease=runtime.requests.start(format!("chat:{session_id}"),persona_id)?;
-        Ok(PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease})
+        let pet=crate::pet_store::read(&s.connection,session_id)?;
+        crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
+        runtime.settle_pet(s,p)?;
+        Ok(PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health})
     })
 }
 #[derive(Serialize, Debug)]
@@ -95,7 +104,12 @@ pub async fn run_reply(
     let result:AppResult<Choice>=async {
         let expression_request=GenerateRequest{messages:vec![Message::new("system","只返回 JSON：{\"expression\":\"颜文字\"}。生成符合当前人设和对话的单行颜文字，不解释；最多 14 个半角宽度，非 ASCII 字符按 2 计算。"),Message::new("user",format!("人设：{}\n用户消息：{}",prepared.prompt,prepared.messages.last().map(|m|m.content.as_str()).unwrap_or("")))],max_tokens:256,tools:vec![],json:true};
         let expression:Expression=client.structured(&prepared.config,&expression_request,&prepared.lease.cancel,|v:&Expression|validate_expression(&v.expression)).await?;
-        prepared.lease.cancel.check()?;emit(ReplyEventKind::Expression{expression:expression.expression})?;
+        prepared.lease.cancel.check()?;
+        prepared.runtime.read(|s,_| {
+            if s.context_revision==prepared.context_revision {s.pet.chat_expression=Some(expression.expression.clone());}
+            Ok(())
+        })?;
+        emit(ReplyEventKind::Expression{expression:expression.expression})?;
         let request=GenerateRequest{messages:prepared.messages,max_tokens:4096,tools:vec![],json:false};
         let mut choices=client.stream(&prepared.config,&request,&prepared.lease.cancel,|delta| {
             match delta {Delta::Text{choice_index:0,text}=>emit(ReplyEventKind::Text{text}),_=>Err(protocol())}
@@ -105,6 +119,15 @@ pub async fn run_reply(
         if choice.index!=0 || choice.finish==Finish::ToolCalls || (choice.finish==Finish::Stop && choice.content.trim().is_empty()) {return Err(protocol());}
         prepared.lease.cancel.check()?;Ok(choice)
     }.await;
+    if let Err(error) = &result {
+        if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {
+            let _ = prepared.runtime.read(|s, p| {
+                s.pet.health(&s.connection, p)?;
+                s.pet.complete_health(&prepared.health, &Err(error.clone()));
+                Ok(())
+            });
+        }
+    }
     match result {
         Ok(choice) => {
             emit(ReplyEventKind::Finished {
@@ -227,7 +250,7 @@ mod tests {
             assert!(!events
                 .iter()
                 .any(|e| matches!(e.kind, ReplyEventKind::Finished { .. })));
-            assert!(prepare_reply(&runtime, 1, 1, 0, "retry".into()).is_ok());
+            assert!(prepare_reply(&runtime, 1, 1, 0, "retry".into()).is_err());
             server.finish();
         });
     }

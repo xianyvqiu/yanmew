@@ -7,6 +7,297 @@ use crate::{
 use tauri::{State, WebviewWindow};
 
 #[tauri::command]
+pub async fn list_reminders(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    after_id: Option<String>,
+    limit: u32,
+) -> AppResult<Vec<crate::models::Reminder>> {
+    authorize(&window)?;
+    let after_id = after_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::list_rules(&s.connection, after_id, limit)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_reminder(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    input: crate::reminders::ReminderInput,
+) -> AppResult<crate::models::Reminder> {
+    authorize(&window)?;
+    let clock = runtime.clock.clone();
+    let result = storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::save_rule(
+            &mut s.connection,
+            None,
+            input,
+            "manual",
+            clock.sample()?.utc,
+            &chrono::Local,
+        )
+    })
+    .await?;
+    let _ = app.emit(crate::events::REMINDERS_CHANGED, ());
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn update_reminder(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+    input: crate::reminders::ReminderInput,
+) -> AppResult<crate::models::Reminder> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let clock = runtime.clock.clone();
+    let result = storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::save_rule(
+            &mut s.connection,
+            Some(id),
+            input,
+            "manual",
+            clock.sample()?.utc,
+            &chrono::Local,
+        )
+    })
+    .await?;
+    let _ = app.emit(crate::events::REMINDERS_CHANGED, ());
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn delete_reminder(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::delete_rule(&s.connection, id)
+    })
+    .await?;
+    let _ = app.emit(crate::events::REMINDERS_CHANGED, ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_missed_reminder_summary(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    after_id: Option<String>,
+) -> AppResult<crate::reminders::MissedReminderSummary> {
+    authorize(&window)?;
+    let after_id = after_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::missed_summary(&s.connection, after_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn ack_missed_reminder_summary(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    ids: Vec<String>,
+) -> AppResult<()> {
+    acknowledge_reminder_occurrences(
+        window,
+        app,
+        runtime,
+        ids,
+        crate::models::ReminderDeliveryState::Missed,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_reminder_occurrences(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    reminder_id: Option<String>,
+    delivery_state: Option<crate::models::ReminderDeliveryState>,
+    after_id: Option<String>,
+    limit: u32,
+) -> AppResult<crate::models::ReminderOccurrencePage> {
+    authorize(&window)?;
+    let reminder_id = reminder_id.as_deref().map(parse_id).transpose()?;
+    let after_id = after_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::list_occurrences(
+            &s.connection,
+            reminder_id,
+            delivery_state,
+            after_id,
+            limit,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn acknowledge_reminder_occurrences(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    ids: Vec<String>,
+    delivery_state: crate::models::ReminderDeliveryState,
+) -> AppResult<()> {
+    authorize(&window)?;
+    if ids.len() > 200 {
+        return Err(AppError::validation("ids", "每次最多确认 200 条提醒"));
+    }
+    let ids = ids
+        .iter()
+        .map(|id| parse_id(id))
+        .collect::<AppResult<Vec<_>>>()?;
+    storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::acknowledge(&mut s.connection, &ids, delivery_state)
+    })
+    .await?;
+    let _ = app.emit(crate::events::REMINDERS_CHANGED, ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_reminder_occurrence_status(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+    status: crate::models::ReminderStatus,
+) -> AppResult<crate::models::ReminderOccurrence> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let clock = runtime.clock.clone();
+    let result = storage(runtime.inner().clone(), move |s, _| {
+        crate::reminders::update_occurrence_status(
+            &mut s.connection,
+            id,
+            status,
+            clock.sample()?.utc,
+        )
+    })
+    .await?;
+    let _ = app.emit(crate::events::REMINDERS_CHANGED, ());
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn complete_reminder_occurrence(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    id: String,
+) -> AppResult<crate::models::ReminderOccurrence> {
+    update_reminder_occurrence_status(
+        window,
+        app,
+        runtime,
+        id,
+        crate::models::ReminderStatus::Done,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_pet_activity(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<crate::pet::controller::View> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    storage(runtime.inner().clone(), move |s, p| worker.settle_pet(s, p)).await
+}
+#[tauri::command]
+pub async fn interact_pet(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    input: crate::pet::controller::InteractionInput,
+) -> AppResult<crate::pet::controller::View> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    let view = tauri::async_runtime::spawn_blocking(move || worker.pet_interact(input))
+        .await
+        .map_err(|_| AppError::storage())??;
+    let _ = app.emit(crate::events::PET_ACTIVITY_CHANGED, &view);
+    Ok(view)
+}
+#[tauri::command]
+pub async fn set_pet_dragging(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    dragging: bool,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(dragging)))
+        .await
+        .map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn refresh_pet_provider(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let id = storage(runtime.inner().clone(), |s, _| {
+        use rusqlite::OptionalExtension;
+        s.connection
+            .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?
+            .ok_or_else(|| {
+                AppError::new(
+                    "PROVIDER_UNAVAILABLE",
+                    "暂无聊天提供商，请先在设置中添加并选择",
+                )
+            })
+    })
+    .await?;
+    check_provider(runtime.inner().clone(), id).await
+}
+
+async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
+    let (config, token) = storage(runtime.clone(), move |s, p| {
+        let config = crate::providers::connection_test_config(&s.connection, id, p)?;
+        let active =
+            s.connection
+                .query_row("SELECT is_active FROM providers WHERE id=?1", [id], |r| {
+                    r.get::<_, bool>(0)
+                })?;
+        let token = if active {
+            Some(s.pet.health(&s.connection, p)?)
+        } else {
+            None
+        };
+        Ok((config, token))
+    })
+    .await?;
+    let result = crate::providers::test_connection(&runtime.ai.clone()?, config).await;
+    let health_result = result.clone();
+    storage(runtime, move |s, p| {
+        s.pet.health(&s.connection, p)?;
+        if let Some(token) = token {
+            s.pet.complete_health(&token, &health_result);
+        }
+        Ok(())
+    })
+    .await?;
+    result
+}
+
+#[tauri::command]
 pub async fn generate_expressions(
     window: WebviewWindow,
     app: AppHandle,
@@ -44,6 +335,179 @@ pub async fn get_current_context(
     .await
 }
 
+fn validate_persona_context(
+    store: &Store,
+    persona_id: i64,
+    context_revision: u64,
+) -> AppResult<crate::persona::Context> {
+    let context = crate::persona::context(&store.connection, store.context_revision)?;
+    if context.persona_id != persona_id.to_string() || context.context_revision != context_revision
+    {
+        return Err(AppError::new(
+            "CONTEXT_CHANGED",
+            "当前人设或会话已经改变，请刷新后重试",
+        ));
+    }
+    Ok(context)
+}
+
+fn parse_optional_id(value: Option<String>, field: &str) -> AppResult<Option<i64>> {
+    value
+        .map(|value| {
+            parse_id(&value).map_err(|mut error| {
+                error.field = Some(field.into());
+                error
+            })
+        })
+        .transpose()
+}
+
+#[tauri::command]
+pub async fn list_sessions(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    context_revision: u64,
+) -> AppResult<Vec<crate::models::Session>> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    storage(runtime.inner().clone(), move |store, _| {
+        validate_persona_context(store, persona_id, context_revision)?;
+        crate::sessions::list(&store.connection, persona_id)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn create_session(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    context_revision: u64,
+) -> AppResult<crate::models::Session> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let worker = runtime.inner().clone();
+    let requests = worker.requests.clone();
+    let (session, context, pet_error) = storage(worker.clone(), move |store, secrets| {
+        worker.settle_pet(store, secrets)?;
+        let before = validate_persona_context(store, persona_id, context_revision)?;
+        let session = crate::sessions::create(&mut store.connection, persona_id)?;
+        if let Some(old_session) = before.session_id {
+            requests.cancel_key(&format!("chat:{old_session}"));
+        }
+        store.context_revision += 1;
+        store.pet.reset_context();
+        let context = crate::persona::context(&store.connection, store.context_revision)?;
+        let pet_error = worker.settle_pet(store, secrets).err();
+        Ok((session, context, pet_error))
+    })
+    .await?;
+    if let Some(error) = pet_error {
+        let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
+    }
+    if app.emit("window_context_changed", &context).is_err() {
+        eprintln!("上下文变化通知发送失败，请刷新窗口");
+    }
+    Ok(session)
+}
+
+#[tauri::command]
+pub async fn set_active_session(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    session_id: String,
+    context_revision: u64,
+) -> AppResult<crate::persona::Context> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let worker = runtime.inner().clone();
+    let requests = worker.requests.clone();
+    let (context, changed, pet_error) = storage(worker.clone(), move |store, secrets| {
+        worker.settle_pet(store, secrets)?;
+        let before = validate_persona_context(store, persona_id, context_revision)?;
+        let changed = crate::sessions::select(&mut store.connection, persona_id, session_id)?;
+        if !changed {
+            return Ok((before, false, None));
+        }
+        if let Some(old_session) = before.session_id {
+            requests.cancel_key(&format!("chat:{old_session}"));
+        }
+        store.context_revision += 1;
+        store.pet.reset_context();
+        let context = crate::persona::context(&store.connection, store.context_revision)?;
+        let pet_error = worker.settle_pet(store, secrets).err();
+        Ok((context, true, pet_error))
+    })
+    .await?;
+    if let Some(error) = pet_error {
+        let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
+    }
+    if changed && app.emit("window_context_changed", &context).is_err() {
+        eprintln!("上下文变化通知发送失败，请刷新窗口");
+    }
+    Ok(context)
+}
+
+#[tauri::command]
+pub async fn rename_session(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    session_id: String,
+    context_revision: u64,
+    title: String,
+) -> AppResult<crate::models::Session> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let session = storage(runtime.inner().clone(), move |store, _| {
+        validate_persona_context(store, persona_id, context_revision)?;
+        crate::sessions::rename(&mut store.connection, persona_id, session_id, &title)
+    })
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(session)
+}
+
+#[tauri::command]
+pub async fn list_messages(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    session_id: String,
+    context_revision: u64,
+    after_id: Option<String>,
+    limit: Option<i64>,
+) -> AppResult<crate::models::MessagePage> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let after_id = parse_optional_id(after_id, "afterId")?;
+    storage(runtime.inner().clone(), move |store, _| {
+        let context = validate_persona_context(store, persona_id, context_revision)?;
+        if context.session_id.as_deref() != Some(&session_id.to_string()) {
+            return Err(AppError::new(
+                "CONTEXT_CHANGED",
+                "当前会话已经改变，请刷新后重试",
+            ));
+        }
+        crate::sessions::messages(
+            &store.connection,
+            persona_id,
+            session_id,
+            after_id,
+            limit.unwrap_or(100),
+        )
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn get_weather_settings(
     window: WebviewWindow,
@@ -56,14 +520,36 @@ pub async fn get_weather_settings(
     .await
 }
 #[tauri::command]
+pub async fn get_weather(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<crate::weather::WeatherView> {
+    authorize(&window)?;
+    let clock = runtime.clock.clone();
+    storage(runtime.inner().clone(), move |s, _| Ok(s.weather.view(s.context_revision, clock.sample()?.utc))).await
+}
+#[tauri::command]
+pub async fn refresh_weather(window: WebviewWindow, runtime: State<'_, Runtime>, context_revision: u64) -> AppResult<crate::weather::WeatherView> {
+    authorize(&window)?;
+    let source = crate::platform::windows::location::WindowsLocation(window);
+    crate::weather::refresh(runtime.inner().clone(), context_revision, &source).await
+}
+#[tauri::command]
+pub fn cancel_weather_refresh(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<()> {
+    authorize(&window)?;
+    runtime.requests.cancel_key("weather");
+    Ok(())
+}
+#[tauri::command]
 pub async fn save_weather_settings(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,
     input: crate::config::WeatherInput,
 ) -> AppResult<crate::config::WeatherSettings> {
     authorize(&window)?;
+    let requests = runtime.requests.clone();
     storage(runtime.inner().clone(), move |s, p| {
-        crate::config::save_weather(&mut s.connection, input, p)
+        let settings = crate::config::save_weather(&mut s.connection, input, p)?;
+        requests.cancel_key("weather");
+        s.weather = Default::default();
+        Ok(settings)
     })
     .await
 }
@@ -76,18 +562,19 @@ pub async fn test_provider_connection(
 ) -> AppResult<()> {
     authorize(&window)?;
     let id = parse_id(&id)?;
-    let config = storage(runtime.inner().clone(), move |s, p| {
-        crate::providers::connection_test_config(&s.connection, id, p)
-    })
-    .await?;
-    crate::providers::test_connection(&runtime.ai.clone()?, config).await
+    check_provider(runtime.inner().clone(), id).await
 }
 
 fn authorize(window: &WebviewWindow) -> AppResult<()> {
-    if window.label() != "main" {
+    if !crate::desktop_windows::is_application_window(window.label()) {
         return Err(AppError::new("PERMISSION_DENIED", "此窗口无权管理应用配置"));
     }
     Ok(())
+}
+#[tauri::command]
+pub async fn focus_or_create_window(window: WebviewWindow, app: AppHandle, page: crate::desktop_windows::Page) -> AppResult<()> {
+    authorize(&window)?;
+    crate::desktop_windows::open(app, page).await
 }
 async fn storage<T: Send + 'static>(
     runtime: Runtime,
@@ -126,7 +613,9 @@ pub async fn save_settings(
     changes: crate::config::Settings,
 ) -> AppResult<crate::config::Settings> {
     authorize(&window)?;
-    let settings = storage(runtime.inner().clone(), move |s, _| {
+    let worker = runtime.inner().clone();
+    let settings = storage(runtime.inner().clone(), move |s, p| {
+        worker.settle_pet(s, p)?;
         crate::config::save(&mut s.connection, changes)
     })
     .await?;
@@ -314,7 +803,9 @@ async fn change_persona(
     delete: bool,
 ) -> AppResult<crate::persona::Context> {
     let requests = runtime.requests.clone();
-    let (context, changed) = storage(runtime, move |s, _| {
+    let worker = runtime.clone();
+    let (context, changed) = storage(runtime, move |s, p| {
+        worker.settle_pet(s, p)?;
         let before = crate::persona::context(&s.connection, s.context_revision)?;
         if delete {
             crate::persona::delete(&mut s.connection, id)?;
@@ -329,6 +820,8 @@ async fn change_persona(
             requests.cancel_persona(parse_id(&before.persona_id)?);
             s.context_revision += 1;
             after.context_revision = s.context_revision;
+            s.pet.reset_context();
+            worker.settle_pet(s, p)?;
         }
         Ok((after, changed))
     })
@@ -453,6 +946,10 @@ pub fn change_hidden(app: &AppHandle, hidden: bool) -> Result<Snapshot, String> 
     }
     let snapshot = state.snapshot;
     drop(state);
+    // 数据库故障不得让用户失去隐藏/恢复窗口的能力。
+    if let Err(error) = app.state::<Runtime>().pet_visibility(Some(hidden), None) {
+        let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
+    }
     window
         .emit(STATE_EVENT, snapshot)
         .map_err(|e| format!("同步宠窗状态失败：{e}"))?;

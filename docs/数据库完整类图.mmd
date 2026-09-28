@@ -61,6 +61,18 @@ class sessions {
   TEXT last_return_at
   INTEGER travel_trigger_remaining_seconds
 }
+class session_pet_states {
+  <<table>>
+  INTEGER session_id PK FK
+  INTEGER hunger_elapsed_ms
+  INTEGER idle_elapsed_ms
+  TEXT idle_branch
+  TEXT sleep_until
+  TEXT last_fed_at
+  TEXT last_interacted_at
+  INTEGER state_revision
+  TEXT updated_at
+}
 class chat_rounds {
   <<table>>
   INTEGER id PK
@@ -345,40 +357,41 @@ class session_festivals {
 }
 sessions "0..*" --> "0..1" user_profiles : R01 user_profile_id / SET NULL
 sessions "0..*" --> "1" personas : R02 persona_id / CASCADE
-chat_rounds "0..*" --> "1" sessions : R03 session_id / CASCADE
-messages "0..*" --> "0..1" chat_rounds : R04 round_id / CASCADE
-messages "0..*" --> "1" sessions : R05 session_id / CASCADE
-short_memories "0..1" --> "1" chat_rounds : R06 round_id / CASCADE
-short_memories "0..*" --> "1" sessions : R07 session_id / CASCADE
-long_memories "0..1" --> "1" chat_rounds : R08 activated_by_round_id / CASCADE
-long_memories "0..*" --> "1" sessions : R09 session_id / CASCADE
-long_memory_embeddings "0..*" --> "1" sessions : R10 session_id / CASCADE
-long_memory_embeddings "0..1" --> "1" long_memories : R11 long_memory_id / CASCADE
-long_memory_sources "0..1" --> "1" short_memories : R12 short_memory_id / RESTRICT
-long_memory_sources "0..*" --> "1" long_memories : R13 long_memory_id / CASCADE
-notebooks "0..1" --> "1" sessions : R14 session_id / CASCADE
-reminder_occurrences "0..*" --> "1" reminders : R15 reminder_id / CASCADE
-game_permissions "0..*" --> "1" game_plugins : R16 plugin_id / CASCADE
-game_plugin_settings "0..*" --> "1" game_plugins : R17 plugin_id / CASCADE
-game_plugin_data "0..*" --> "1" game_plugins : R18 plugin_id / CASCADE
-currency_ledger "0..*" --> "0..1" game_runs : R19 game_run_id / RESTRICT
-currency_ledger "0..*" --> "0..1" game_runs : R20 game_run_id, plugin_id, plugin_version / NO ACTION
-travels "0..*" --> "1" sessions : R21 session_id / CASCADE
-travel_journals "0..1" --> "1" travels : R22 travel_id / CASCADE
-travel_journals "0..*" --> "1" sessions : R23 session_id / CASCADE
-travel_journals "0..1" --> "1" travels : R24 travel_id, session_id / NO ACTION
-accessories "0..*" --> "0..1" travels : R25 travel_id / SET NULL
-accessories "0..*" --> "1" sessions : R26 session_id / CASCADE
-accessories "0..*" --> "0..1" travels : R27 travel_id, session_id / NO ACTION
-letters "0..*" --> "0..1" letters : R28 reply_to_id / SET NULL
-letters "0..*" --> "0..1" travels : R29 travel_id / SET NULL
-letters "0..*" --> "1" sessions : R30 session_id / CASCADE
-letters "0..*" --> "0..1" travels : R31 travel_id, session_id / NO ACTION
-souvenirs "0..*" --> "0..1" travels : R32 travel_id / SET NULL
-souvenirs "0..*" --> "1" sessions : R33 session_id / CASCADE
-souvenirs "0..*" --> "0..1" travels : R34 travel_id, session_id / NO ACTION
-session_festivals "0..*" --> "0..1" festival_catalog : R35 festival_id / SET NULL
-session_festivals "0..*" --> "1" sessions : R36 session_id / CASCADE
+session_pet_states "0..1" --> "1" sessions : R03 session_id / CASCADE
+chat_rounds "0..*" --> "1" sessions : R04 session_id / CASCADE
+messages "0..*" --> "0..1" chat_rounds : R05 round_id / CASCADE
+messages "0..*" --> "1" sessions : R06 session_id / CASCADE
+short_memories "0..1" --> "1" chat_rounds : R07 round_id / CASCADE
+short_memories "0..*" --> "1" sessions : R08 session_id / CASCADE
+long_memories "0..1" --> "1" chat_rounds : R09 activated_by_round_id / CASCADE
+long_memories "0..*" --> "1" sessions : R10 session_id / CASCADE
+long_memory_embeddings "0..*" --> "1" sessions : R11 session_id / CASCADE
+long_memory_embeddings "0..1" --> "1" long_memories : R12 long_memory_id / CASCADE
+long_memory_sources "0..1" --> "1" short_memories : R13 short_memory_id / RESTRICT
+long_memory_sources "0..*" --> "1" long_memories : R14 long_memory_id / CASCADE
+notebooks "0..1" --> "1" sessions : R15 session_id / CASCADE
+reminder_occurrences "0..*" --> "1" reminders : R16 reminder_id / CASCADE
+game_permissions "0..*" --> "1" game_plugins : R17 plugin_id / CASCADE
+game_plugin_settings "0..*" --> "1" game_plugins : R18 plugin_id / CASCADE
+game_plugin_data "0..*" --> "1" game_plugins : R19 plugin_id / CASCADE
+currency_ledger "0..*" --> "0..1" game_runs : R20 game_run_id / RESTRICT
+currency_ledger "0..*" --> "0..1" game_runs : R21 game_run_id, plugin_id, plugin_version / NO ACTION
+travels "0..*" --> "1" sessions : R22 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R23 travel_id / CASCADE
+travel_journals "0..*" --> "1" sessions : R24 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R25 travel_id, session_id / NO ACTION
+accessories "0..*" --> "0..1" travels : R26 travel_id / SET NULL
+accessories "0..*" --> "1" sessions : R27 session_id / CASCADE
+accessories "0..*" --> "0..1" travels : R28 travel_id, session_id / NO ACTION
+letters "0..*" --> "0..1" letters : R29 reply_to_id / SET NULL
+letters "0..*" --> "0..1" travels : R30 travel_id / SET NULL
+letters "0..*" --> "1" sessions : R31 session_id / CASCADE
+letters "0..*" --> "0..1" travels : R32 travel_id, session_id / NO ACTION
+souvenirs "0..*" --> "0..1" travels : R33 travel_id / SET NULL
+souvenirs "0..*" --> "1" sessions : R34 session_id / CASCADE
+souvenirs "0..*" --> "0..1" travels : R35 travel_id, session_id / NO ACTION
+session_festivals "0..*" --> "0..1" festival_catalog : R36 festival_id / SET NULL
+session_festivals "0..*" --> "1" sessions : R37 session_id / CASCADE
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

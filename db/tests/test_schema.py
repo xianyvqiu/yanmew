@@ -39,6 +39,22 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.c.execute("PRAGMA foreign_key_check").fetchall(),[])
         self.assertEqual(self.c.execute("PRAGMA integrity_check").fetchone()[0],'ok')
         self.c.execute("INSERT INTO long_memories_fts(long_memories_fts) VALUES('rebuild')")
+    def test_pet_state_lifecycle_and_constraints(self):
+        self.assertEqual(self.c.execute("SELECT session_id,hunger_elapsed_ms,idle_elapsed_ms,idle_branch,sleep_until FROM session_pet_states ORDER BY session_id").fetchall(),[(1,0,0,'none',None),(2,0,0,'none',None)])
+        for statement in (
+            "UPDATE session_pet_states SET hunger_elapsed_ms=-1 WHERE session_id=1",
+            "UPDATE session_pet_states SET idle_elapsed_ms=-1 WHERE session_id=1",
+            "UPDATE session_pet_states SET state_revision=-1 WHERE session_id=1",
+            "UPDATE session_pet_states SET idle_branch='sleeping' WHERE session_id=1",
+            "UPDATE session_pet_states SET sleep_until='2026-09-21T00:00:00Z' WHERE session_id=1",
+            "UPDATE session_pet_states SET idle_branch='unknown' WHERE session_id=1",
+            "INSERT INTO session_pet_states(session_id,updated_at) VALUES(1,'x')",
+            "INSERT INTO session_pet_states(session_id,updated_at) VALUES(999,'x')",
+        ):
+            with self.assertRaises(sqlite3.IntegrityError):
+                self.c.execute(statement)
+        self.c.execute("DELETE FROM sessions WHERE id=1")
+        self.assertEqual(self.c.execute("SELECT session_id FROM session_pet_states").fetchall(),[(2,)])
     def test_every_table_column_has_inline_comment(self):
         table_names = re.findall(r"CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS\s+(\w+)", self.schema_text)
         missing = []

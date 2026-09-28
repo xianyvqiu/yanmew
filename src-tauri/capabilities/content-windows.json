@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "content-windows",
+  "description": "颜喵聊天和设置窗口，不包含小游戏插件窗口",
+  "windows": ["chat", "settings"],
+  "permissions": ["core:default"]
+}

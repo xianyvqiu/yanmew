@@ -1,8 +1,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { configurationApi, errorMessage } from "../api";
+import { configurationApi, errorMessage, petApi } from "../api";
 import { usePetWindow } from "./usePetWindow";
 import { usePetAppearance } from "./usePetAppearance";
+import { usePetActivity } from "./usePetActivity";
+import { navigation, type ApplicationPage } from "../platform/navigation";
 import "./PetWindow.css";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -16,7 +18,14 @@ export default function PetWindow() {
   const [dragging, setDragging] = useState(false);
   const [startupError, setStartupError] = useState("");
   const appearance = usePetAppearance();
-  const visibleError = error || startupError || appearance.error;
+  const activity = usePetActivity();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showProviderError, setShowProviderError] = useState(false);
+  const visibleError = error || startupError || appearance.error || activity.error || (showProviderError ? activity.view?.error : "");
+  const openPage = async (page: ApplicationPage) => {
+    try { await navigation.open(page); }
+    catch (cause) { fail(errorMessage(cause)); }
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -27,7 +36,14 @@ export default function PetWindow() {
   }, []);
   useEffect(() => {
     pointerStart.current = null; draggingStarted.current = false; setDragging(false);
+    setMenuOpen(false);
   }, [state.hidden]);
+  useEffect(() => { setMenuOpen(false); }, [activity.view?.contextRevision]);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenuOpen(false); setShowProviderError(false); } };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, []);
   useEffect(() => {
     const reset = () => { pointerStart.current = null; draggingStarted.current = false; setDragging(false); };
     window.addEventListener("blur", reset);
@@ -36,6 +52,7 @@ export default function PetWindow() {
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || pointerStart.current) return;
+    setMenuOpen(false);
     pointerStart.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     draggingStarted.current = false;
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -46,7 +63,8 @@ export default function PetWindow() {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return;
     draggingStarted.current = true; setDragging(true);
     // 原生拖动可能吞掉 pointerup；结束后清理旧指针并恢复呼吸。
-    void getCurrentWindow().startDragging().catch(fail).finally(() => {
+    void petApi.dragging(true).catch(fail).then(() => getCurrentWindow().startDragging()).catch(fail).finally(() => {
+      void petApi.dragging(false).catch(fail);
       if (pointerStart.current === start) {
         pointerStart.current = null; draggingStarted.current = false; setDragging(false);
       }
@@ -57,9 +75,15 @@ export default function PetWindow() {
       pointerStart.current = null; draggingStarted.current = false; setDragging(false);
     }
   };
+  const releasePointer = (event: PointerEvent<HTMLDivElement>) => {
+    const click = pointerStart.current?.pointerId === event.pointerId && !draggingStarted.current;
+    resetPointer(event);
+    if (click) void activity.interact("click");
+  };
 
   return (
     <div ref={root} data-testid="pet-window" className="pet-window" data-hidden={state.hidden}
+      data-transitioning={pending}
       data-dragging={dragging} data-error={Boolean(visibleError)} data-ready={appearance.ready} style={appearance.style}>
       <button className="ym-button pet-visibility" data-pet-interactive
         data-variant={error ? "danger" : undefined}
@@ -73,14 +97,31 @@ export default function PetWindow() {
         </svg>
         <span>{state.revision < 0 ? (error ? "重试连接" : "正在连接…") : state.hidden ? "显示宠窗" : "隐藏宠窗"}</span>
       </button>
+      {activity.view?.error && !state.hidden && <button className="ym-button pet-health" data-pet-interactive
+        data-variant="danger" aria-label="查看连接错误" aria-expanded={showProviderError}
+        onClick={() => { setShowProviderError(value => !value); setMenuOpen(false); }}>!</button>}
+      {!state.hidden && <>
+        <button className="ym-button pet-open-chat" data-pet-interactive onClick={() => { void openPage("chat"); }}>聊天</button>
+        <button className="ym-button pet-open-settings" data-pet-interactive onClick={() => { void openPage("settings"); }}>设置</button>
+      </>}
       {visibleError && !state.hidden && <div className="pet-error" data-pet-interactive role="alert" tabIndex={0}>
         <strong><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v7m0 3v2"/></svg>暂时遇到一点问题</strong>
         <p>{visibleError}</p>
+        {activity.view?.error && <button className="ym-button" disabled={activity.pending} onClick={() => { void activity.refresh(); }}>刷新连接</button>}
+      </div>}
+      {menuOpen && !state.hidden && <div className="pet-menu" data-pet-interactive aria-label="桌宠互动">
+        <p>{activity.view?.intimacy == null ? "当前未选择会话" : `亲密度 ${activity.view.intimacy} / 999${activity.view.intimacy === 999 ? " · 已达上限" : ""}`}</p>
+        <button className="ym-button" disabled={activity.pending || !activity.view?.canInteract}
+          onClick={() => { setMenuOpen(false); void activity.interact("feed"); }}>喂食</button>
+        <button className="ym-button" disabled={activity.pending || !activity.view?.canInteract}
+          onClick={() => { setMenuOpen(false); void activity.interact("stroke"); }}>摸摸</button>
       </div>}
       {!state.hidden && <div data-pet-interactive aria-label="颜文字桌宠" role="img" className="pet-face"
+        data-away={activity.view?.activity === "away"}
+        onContextMenu={event => { event.preventDefault(); setMenuOpen(value => !value); setShowProviderError(false); }}
         onLostPointerCapture={resetPointer} onPointerCancel={resetPointer}
-        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={resetPointer}>
-        <span className="pet-expression">(・ω・)</span>
+        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={releasePointer}>
+        <span className="pet-expression">{activity.view?.expression || "(・ω・)"}</span>
       </div>}
     </div>
   );
