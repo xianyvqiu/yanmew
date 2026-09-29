@@ -150,7 +150,8 @@ pub struct MessagePage {
     pub next_after_id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoundSnapshot {
     pub round: ChatRound,
     pub user_message: Message,

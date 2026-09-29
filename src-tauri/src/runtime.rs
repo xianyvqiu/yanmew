@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 mod tests;
 
 pub struct Store {
+    pub chat_requests: std::collections::HashMap<i64, crate::chat::RequestSnapshot>,
     pub weather: crate::weather::Cache,
     pub connection: rusqlite::Connection,
     pub context_revision: u64,
@@ -34,6 +35,7 @@ impl Runtime {
             .and_then(|p| crate::db::open(&p))
             .map(|connection| Store {
                 weather: Default::default(),
+                chat_requests: Default::default(),
                 connection,
                 context_revision: 0,
                 pet: Default::default(),
@@ -116,6 +118,7 @@ impl Runtime {
     pub fn shutdown(&self) -> AppResult<()> {
         self.jobs_cancel.cancel();
         self.requests.shutdown();
+        crate::chat::interrupt_active(self)?;
         self.read(|store, secrets| {
             if !store.pet.stopping {
                 self.settle_pet(store, secrets)?;
@@ -178,6 +181,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
     Runtime {
         store: Arc::new(Mutex::new(Ok(Store {
             weather: Default::default(),
+                chat_requests: Default::default(),
             connection,
             context_revision: 0,
             pet: Default::default(),

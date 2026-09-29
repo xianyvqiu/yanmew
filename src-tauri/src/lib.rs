@@ -58,6 +58,9 @@ pub fn run() {
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
             commands::focus_or_create_window,
+            commands::submit_chat,
+            commands::get_chat_request,
+            commands::cancel_chat,
             commands::list_reminder_occurrences,
             commands::list_reminders,
             commands::create_reminder,
@@ -164,6 +167,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("启动颜喵失败")
         .run(|app, event| {
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "chat") {
+                if let Err(error) = crate::chat::interrupt_active(app.state::<runtime::Runtime>().inner()) {
+                    eprintln!("关闭聊天窗前保存回复失败：{error}");
+                }
+            }
             if matches!(
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit

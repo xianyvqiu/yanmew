@@ -1,5 +1,25 @@
 /** SQLite ID 通过字符串传递，避免 JavaScript 大整数精度损失。 */
 export type RecordId = string;
+export type ChatRound = {
+  id: RecordId; sessionId: RecordId; status: "pending" | "completed" | "interrupted";
+  createdAt: string; completedAt: string | null;
+};
+export type RoundSnapshot = { round: ChatRound; userMessage: Message; assistantMessage: Message | null };
+/** partialContent 尚未持久化；round 中的消息才是数据库记录。 */
+export type ChatRequestSnapshot = {
+  requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
+  roundId: RecordId; seq: number; partialContent: string; expression: string | null; round: RoundSnapshot;
+};
+export type ChatReplyEvent = {
+  requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
+  roundId: RecordId; seq: number; saved: RoundSnapshot | null;
+} & (
+  | { type: "expression"; expression: string }
+  | { type: "text"; text: string }
+  | { type: "finished"; finish: "stop" | "length" | "content_filter" | "tool_calls" }
+  | { type: "cancelled" }
+  | { type: "failed"; code: string; message: string }
+);
 export type ReminderStatus = "pending" | "done" | "expired";
 export type ReminderDeliveryState = "queued" | "missed" | "shown";
 export type ReminderOccurrence = {

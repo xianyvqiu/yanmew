@@ -36,7 +36,7 @@ export function useCurrentContext() {
       } catch (cause) { if (!disposed && token === generation) setError(errorMessage(cause)); }
       finally { if (!disposed && token === generation) setLoading(false); }
     };
-    const focus = () => { void load(); };
+    const focus = () => { void load(false); };
     void (async () => {
       try {
         const stopContext = await configurationApi.listenContext(context => {
@@ -47,7 +47,7 @@ export function useCurrentContext() {
         const stopChanges = await configurationApi.listenChanges(() => { if (!disposed) void load(false); });
         if (disposed) { stopChanges(); return; } stops.push(stopChanges);
         window.addEventListener("focus", focus);
-        await load();
+        await load(false);
       } catch (cause) { if (!disposed) { setError(errorMessage(cause)); setLoading(false); } }
     })();
     return () => { disposed = true; generation++; stops.forEach(stop => stop()); window.removeEventListener("focus", focus); };

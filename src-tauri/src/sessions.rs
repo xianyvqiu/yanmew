@@ -285,7 +285,7 @@ pub fn start_round(
     Ok(snapshot)
 }
 
-fn round_snapshot(
+pub(crate) fn round_snapshot(
     connection: &Connection,
     persona_id: i64,
     session_id: i64,

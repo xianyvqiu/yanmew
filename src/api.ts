@@ -1,4 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ChatReplyEvent, ChatRequestSnapshot, RoundSnapshot } from "./types";
+
+export const chatApi = {
+  submit: (context: CurrentContext, input: string) => invoke<ChatRequestSnapshot>("submit_chat", {
+    personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision, input,
+  }),
+  current: (context: CurrentContext) => invoke<ChatRequestSnapshot | null>("get_chat_request", {
+    personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision,
+  }),
+  cancel: (request: Pick<ChatRequestSnapshot, "personaId" | "sessionId" | "requestId" | "roundId">) =>
+    invoke<RoundSnapshot>("cancel_chat", request),
+  listen: (receive: (event: ChatReplyEvent) => void) => listen<ChatReplyEvent>("chat-reply", event => receive(event.payload)),
+};
 import type { WeatherView } from "./types";
 
 export const weatherApi = {

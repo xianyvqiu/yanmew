@@ -1,52 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, sessionApi } from "../api";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
-import type { Message } from "../types";
+import { useChat } from "../hooks/useChat";
+import ChatComposer from "../components/ChatComposer";
 import "./workspace.css";
 
 export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceContext; onRefresh: () => void }) {
   const { context, persona, sessions } = snapshot;
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [afterId, setAfterId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const chat = useChat(context);
+  const { messages, loading, afterId } = chat;
+  const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [title, setTitle] = useState(sessions.find(item => item.id === context.sessionId)?.title ?? "");
   const alive = useRef(true);
   const locked = useRef(false);
-  const messageLock = useRef(false);
   useEffect(() => {
-    let disposed = false; alive.current = true;
-    if (context.sessionId) {
-      setLoading(true);
-      void sessionApi.messages(context).then(page => {
-        if (!disposed) { setMessages(page.items); setAfterId(page.nextAfterId); }
-      }).catch(cause => { if (!disposed) setError(errorMessage(cause)); })
-        .finally(() => { if (!disposed) setLoading(false); });
-    }
-    return () => { disposed = true; alive.current = false; };
-  }, [context]);
-  const act = async (action: () => Promise<unknown>) => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  useEffect(() => { setTitle(sessions.find(item => item.id === context.sessionId)?.title ?? ""); }, [sessions, context.sessionId]);
+  const act = async (action: () => Promise<unknown>, switching = false) => {
     if (locked.current) return;
     locked.current = true; setBusy(true); setError("");
-    try { await action(); if (alive.current) onRefresh(); }
+    try { if (switching && chat.busy) await chat.cancel(); await action(); if (alive.current) onRefresh(); }
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
-  const loadMore = async () => {
-    if (!afterId || messageLock.current) return;
-    messageLock.current = true; setLoading(true); setError("");
-    try {
-      const page = await sessionApi.messages(context, afterId);
-      if (alive.current) { setMessages(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))]); setAfterId(page.nextAfterId); }
-    } catch (cause) { if (alive.current) setError(errorMessage(cause)); }
-    finally { messageLock.current = false; if (alive.current) setLoading(false); }
+  const send = async () => {
+    const input = draft;
+    if (await chat.send(input)) {
+      if (alive.current) setDraft(current => current === input ? "" : current);
+    }
   };
-  return <div className="ym-workspace-page">
+  return <div className="ym-workspace-page ym-chat-page">
     <section className="ym-page-card" aria-label="会话管理">
-      <div className="ym-page-heading"><h2>我们的对话</h2><button className="ym-button" disabled={busy} onClick={() => { void act(() => sessionApi.create(context)); }}>新建会话</button></div>
+      <div className="ym-page-heading"><h2>我们的对话</h2><button className="ym-button" disabled={busy} onClick={() => { void act(() => sessionApi.create(context), true); }}>新建会话</button></div>
       <label className="ym-field">当前会话<select value={context.sessionId ?? ""} disabled={busy || !sessions.length}
-        onChange={event => { const id = event.target.value; if (id) void act(() => sessionApi.select(context, id)); }}>
+        onChange={event => { const id = event.target.value; if (id) void act(() => sessionApi.select(context, id), true); }}>
         <option value="" disabled>尚未创建会话</option>
         {sessions.map(session => <option key={session.id} value={session.id}>{session.title}</option>)}
       </select></label>
@@ -56,8 +47,8 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
       </form>}
       <p className="ym-page-note">切换会话会取消已经开始的旅行与待回信。</p>
     </section>
-    {error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}
-    <section className="ym-page-card" aria-label="聊天记录">
+    {(error || chat.error) && <div role="alert" className="ym-page-error">{error || chat.error}<button className="ym-button" onClick={() => { setError(""); void chat.reload(); }}>重新加载</button></div>}
+    <section className="ym-page-card ym-chat-history" aria-label="聊天记录">
       <h2>聊天记录</h2>
       {!context.sessionId ? <p className="ym-page-empty">为 {persona.name} 创建一个会话，开始记录彼此的日常。</p>
         : !messages.length && !loading ? <p className="ym-page-empty">这个会话还没有消息。</p>
@@ -65,9 +56,17 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
           <div className="ym-message-meta"><strong>{message.role === "user" ? "你" : persona.name}</strong><time>{new Date(message.createdAt).toLocaleString()}</time></div>
           <p>{message.content}</p>
         </li>)}</ol>}
+      {chat.active && <div className="ym-stream-message" aria-label="正在生成的回复">
+        <strong>{persona.name} {chat.active.expression}</strong>
+        <p>{chat.active.partialContent || "正在想怎么回答你…"}</p>
+        <span className="ym-page-note">正在回复，尚未保存</span>
+      </div>}
+      {chat.notice && <p role="status" className="ym-page-note">{chat.notice}</p>}
       {loading && <p role="status">正在读取聊天记录…</p>}
-      {afterId && <button className="ym-button" disabled={loading} onClick={() => { void loadMore(); }}>加载后续消息</button>}
+      {afterId && <button className="ym-button" disabled={loading} onClick={() => { void chat.loadMore(); }}>加载后续消息</button>}
     </section>
-    <p className="ym-page-note">当前可管理会话和查看已保存的聊天记录。发送消息功能尚未开放。</p>
+    <ChatComposer value={draft} onChange={setDraft} onSend={() => { void send(); }}
+      onCancel={() => { void chat.cancel(); }} disabled={!context.sessionId || !chat.ready || busy}
+      busy={chat.busy} cancelling={chat.cancelling} />
   </div>;
 }

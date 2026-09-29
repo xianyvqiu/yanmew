@@ -7,6 +7,53 @@ use crate::{
 use tauri::{State, WebviewWindow};
 
 #[tauri::command]
+pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>,
+    persona_id: String, session_id: String, context_revision: u64, input: String,
+) -> AppResult<crate::chat::RequestSnapshot> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let runtime = runtime.inner().clone();
+    let client = runtime.ai.clone()?;
+    let (prepared, receipt) = tauri::async_runtime::spawn_blocking(move ||
+        crate::chat::submit(&runtime, persona_id, session_id, context_revision, input)
+    ).await.map_err(|_| AppError::storage())??;
+    tauri::async_runtime::spawn(async move {
+        // 界面可能已经关闭；事件发送失败不撤销已经提交的数据库事务。
+        let _ = crate::chat::run_persisted(&client, prepared, |event| {
+            let _ = app.emit("chat-reply", &event);
+        }).await;
+    });
+    Ok(receipt)
+}
+
+#[tauri::command]
+pub async fn get_chat_request(window: WebviewWindow, runtime: State<'_, Runtime>,
+    persona_id: String, session_id: String, context_revision: u64,
+) -> AppResult<Option<crate::chat::RequestSnapshot>> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::chat::current(&runtime, persona_id, session_id, context_revision))
+        .await.map_err(|_| AppError::storage())?
+}
+
+#[tauri::command]
+pub async fn cancel_chat(window: WebviewWindow, runtime: State<'_, Runtime>,
+    persona_id: String, session_id: String, request_id: String, round_id: String,
+) -> AppResult<crate::models::RoundSnapshot> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let request_id = parse_id(&request_id)? as u64;
+    let round_id = parse_id(&round_id)?;
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::chat::cancel(&runtime, persona_id, session_id, request_id, round_id))
+        .await.map_err(|_| AppError::storage())?
+}
+
+#[tauri::command]
 pub async fn list_reminders(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,

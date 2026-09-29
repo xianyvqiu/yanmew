@@ -17,6 +17,17 @@ beforeEach(() => {
   api.changes.mockResolvedValue(stop);
 });
 afterEach(cleanup);
+it("同一上下文聚焦刷新期间保留页面快照", async () => {
+  const hook = renderHook(useCurrentContext);
+  await waitFor(() => expect(hook.result.current.snapshot).not.toBeNull());
+  const previous = hook.result.current.snapshot;
+  let finish!: (value: CurrentContext) => void;
+  api.get.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  act(() => window.dispatchEvent(new Event("focus")));
+  expect(hook.result.current.snapshot).toBe(previous);
+  await act(async () => finish(current));
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+});
 it("先订阅再读取，聚焦补查且卸载释放监听", async () => {
   const hook = renderHook(useCurrentContext);
   await waitFor(() => expect(hook.result.current.snapshot?.context.contextRevision).toBe(0));

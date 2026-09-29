@@ -100,6 +100,17 @@ impl RequestLease {
     }
 }
 impl RequestManager {
+    pub fn cancel_request(&self, key: &str, request_id: u64, persona_id: i64) -> AppResult<bool> {
+        let active = self.0.active.lock().map_err(|_| AppError::storage())?;
+        let Some(request) = active.get(key) else {
+            return Ok(false);
+        };
+        if request.id != request_id || request.persona_id != persona_id {
+            return Ok(false);
+        }
+        request.cancel.cancel();
+        Ok(true)
+    }
     pub fn is_active(&self, key: &str) -> AppResult<bool> {
         Ok(self
             .0
@@ -172,6 +183,34 @@ impl Drop for RequestLease {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cancel_request_requires_matching_key_id_and_persona() {
+        let manager = RequestManager::default();
+        let request = manager.start("chat:1".into(), 7).unwrap();
+
+        assert!(!manager.cancel_request("chat:1", request.id + 1, 7).unwrap());
+        assert!(!manager.cancel_request("chat:1", request.id, 8).unwrap());
+        assert!(!manager.cancel_request("chat:2", request.id, 7).unwrap());
+        assert!(request.cancel.check().is_ok());
+
+        assert!(manager.cancel_request("chat:1", request.id, 7).unwrap());
+        assert_eq!(request.cancel.check().unwrap_err().code, "CANCELLED");
+        assert!(manager.is_active("chat:1").unwrap());
+    }
+
+    #[test]
+    fn stale_request_id_cannot_cancel_replacement_with_same_key() {
+        let manager = RequestManager::default();
+        let old_request = manager.start("chat:1".into(), 7).unwrap();
+        let old_id = old_request.id;
+        drop(old_request);
+
+        let new_request = manager.start("chat:1".into(), 7).unwrap();
+        assert_ne!(old_id, new_request.id);
+        assert!(!manager.cancel_request("chat:1", old_id, 7).unwrap());
+        assert!(new_request.cancel.check().is_ok());
+    }
+
     #[test]
     fn cancellation_is_latched_and_registration_is_exclusive() {
         tauri::async_runtime::block_on(async {

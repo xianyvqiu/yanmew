@@ -12,6 +12,10 @@ use crate::{
 };
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
+mod coordinator;
+pub use coordinator::*;
+#[cfg(test)]
+mod coordinator_tests;
 
 /// 只能由后端读取权威数据后构造；不是 Tauri 命令输入，也不序列化密钥。
 pub struct PreparedReply {
@@ -35,6 +39,15 @@ pub fn prepare_reply(
     if input.trim().is_empty() {
         return Err(AppError::validation("input", "消息不能为空"));
     }
+    prepare(runtime, persona_id, session_id, context_revision, input, false).map(|(reply, _)| reply)
+}
+
+fn prepare(
+    runtime: &Runtime, persona_id: i64, session_id: i64, context_revision: u64,
+    input: String, persist: bool,
+) -> AppResult<(PreparedReply, Option<RequestSnapshot>)> {
+    if input.trim().is_empty() { return Err(AppError::validation("input", "消息不能为空")); }
+    runtime.ai.as_ref().map_err(Clone::clone)?;
     runtime.read(|s,p| {
         runtime.settle_pet(s,p)?;
         let health=s.pet.health(&s.connection,p)?;
@@ -49,12 +62,22 @@ pub fn prepare_reply(
         let mut stmt=s.connection.prepare("SELECT role,content FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2")?;
         let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message{role:r.get(0)?,content:r.get(1)?}))?.collect::<Result<Vec<_>,_>>()?;
         drop(stmt);
-        messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input));
+        messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input.trim()));
         let lease=runtime.requests.start(format!("chat:{session_id}"),persona_id)?;
         let pet=crate::pet_store::read(&s.connection,session_id)?;
         crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
         runtime.settle_pet(s,p)?;
-        Ok(PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health})
+        let snapshot = if persist {
+            let round = crate::sessions::start_round(&mut s.connection, persona_id, session_id, &input)?;
+            let snapshot = RequestSnapshot {
+                request_id: lease.id.to_string(), persona_id: persona_id.to_string(),
+                session_id: session_id.to_string(), context_revision, round_id: round.round.id.clone(),
+                seq: 0, partial_content: String::new(), expression: None, round,
+            };
+            s.chat_requests.insert(session_id, snapshot.clone());
+            Some(snapshot)
+        } else { None };
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
@@ -86,7 +109,7 @@ struct Expression {
 /// 本阶段只负责生成与事件；阶段 5 的回合服务接收结果后按实际终态落库。
 pub async fn run_reply(
     client: &AiClient,
-    prepared: PreparedReply,
+    prepared: &PreparedReply,
     mut sink: impl FnMut(ReplyEvent) -> AppResult<()>,
 ) -> AppResult<Choice> {
     let mut seq = 0;
@@ -110,7 +133,7 @@ pub async fn run_reply(
             Ok(())
         })?;
         emit(ReplyEventKind::Expression{expression:expression.expression})?;
-        let request=GenerateRequest{messages:prepared.messages,max_tokens:4096,tools:vec![],json:false};
+        let request=GenerateRequest{messages:prepared.messages.clone(),max_tokens:4096,tools:vec![],json:false};
         let mut choices=client.stream(&prepared.config,&request,&prepared.lease.cancel,|delta| {
             match delta {Delta::Text{choice_index:0,text}=>emit(ReplyEventKind::Text{text}),_=>Err(protocol())}
         }).await?;
@@ -166,7 +189,7 @@ mod tests {
             let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
             assert!(prepare_reply(&runtime, 1, 1, 0, "repeat".into()).is_err());
             let mut events = vec![];
-            let choice = run_reply(&client(), prepared, |event| {
+            let choice = run_reply(&client(), &prepared, |event| {
                 events.push(event);
                 Ok(())
             })
@@ -209,7 +232,7 @@ mod tests {
             let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
             let cancel = prepared.lease.cancel.clone();
             let mut kinds = vec![];
-            let error = run_reply(&client(), prepared, |event| {
+            let error = run_reply(&client(), &prepared, |event| {
                 if matches!(event.kind, ReplyEventKind::Expression { .. }) {
                     cancel.cancel();
                 }
@@ -237,7 +260,7 @@ mod tests {
             assert!(prepare_reply(&runtime, 2, 1, 0, "hi".into()).is_err());
             let prepared = prepare_reply(&runtime, 1, 1, 0, "hi".into()).unwrap();
             let mut events = vec![];
-            assert!(run_reply(&client(), prepared, |event| {
+            assert!(run_reply(&client(), &prepared, |event| {
                 events.push(event);
                 Ok(())
             })

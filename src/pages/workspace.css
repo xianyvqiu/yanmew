@@ -1,4 +1,9 @@
 .ym-workspace-page { display: grid; gap: 18px; min-width: 0; }
+.ym-chat-page { min-height: 100%; grid-template-rows: auto 1fr auto; }
+.ym-chat-page .chat-composer { position: sticky; bottom: -24px; z-index: 1; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); box-shadow: var(--ym-shadow-sm); }
+.ym-stream-message { margin-top: 14px; max-width: 90%; padding: 12px 14px; border-radius: var(--ym-radius-lg); background: var(--ym-surface-muted); overflow-wrap: anywhere; }
+.ym-stream-message p { white-space: pre-wrap; }
+@container (max-width: 519px) { .ym-chat-page .chat-composer { bottom: -16px; } .ym-stream-message { max-width: 100%; } }
 .ym-page-card { background: var(--ym-surface); border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); padding: clamp(14px, 3vw, 24px); min-width: 0; }
 .ym-page-card h2 { margin: 0 0 14px; font-size: var(--ym-font-heading); font-weight: 600; }
 .ym-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }

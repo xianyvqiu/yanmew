@@ -9,10 +9,12 @@ const api = vi.hoisted(() => ({
   select: vi.fn(),
   rename: vi.fn(),
   messages: vi.fn(),
+  current: vi.fn(), listen: vi.fn(), submit: vi.fn(), cancel: vi.fn(),
 }));
 
 vi.mock("../api", () => ({
   sessionApi: api,
+  chatApi: api,
   errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : "操作失败",
 }));
 
@@ -53,6 +55,9 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  api.current.mockReset().mockResolvedValue(null);
+  api.listen.mockReset().mockResolvedValue(() => {});
+  api.submit.mockReset(); api.cancel.mockReset();
   api.create.mockReset();
   api.select.mockReset();
   api.rename.mockReset();
@@ -62,6 +67,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("发送失败保留草稿并显示原因，不创建本地假消息", async () => {
+    api.submit.mockRejectedValue(new Error("请先配置聊天提供商"));
+    render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
+    const input = screen.getByRole("textbox", { name: "聊天消息" }) as HTMLTextAreaElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    fireEvent.change(input, { target: { value: "我的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByText("请先配置聊天提供商");
+    expect(input.value).toBe("我的草稿");
+    expect(screen.getByText("这个会话还没有消息。")).toBeTruthy();
+  });
+
   it("新建会话保存完成后才通知刷新", async () => {
     const current = snapshot(null);
     const pending = deferred<Session>();
