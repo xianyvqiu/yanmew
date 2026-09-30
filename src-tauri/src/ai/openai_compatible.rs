@@ -19,7 +19,9 @@ pub fn request_body(model: &str, input: &GenerateRequest, stream: bool) -> AppRe
     if input
         .messages
         .iter()
-        .any(|m| !["system", "user", "assistant"].contains(&m.role.as_str()))
+        .any(|m| !["system", "user", "assistant", "tool"].contains(&m.role.as_str())
+            || (m.role == "tool") != m.tool_call_id.as_ref().is_some_and(|id| !id.is_empty())
+            || (m.tool_calls.is_some() && m.role != "assistant"))
     {
         return Err(protocol());
     }

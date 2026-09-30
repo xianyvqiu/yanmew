@@ -1,4 +1,4 @@
-//! 桌宠计时与提醒共用唯一后台循环，提醒先完成离线补偿再在线调度。
+//! 桌宠、提醒与记忆共用唯一后台循环；记忆推理异步执行，不阻塞计时。
 use crate::{events::PetEventSink, runtime::Runtime};
 use std::{sync::Arc, time::Duration};
 
@@ -6,11 +6,13 @@ pub async fn run(
     runtime: Runtime,
     sink: Arc<dyn PetEventSink>,
     reminders: Arc<dyn crate::events::ReminderEventSink>,
+    memory_events: Arc<dyn crate::events::MemoryEventSink>,
 ) {
     let mut revision = None;
     let mut last_error = None;
     let mut reminders_recovered = false;
     let mut reminder_error = None;
+    let mut memory = crate::memory::Worker::default();
     loop {
         if runtime.jobs_cancel.check().is_err() {
             break;
@@ -69,10 +71,18 @@ pub async fn run(
                 last_error = Some(error.message);
             }
         }
+        if let Err(error) = memory.tick(&runtime, memory_events.as_ref()).await {
+            if error.code != "CANCELLED" {
+                crate::memory::Worker::report_scan_error(&runtime, memory_events.as_ref(), error);
+            }
+        }
         if runtime
             .jobs_cancel
             .wait(Duration::from_secs(2), async {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {},
+                    _ = runtime.memory.wake.notified() => {},
+                }
                 Ok(())
             })
             .await

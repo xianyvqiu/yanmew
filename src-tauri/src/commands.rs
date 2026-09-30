@@ -1,10 +1,39 @@
 use crate::pet_region::{self, Rect};
+use rusqlite::OptionalExtension;
 
 use crate::{
     error::{parse_id, AppError, AppResult},
     runtime::{Runtime, Store},
 };
 use tauri::{State, WebviewWindow};
+
+struct ChatToolEvents(AppHandle);
+impl crate::events::ReminderEventSink for ChatToolEvents {
+    fn reminders_changed(&self) { let _ = self.0.emit(crate::events::REMINDERS_CHANGED, ()); }
+    fn reminder_failed(&self, error: &AppError) { let _ = self.0.emit(crate::events::REMINDER_ERROR, error); }
+}
+impl crate::events::ChatToolEventSink for ChatToolEvents {
+    fn notebook_changed(&self) { let _ = self.0.emit(crate::events::NOTEBOOK_CHANGED, ()); }
+}
+
+#[tauri::command]
+pub async fn get_notebook(window: WebviewWindow, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64) -> AppResult<crate::notebook::NotebookView> {
+    authorize(&window)?;
+    let (persona_id, session_id) = (parse_id(&persona_id)?, parse_id(&session_id)?);
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::notebook::current(&runtime, persona_id, session_id, context_revision)).await.map_err(|_| AppError::storage())?
+}
+
+#[tauri::command]
+pub async fn save_notebook(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, persona_id: String, session_id: String,
+    context_revision: u64, expected: Option<crate::models::Notebook>, content: String) -> AppResult<crate::notebook::NotebookView> {
+    authorize(&window)?;
+    let (persona_id, session_id) = (parse_id(&persona_id)?, parse_id(&session_id)?);
+    let runtime = runtime.inner().clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || crate::notebook::save_current(&runtime, persona_id, session_id, context_revision, expected, content)).await.map_err(|_| AppError::storage())??;
+    let _ = app.emit(crate::events::NOTEBOOK_CHANGED, ());
+    Ok(saved)
+}
 
 #[tauri::command]
 pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>,
@@ -15,9 +44,10 @@ pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'
     let session_id = parse_id(&session_id)?;
     let runtime = runtime.inner().clone();
     let client = runtime.ai.clone()?;
-    let (prepared, receipt) = tauri::async_runtime::spawn_blocking(move ||
+    let (mut prepared, receipt) = tauri::async_runtime::spawn_blocking(move ||
         crate::chat::submit(&runtime, persona_id, session_id, context_revision, input)
     ).await.map_err(|_| AppError::storage())??;
+    prepared.set_tool_events(std::sync::Arc::new(ChatToolEvents(app.clone())));
     tauri::async_runtime::spawn(async move {
         // 界面可能已经关闭；事件发送失败不撤销已经提交的数据库事务。
         let _ = crate::chat::run_persisted(&client, prepared, |event| {
@@ -333,10 +363,19 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
     .await?;
     let result = crate::providers::test_connection(&runtime.ai.clone()?, config).await;
     let health_result = result.clone();
+    let worker = runtime.clone();
     storage(runtime, move |s, p| {
         s.pet.health(&s.connection, p)?;
         if let Some(token) = token {
             s.pet.complete_health(&token, &health_result);
+        }
+        // 只对实际记忆提供商的成功测试解除失败等待，不重复请求不相关模型。
+        if health_result.is_ok() {
+            let selected: Option<i64> = s.connection.query_row(
+                "SELECT id FROM providers WHERE memory_is_active=1 OR is_active=1 ORDER BY memory_is_active DESC LIMIT 1",
+                [], |row| row.get(0),
+            ).optional()?;
+            if selected == Some(id) { worker.memory.retry(None)?; }
         }
         Ok(())
     })
@@ -623,6 +662,47 @@ pub async fn focus_or_create_window(window: WebviewWindow, app: AppHandle, page:
     authorize(&window)?;
     crate::desktop_windows::open(app, page).await
 }
+#[tauri::command]
+pub async fn get_memory_generation_status(
+    window: WebviewWindow, runtime: State<'_, Runtime>,
+    persona_id: String, session_id: String, context_revision: u64,
+) -> AppResult<crate::memory::GenerationView> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::memory::current_status(&worker, persona_id, session_id, context_revision))
+        .await.map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn retry_short_memories(
+    window: WebviewWindow, runtime: State<'_, Runtime>, app: AppHandle,
+    persona_id: String, session_id: String, context_revision: u64,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::memory::retry_current(&worker, persona_id, session_id, context_revision))
+        .await.map_err(|_| AppError::storage())??;
+    let _ = app.emit(crate::events::MEMORY_GENERATION_CHANGED, ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_reminder_occurrence(window: WebviewWindow, runtime: State<'_, Runtime>, id: String) -> AppResult<crate::models::ReminderOccurrence> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(), move |store, _| crate::reminders::get_occurrence(&store.connection, id)).await
+}
+#[tauri::command]
+pub fn take_reminder_navigation(window: WebviewWindow, navigation: State<'_, crate::desktop_windows::SettingsNavigation>) -> AppResult<bool> {
+    if window.label() != "settings" {
+        return Err(AppError::new("PERMISSION_DENIED", "仅设置窗口可读取设置导航"));
+    }
+    let mut pending = navigation.inner().0.lock().map_err(|_| AppError::storage())?;
+    Ok(std::mem::take(&mut *pending))
+}
 async fn storage<T: Send + 'static>(
     runtime: Runtime,
     action: impl FnOnce(&mut Store, &dyn crate::platform::contracts::SecretProtector) -> AppResult<T>
@@ -652,6 +732,12 @@ pub async fn get_settings(
     })
     .await
 }
+#[tauri::command]
+pub fn get_settings_defaults(window: WebviewWindow) -> AppResult<crate::config::Settings> {
+    authorize(&window)?;
+    Ok(crate::config::defaults())
+}
+
 #[tauri::command]
 pub async fn save_settings(
     window: WebviewWindow,
@@ -684,18 +770,22 @@ pub async fn list_providers(
 #[tauri::command]
 pub async fn create_provider(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     input: crate::providers::ProviderInput,
 ) -> AppResult<crate::providers::Provider> {
     authorize(&window)?;
-    storage(runtime.inner().clone(), move |s, p| {
+    let result = storage(runtime.inner().clone(), move |s, p| {
         crate::providers::save(&mut s.connection, None, input, p)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
 }
 #[tauri::command]
 pub async fn update_provider(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     id: String,
     input: crate::providers::ProviderInput,
@@ -703,14 +793,16 @@ pub async fn update_provider(
     authorize(&window)?;
     let id = parse_id(&id)?;
     let requests = runtime.requests.clone();
-    storage(runtime.inner().clone(), move |s, p| {
+    let result = storage(runtime.inner().clone(), move |s, p| {
         let result = crate::providers::save(&mut s.connection, Some(id), input, p)?;
         if result.is_active {
             requests.cancel_all();
         }
         Ok(result)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
 }
 
 #[tauri::command]
@@ -736,6 +828,7 @@ pub async fn create_persona(
         crate::persona::save(&mut s.connection, None, input)
     })
     .await?;
+    let _ = app.emit("configuration_changed", ());
     let id = parse_id(&persona.id)?;
     let available = storage(runtime.inner().clone(), |s, _| {
         Ok(s.connection.query_row(
@@ -797,26 +890,30 @@ pub async fn update_persona(
 #[tauri::command]
 pub async fn delete_provider(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     id: String,
 ) -> AppResult<()> {
     authorize(&window)?;
     let id = parse_id(&id)?;
-    storage(runtime.inner().clone(), move |s, _| {
+    let result = storage(runtime.inner().clone(), move |s, _| {
         crate::providers::delete(&mut s.connection, id)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
 }
 #[tauri::command]
 pub async fn set_active_chat_provider(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     id: String,
 ) -> AppResult<()> {
     authorize(&window)?;
     let id = parse_id(&id)?;
     let requests = runtime.requests.clone();
-    storage(runtime.inner().clone(), move |s, _| {
+    let result = storage(runtime.inner().clone(), move |s, _| {
         let same = s.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM providers WHERE id=?1 AND is_active=1)",
             [id],
@@ -828,20 +925,25 @@ pub async fn set_active_chat_provider(
         }
         Ok(())
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
 }
 #[tauri::command]
 pub async fn set_memory_provider(
     window: WebviewWindow,
+    app: AppHandle,
     runtime: State<'_, Runtime>,
     id: Option<String>,
 ) -> AppResult<()> {
     authorize(&window)?;
     let id = id.as_deref().map(parse_id).transpose()?;
-    storage(runtime.inner().clone(), move |s, _| {
+    let result = storage(runtime.inner().clone(), move |s, _| {
         crate::providers::select(&mut s.connection, id, true)
     })
-    .await
+    .await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(result)
 }
 async fn change_persona(
     app: AppHandle,
@@ -873,6 +975,7 @@ async fn change_persona(
         Ok((after, changed))
     })
     .await?;
+    if delete { let _ = app.emit("configuration_changed", ()); }
     // 事务已提交；窗口可通过列表重新获取权威当前项。
     if changed && app.emit("window_context_changed", &context).is_err() {
         eprintln!("上下文变化通知发送失败，请刷新窗口");

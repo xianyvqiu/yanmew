@@ -5,6 +5,7 @@ import { usePetWindow } from "./usePetWindow";
 import { usePetAppearance } from "./usePetAppearance";
 import { usePetActivity } from "./usePetActivity";
 import { navigation, type ApplicationPage } from "../platform/navigation";
+import PetReminderNotifications from "../components/PetReminderNotifications";
 import "./PetWindow.css";
 
 const DRAG_THRESHOLD_PX = 5;
@@ -123,6 +124,8 @@ export default function PetWindow() {
         onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={releasePointer}>
         <span className="pet-expression">{activity.view?.expression || "(・ω・)"}</span>
       </div>}
+      <PetReminderNotifications hidden={state.hidden} ready={appearance.ready && state.revision >= 0 && !pending}
+        unobscured={!visibleError && !menuOpen} />
     </div>
   );
 }

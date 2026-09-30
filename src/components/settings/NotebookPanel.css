@@ -1,0 +1,22 @@
+.ym-notebook-panel { display: grid; gap: 14px; min-width: 0; }
+.ym-notebook-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ym-notebook-heading h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.ym-notebook-heading p { margin: 4px 0 0; color: var(--ym-text-secondary); }
+.ym-notebook-save { flex: 0 0 auto; min-width: 88px; }
+.ym-notebook-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--ym-text-secondary); font-size: 13px; }
+.ym-notebook-soft-limit { color: var(--ym-text-muted); }
+.ym-notebook-over-limit { margin: 0; padding: 10px 12px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-md); background: var(--ym-info-soft); color: var(--ym-text); }
+.ym-notebook-remote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-md); background: var(--ym-info-soft); }
+.ym-notebook-field { display: grid; gap: 6px; min-width: 0; color: var(--ym-text); font-weight: 600; }
+.ym-notebook-field textarea { box-sizing: border-box; width: 100%; min-height: min(58vh, 520px); resize: vertical; padding: 12px; color: var(--ym-text); background: var(--ym-surface-muted); border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); font: 400 var(--ym-font-body)/1.65 var(--ym-font-ui); font-weight: 400; }
+.ym-notebook-field textarea:focus-visible { outline: 2px solid var(--ym-focus); outline-offset: 2px; }
+.ym-notebook-field textarea:disabled { opacity: .7; }
+.ym-notebook-error { margin: 0; color: var(--ym-danger); }
+.ym-notebook-notice, .ym-notebook-updated { margin: 0; color: var(--ym-text-secondary); font-size: 13px; }
+.ym-notebook-empty { padding: 18px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); background: var(--ym-surface); }
+.ym-notebook-empty p { margin: 6px 0 0; color: var(--ym-text-secondary); }
+.ym-notebook-panel button:disabled { cursor: not-allowed; opacity: .6; }
+@media (max-width: 520px) {
+  .ym-notebook-heading { align-items: center; }
+  .ym-notebook-field textarea { min-height: 46vh; }
+}

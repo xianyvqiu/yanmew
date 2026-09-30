@@ -1,0 +1,103 @@
+.ym-reminder-notification {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+  border: 1px solid var(--ym-border-strong);
+  border-radius: var(--ym-radius-md);
+  background: var(--ym-surface-raised);
+  color: var(--ym-text);
+  box-shadow: var(--ym-shadow-sm);
+  font: var(--ym-font-body)/1.35 var(--ym-font-ui);
+}
+
+.ym-reminder-notification__header {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 6px;
+}
+
+.ym-reminder-notification__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: none;
+  stroke: var(--ym-accent-strong);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.ym-reminder-notification__title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ym-text);
+  font: var(--ym-font-caption)/1.25 var(--ym-font-ui);
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ym-reminder-notification__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.ym-reminder-notification__message,
+.ym-reminder-notification__error {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ym-reminder-notification__message {
+  color: var(--ym-text-secondary);
+  font: var(--ym-font-caption)/1.4 var(--ym-font-ui);
+}
+
+.ym-reminder-notification__message time {
+  margin-left: 4px;
+  color: var(--ym-text-muted);
+  white-space: nowrap;
+}
+
+.ym-reminder-notification__error {
+  margin-top: 4px;
+  color: var(--ym-danger);
+  font: var(--ym-font-caption)/1.35 var(--ym-font-ui);
+}
+
+.ym-reminder-notification__actions {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.ym-reminder-notification__action {
+  min-width: 0;
+  min-height: 27px;
+  flex: 1 1 0;
+  padding: 3px 5px;
+  overflow: hidden;
+  font-size: var(--ym-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ym-reminder-notification__action:focus-visible {
+  outline: 2px solid var(--ym-focus);
+  outline-offset: 1px;
+}

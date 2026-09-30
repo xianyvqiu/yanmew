@@ -1,5 +1,25 @@
 /** SQLite ID 通过字符串传递，避免 JavaScript 大整数精度损失。 */
 export type RecordId = string;
+/** 记忆记录属于会话；以下契约由后续记忆仓储和管理页面使用。 */
+export type MemoryIntegrationState = "pending" | "integrated";
+export type MemoryGenerationView = {
+  sessionId: RecordId; completedCount: number; pendingCount: number;
+  activeRoundId: RecordId | null; failedRoundId: RecordId | null;
+  error: AppError | null; autoRetryPending: boolean;
+};
+export type ShortMemory = {
+  id: RecordId; sessionId: RecordId; roundId: RecordId; content: string;
+  integrationState: MemoryIntegrationState; createdAt: string; updatedAt: string;
+};
+export type LongMemory = {
+  id: RecordId; sessionId: RecordId; title: string; content: string;
+  sourceCount: number; activatedByRoundId: RecordId; createdAt: string; updatedAt: string;
+};
+/** 覆盖边界从按 sourceOrder 排序的最后一项推导，不额外保存消息边界。 */
+export type LongMemorySource = { longMemoryId: RecordId; shortMemoryId: RecordId; sourceOrder: number };
+/** 一个会话一份完整正文，建议字数上限不截断内容。 */
+export type Notebook = { sessionId: RecordId; content: string; updatedAt: string };
+export type NotebookView = { notebook: Notebook | null; limitChars: number };
 export type ChatRound = {
   id: RecordId; sessionId: RecordId; status: "pending" | "completed" | "interrupted";
   createdAt: string; completedAt: string | null;

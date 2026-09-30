@@ -1,5 +1,14 @@
+import { useEffect, useState } from "react";
+import { navigation } from "../platform/navigation";
+import { errorMessage } from "../api";
 import ResponsiveWindowShell from "../components/ResponsiveWindowShell";
+import PersonasPanel from "../components/settings/PersonasPanel";
+import ReminderPanel from "../components/settings/ReminderPanel";
+import ProvidersPanel from "../components/settings/ProvidersPanel";
 import GeneralPanel from "../components/settings/GeneralPanel";
+import WeatherPanel from "../components/settings/WeatherPanel";
+import PetTimingPanel from "../components/settings/PetTimingPanel";
+import MemorySettingsPanel from "../components/settings/MemorySettingsPanel";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import "./workspace.css";
 
@@ -10,14 +19,35 @@ const groups = [
 export default function SettingsPage({ snapshot, loading, error, onRefresh }: {
   snapshot: WorkspaceContext | null; loading: boolean; error: string; onRefresh: () => void;
 }) {
+  const [page, setPage] = useState("通用");
+  const [navigationError, setNavigationError] = useState("");
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    const read = async () => {
+      try {
+        const requested = await navigation.takeReminderRequest();
+        if (!disposed && requested) setPage("提醒");
+        if (!disposed) setNavigationError("");
+      } catch (cause) { if (!disposed) setNavigationError(errorMessage(cause)); }
+    };
+    const reload = () => { if (!disposed) void read(); };
+    void navigation.listenSettings(reload).then(unlisten => {
+      if (disposed) { unlisten(); return; }
+      stop = unlisten; reload();
+    }).catch(cause => { if (!disposed) { setNavigationError(errorMessage(cause)); reload(); } });
+    window.addEventListener("focus", reload);
+    return () => { disposed = true; stop?.(); window.removeEventListener("focus", reload); };
+  }, []);
+  const enabled = (item: string) => item === "通用" || item === "提供商" || item === "人设" || item === "提醒" || item === "时间与天气" || item === "时间与桌宠" || item === "记忆";
   return <ResponsiveWindowShell title="设置" subtitle="把日常陪伴，调成你喜欢的样子。"
     contextLabel={snapshot ? `当前人设：${snapshot.persona.name} · ${snapshot.sessions.find(item => item.id === snapshot.context.sessionId)?.title ?? "尚无会话"}` : "正在读取当前人设"}
-    loading={loading} error={error} onRetry={onRefresh}
-    sidebar={<><label className="ym-settings-compact">设置页面<select value="通用" onChange={() => {}} aria-label="设置页面">{groups.map(group => <optgroup key={group.title} label={group.title}>{group.items.map(item => <option key={item} value={item} disabled={item !== "通用"}>{item}{item !== "通用" && " · 未开放"}</option>)}</optgroup>)}</select></label>
+    loading={loading} error={snapshot ? "" : error} onRetry={onRefresh}
+    sidebar={<><label className="ym-settings-compact">设置页面<select value={page} onChange={event => setPage(event.target.value)} aria-label="设置页面">{groups.map(group => <optgroup key={group.title} label={group.title}>{group.items.map(item => <option key={item} value={item} disabled={!enabled(item)}>{item}{!enabled(item) && " · 未开放"}</option>)}</optgroup>)}</select></label>
     <nav className="ym-settings-nav" aria-label="设置导航">{groups.map(group => <div key={group.title}>
-      <h2>{group.title}</h2>{group.items.map(item => <button key={item} className="ym-button" disabled={item !== "通用"}
-        aria-current={item === "通用" ? "page" : undefined} title={item !== "通用" ? "尚未开放" : undefined}>{item}{item !== "通用" && " · 未开放"}</button>)}
+      <h2>{group.title}</h2>{group.items.map(item => <button key={item} className="ym-button" disabled={!enabled(item)} onClick={() => setPage(item)}
+        aria-current={item === page ? "page" : undefined} title={!enabled(item) ? "尚未开放" : undefined}>{item}{!enabled(item) && " · 未开放"}</button>)}
     </div>)}</nav></>}>
-    {snapshot && <div className="ym-workspace-page"><GeneralPanel /></div>}
+    {snapshot && <div className="ym-workspace-page">{navigationError && <p role="alert" className="ym-page-error">提醒页面跳转失败：{navigationError}，可从左侧选择“提醒”。</p>}{error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}{page === "提供商" ? <ProvidersPanel /> : page === "人设" ? <PersonasPanel /> : page === "提醒" ? <ReminderPanel /> : page === "时间与天气" ? <WeatherPanel key={snapshot.context.contextRevision} contextRevision={snapshot.context.contextRevision} /> : page === "时间与桌宠" ? <PetTimingPanel /> : page === "记忆" ? <MemorySettingsPanel /> : <GeneralPanel />}</div>}
   </ResponsiveWindowShell>;
 }

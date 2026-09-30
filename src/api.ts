@@ -1,4 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Notebook, NotebookView } from "./types";
+import type { MemoryGenerationView } from "./types";
+export const memoryGenerationApi = {
+  get: (context: CurrentContext) => invoke<MemoryGenerationView>("get_memory_generation_status", context),
+  retry: (context: CurrentContext) => invoke<void>("retry_short_memories", context),
+  listen: (receive: () => void) => listen("memory-generation-changed", receive),
+};
+export const notebookApi = {
+  get: (context: CurrentContext) => invoke<NotebookView>("get_notebook", context),
+  save: (context: CurrentContext, expected: Notebook | null, content: string) =>
+    invoke<NotebookView>("save_notebook", { ...context, expected, content }),
+  listen: (receive: () => void) => listen("notebook-changed", receive),
+};
 import type { ChatReplyEvent, ChatRequestSnapshot, RoundSnapshot } from "./types";
 
 export const chatApi = {
@@ -22,6 +35,7 @@ export const weatherApi = {
 import type { Reminder, ReminderInput, MissedReminderSummary, ReminderDeliveryState, ReminderOccurrence, ReminderOccurrencePage, ReminderStatus } from "./types";
 
 export const reminderApi = {
+  getOccurrence: (id: string) => invoke<ReminderOccurrence>("get_reminder_occurrence", { id }),
   list: (afterId: string | null = null, limit = 50) => invoke<Reminder[]>("list_reminders", { afterId, limit }),
   create: (input: ReminderInput) => invoke<Reminder>("create_reminder", { input }),
   update: (id: string, input: ReminderInput) => invoke<Reminder>("update_reminder", { id, input }),
@@ -43,6 +57,8 @@ import { listen } from "@tauri-apps/api/event";
 import type { CurrentContext, MessagePage, Persona, PersonaInput, Provider, ProviderInput, RecordId, Session, Settings, WeatherInput, WeatherSettings } from "./types";
 
 export const configurationApi = {
+  listenExpressionFailure: (receive: (failure: { personaId: RecordId; error: import("./types").AppError }) => void) =>
+    listen<{ personaId: RecordId; error: import("./types").AppError }>("expression_generation_failed", event => receive(event.payload)),
   listenContext: (receive: (context: CurrentContext) => void) => listen<CurrentContext>("window_context_changed", event => receive(event.payload)),
   listenChanges: (receive: () => void) => listen("configuration_changed", receive),
   status: () => invoke<void>("get_configuration_status"),
@@ -50,6 +66,7 @@ export const configurationApi = {
   getWeatherSettings: () => invoke<WeatherSettings>("get_weather_settings"),
   saveWeatherSettings: (input: WeatherInput) => invoke<WeatherSettings>("save_weather_settings", { input }),
   getSettings: () => invoke<Settings>("get_settings"),
+  getSettingsDefaults: () => invoke<Settings>("get_settings_defaults"),
   saveSettings: (changes: Partial<Settings>) => invoke<Settings>("save_settings", { changes }),
   listProviders: () => invoke<Provider[]>("list_providers"),
   testProvider: (id: RecordId) => invoke<void>("test_provider_connection", { id }),

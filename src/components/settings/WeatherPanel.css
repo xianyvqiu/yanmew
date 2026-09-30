@@ -1,0 +1,15 @@
+.ym-weather-form { margin-top: 18px; padding: 16px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); }
+.ym-weather-form fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; }
+.ym-weather-form legend { margin-bottom: 4px; font-weight: 600; color: var(--ym-text); }
+.ym-weather-form [role="alert"] { color: var(--ym-danger); }
+.ym-weather-form .ym-field input { width: 100%; min-width: 0; }
+.ym-weather-form .ym-inline-form { align-items: center; }
+.ym-weather-form .ym-page-note { margin: 0; }
+.ym-page-card [aria-label="天气结果"] dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 7px 14px; margin: 14px 0; }
+.ym-page-card [aria-label="天气结果"] dt { color: var(--ym-text-secondary); }
+.ym-page-card [aria-label="天气结果"] dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 420px) {
+  .ym-weather-form { padding: 12px; }
+  .ym-page-card [aria-label="天气结果"] dl { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .ym-page-card [aria-label="天气结果"] dd { margin-bottom: 8px; }
+}

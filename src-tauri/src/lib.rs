@@ -10,9 +10,13 @@ mod error;
 mod events;
 mod expressions;
 mod jobs;
+pub mod memory;
 mod location;
 mod weather;
 pub mod models;
+pub mod notebook;
+pub mod notebook_tools;
+pub mod travel_journal_tools;
 mod persona;
 pub mod pet;
 mod pet_region;
@@ -55,13 +59,20 @@ pub fn run() {
     );
     tauri::Builder::default()
         .manage(runtime)
+        .manage(desktop_windows::SettingsNavigation::default())
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
+            commands::get_memory_generation_status,
+            commands::retry_short_memories,
+            commands::get_notebook,
+            commands::save_notebook,
             commands::focus_or_create_window,
+            commands::take_reminder_navigation,
             commands::submit_chat,
             commands::get_chat_request,
             commands::cancel_chat,
             commands::list_reminder_occurrences,
+            commands::get_reminder_occurrence,
             commands::list_reminders,
             commands::create_reminder,
             commands::update_reminder,
@@ -86,6 +97,7 @@ pub fn run() {
             commands::rename_session,
             commands::list_messages,
             commands::get_settings,
+            commands::get_settings_defaults,
             commands::get_weather_settings,
             commands::get_weather,
             commands::refresh_weather,
@@ -115,6 +127,7 @@ pub fn run() {
             let runtime = app.state::<runtime::Runtime>().inner().clone();
             tauri::async_runtime::spawn(jobs::run(
                 runtime,
+                std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
             ));
@@ -167,6 +180,10 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("启动颜喵失败")
         .run(|app, event| {
+            // 原生销毁窗口不保证执行前端卸载回调，主动取消设置页的天气请求。
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "settings") {
+                app.state::<runtime::Runtime>().requests.cancel_key("weather");
+            }
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "chat") {
                 if let Err(error) = crate::chat::interrupt_active(app.state::<runtime::Runtime>().inner()) {
                     eprintln!("关闭聊天窗前保存回复失败：{error}");

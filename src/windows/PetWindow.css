@@ -48,3 +48,7 @@
 .pet-menu p { margin: 0 0 8px; font-size: var(--ym-font-caption); color: var(--ym-text-secondary); }
 .pet-menu .ym-button { width: 100%; margin-top: 4px; }
 .pet-face[data-away="true"] { font-size: 20px; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+.pet-reminder-slot { position: absolute; top: 44px; bottom: 92px; left: 12px; right: 12px; z-index: 2; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+.pet-reminder-slot > * { pointer-events: auto; }
+.pet-reminder-slot .ym-reminder-notification { min-height: 0; flex: 1; }
+.pet-reminder-retry { flex: 0 0 auto; max-width: 100%; font-size: var(--ym-font-caption); padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; }

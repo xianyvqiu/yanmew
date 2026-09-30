@@ -6,6 +6,7 @@ import type { PetActivity } from "../types";
 
 const startDragging = vi.fn();
 vi.mock("./usePetAppearance", () => ({ usePetAppearance: () => ({ error: "", ready: true }) }));
+vi.mock("../components/PetReminderNotifications", () => ({ default: () => null }));
 const invoke = vi.fn();
 const stop = vi.fn();
 let receive: (event: { payload: PetSnapshot }) => void;

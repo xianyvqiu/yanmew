@@ -1,6 +1,10 @@
 use crate::error::{AppError, AppResult};
 use serde::Deserialize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+/// 设置窗可能尚未加载；导航请求保留到页面主动读取，不依赖一次性事件送达。
+#[derive(Default)]
+pub struct SettingsNavigation(pub std::sync::Mutex<bool>);
 
 /// 只接受已实现的主程序页面，不允许前端传 URL、权限或任意窗口标签。
 #[derive(Clone, Copy, Deserialize)]
@@ -8,17 +12,20 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 pub enum Page {
     Chat,
     Settings,
+    Reminders,
+    Memory,
 }
 impl Page {
     fn specification(self) -> (&'static str, &'static str, f64, f64) {
         match self {
             Self::Chat => ("chat", "聊天 · 颜喵 YanMew", 800.0, 640.0),
-            Self::Settings => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
+            Self::Memory => ("memory", "会话记事本 · 颜喵 YanMew", 720.0, 600.0),
+            Self::Settings | Self::Reminders => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
         }
     }
 }
 pub fn is_application_window(label: &str) -> bool {
-    matches!(label, "main" | "chat" | "settings")
+    matches!(label, "main" | "chat" | "settings" | "memory")
 }
 fn window_error(_: tauri::Error) -> AppError {
     AppError::new("WINDOW_ERROR", "窗口打开失败，请稍后重试")
@@ -65,6 +72,11 @@ pub async fn open(app: AppHandle, page: Page) -> AppResult<()> {
             window.show().map_err(window_error)?;
             window.unminimize().map_err(window_error)?;
             window.set_focus().map_err(window_error)?;
+            if matches!(page, Page::Reminders) {
+                *owner.state::<SettingsNavigation>().inner().0.lock().map_err(|_| AppError::storage())? = true;
+                // 事件仅提示查询；首次加载、重新聚焦均可补查未消费的请求。
+                let _ = window.emit("settings-navigation", ());
+            }
             Ok(())
         })();
         let _ = sender.send(result);
@@ -80,7 +92,7 @@ mod tests {
     use super::*;
     #[test]
     fn only_fixed_application_pages_are_authorized() {
-        for page in [Page::Chat, Page::Settings] {
+        for page in [Page::Chat, Page::Settings, Page::Reminders, Page::Memory] {
             assert!(is_application_window(page.specification().0));
         }
         for label in [

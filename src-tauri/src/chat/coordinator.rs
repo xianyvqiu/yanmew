@@ -25,7 +25,7 @@ pub struct ChatEvent {
     pub saved: Option<RoundSnapshot>,
 }
 
-fn require_context(
+pub(super) fn require_context(
     store: &Store,
     persona_id: i64,
     session_id: i64,
@@ -211,6 +211,9 @@ pub async fn run_persisted(
     drop(prepared);
     match saved {
         Ok((round_id, saved)) => {
+            if saved.round.status == crate::models::ChatRoundStatus::Completed {
+                runtime.memory.wake.notify_one();
+            }
             sink(ChatEvent {
                 round_id,
                 event,

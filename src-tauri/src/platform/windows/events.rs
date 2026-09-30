@@ -5,6 +5,11 @@ use crate::{
 };
 use tauri::Emitter;
 pub struct PetEvents(pub tauri::AppHandle);
+impl crate::events::MemoryEventSink for PetEvents {
+    fn memory_changed(&self) {
+        let _ = self.0.emit(crate::events::MEMORY_GENERATION_CHANGED, ());
+    }
+}
 impl crate::events::ReminderEventSink for PetEvents {
     fn reminders_changed(&self) {
         let _ = self.0.emit(crate::events::REMINDERS_CHANGED, ());

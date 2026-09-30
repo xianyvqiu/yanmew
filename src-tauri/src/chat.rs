@@ -12,10 +12,14 @@ use crate::{
 };
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 mod coordinator;
+mod tools;
 pub use coordinator::*;
 #[cfg(test)]
 mod coordinator_tests;
+#[cfg(test)]
+mod tool_tests;
 
 /// 只能由后端读取权威数据后构造；不是 Tauri 命令输入，也不序列化密钥。
 pub struct PreparedReply {
@@ -25,9 +29,15 @@ pub struct PreparedReply {
     prompt: String,
     config: ConnectionTest,
     messages: Vec<Message>,
-    lease: RequestLease,
+    lease: Arc<RequestLease>,
     runtime: Runtime,
     health: crate::pet::controller::HealthToken,
+    tool_events: Option<Arc<dyn crate::events::ChatToolEventSink>>,
+}
+impl PreparedReply {
+    pub fn set_tool_events(&mut self, events: Arc<dyn crate::events::ChatToolEventSink>) {
+        self.tool_events = Some(events);
+    }
 }
 pub fn prepare_reply(
     runtime: &Runtime,
@@ -60,10 +70,10 @@ fn prepare(
         let config=providers::connection_test_config(&s.connection,provider_id,p)?;
         let count:usize=crate::config::get(&s.connection)?["recent_message_count"].parse().map_err(|_|AppError::storage())?;
         let mut stmt=s.connection.prepare("SELECT role,content FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2")?;
-        let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message{role:r.get(0)?,content:r.get(1)?}))?.collect::<Result<Vec<_>,_>>()?;
+        let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message::new(&r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
         drop(stmt);
         messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input.trim()));
-        let lease=runtime.requests.start(format!("chat:{session_id}"),persona_id)?;
+        let lease=Arc::new(runtime.requests.start(format!("chat:{session_id}"),persona_id)?);
         let pet=crate::pet_store::read(&s.connection,session_id)?;
         crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
         runtime.settle_pet(s,p)?;
@@ -77,7 +87,7 @@ fn prepare(
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
         } else { None };
-        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health}, snapshot))
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
@@ -133,14 +143,7 @@ pub async fn run_reply(
             Ok(())
         })?;
         emit(ReplyEventKind::Expression{expression:expression.expression})?;
-        let request=GenerateRequest{messages:prepared.messages.clone(),max_tokens:4096,tools:vec![],json:false};
-        let mut choices=client.stream(&prepared.config,&request,&prepared.lease.cancel,|delta| {
-            match delta {Delta::Text{choice_index:0,text}=>emit(ReplyEventKind::Text{text}),_=>Err(protocol())}
-        }).await?;
-        if choices.len()!=1 {return Err(protocol());}
-        let choice=choices.remove(0);
-        if choice.index!=0 || choice.finish==Finish::ToolCalls || (choice.finish==Finish::Stop && choice.content.trim().is_empty()) {return Err(protocol());}
-        prepared.lease.cancel.check()?;Ok(choice)
+        tools::run(client, prepared, &mut emit).await
     }.await;
     if let Err(error) = &result {
         if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {

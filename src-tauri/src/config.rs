@@ -226,6 +226,71 @@ pub fn save(conn: &mut Connection, changes: Settings) -> AppResult<Settings> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn memory_settings_roundtrip_and_invalid_ranges_are_atomic() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut connection).unwrap();
+        let original = get(&connection).unwrap();
+        for (key, expected) in [
+            ("short_memory_min_chars", "12"), ("short_memory_max_chars", "100"),
+            ("long_memory_min_chars", "150"), ("long_memory_max_chars", "250"),
+            ("travel_journal_min_chars", "250"), ("travel_journal_max_chars", "350"),
+            ("memory_merge_count", "20"), ("recent_message_count", "30"),
+            ("recent_long_memory_count", "30"), ("tool_call_rounds", "3"),
+            ("notebook_max_chars", "4000"),
+        ] { assert_eq!(original[key], expected); }
+        let changed = [
+            ("short_memory_min_chars", "20"), ("short_memory_max_chars", "120"),
+            ("long_memory_min_chars", "160"), ("long_memory_max_chars", "300"),
+            ("travel_journal_min_chars", "280"), ("travel_journal_max_chars", "400"),
+            ("memory_merge_count", "10"), ("recent_message_count", "40"),
+            ("recent_long_memory_count", "15"), ("tool_call_rounds", "4"),
+            ("notebook_max_chars", "5000"),
+        ].into_iter().map(|(key, value)| (key.into(), value.into())).collect();
+        let saved = save(&mut connection, changed).unwrap();
+        assert_eq!(get(&connection).unwrap(), saved);
+        assert_eq!(saved["hungry_minutes"], original["hungry_minutes"]);
+        for (key, value) in [
+            ("short_memory_min_chars", "121"), ("long_memory_min_chars", "301"),
+            ("travel_journal_min_chars", "401"), ("memory_merge_count", "0"),
+            ("recent_message_count", "01"), ("recent_long_memory_count", "1.5"),
+            ("notebook_max_chars", "2147483648"), ("unknown_key", "1"),
+        ] {
+            let invalid = [(key.into(), value.into()), ("tool_call_rounds".into(), "5".into())].into_iter().collect();
+            assert!(save(&mut connection, invalid).is_err(), "{key}");
+            assert_eq!(get(&connection).unwrap(), saved);
+        }
+    }
+    #[test]
+    fn pet_timing_settings_roundtrip_and_invalid_groups_are_atomic() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut connection).unwrap();
+        validate(&defaults()).unwrap();
+        let changes = [
+            ("hungry_minutes", "90"), ("bored_minutes", "30"),
+            ("sleep_idle_minutes", "40"), ("sleep_min_minutes", "20"),
+            ("sleep_max_minutes", "50"), ("travel_min_online_hours", "3"),
+            ("travel_max_online_hours", "5"), ("intimacy_threshold_1", "15"),
+            ("intimacy_threshold_2", "60"), ("intimacy_threshold_3", "200"),
+            ("intimacy_threshold_4", "999"), ("accessory_cost_1", "0"),
+            ("accessory_cost_2", "25"), ("accessory_cost_3", "80"),
+            ("accessory_cost_4", "150"),
+        ].into_iter().map(|(key, value)| (key.into(), value.into())).collect();
+        let saved = save(&mut connection, changes).unwrap();
+        assert_eq!(get(&connection).unwrap(), saved);
+        assert_eq!(saved["theme_mode"], "system");
+        assert_eq!(saved["memory_merge_count"], "20");
+        for (key, value) in [
+            ("sleep_min_minutes", "51"), ("travel_min_online_hours", "6"),
+            ("intimacy_threshold_2", "15"), ("intimacy_threshold_4", "1000"),
+            ("accessory_cost_1", "-1"), ("hungry_minutes", "0"),
+            ("bored_minutes", "1.5"), ("sleep_idle_minutes", "2147483648"),
+        ] {
+            let invalid = [(key.into(), value.into()), ("accessory_cost_2".into(), "100".into())].into_iter().collect();
+            assert!(save(&mut connection, invalid).is_err(), "{key}");
+            assert_eq!(get(&connection).unwrap(), saved);
+        }
+    }
     struct Secret;
     impl SecretProtector for Secret {
         fn protect(&self, plain: &str) -> AppResult<String> {

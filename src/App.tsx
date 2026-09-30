@@ -1,6 +1,7 @@
 import PetWindow from "./windows/PetWindow";
 import ChatWindow from "./windows/ChatWindow";
 import SettingsWindow from "./windows/SettingsWindow";
+import MemoryWindow from "./windows/MemoryWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export default function App() {
@@ -8,6 +9,7 @@ export default function App() {
   const label = getCurrentWindow().label;
   if (label === "chat") return <ChatWindow />;
   if (label === "settings") return <SettingsWindow />;
+  if (label === "memory") return <MemoryWindow />;
   if (label === "main") return <PetWindow />;
   return <p role="alert">此窗口不属于颜喵主程序。</p>;
 }

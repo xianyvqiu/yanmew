@@ -1,0 +1,16 @@
+.ym-reminder-rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin-bottom: 16px; }
+.ym-reminder-rule, .ym-reminder-occurrence { min-width: 0; padding: 16px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); }
+.ym-reminder-panel h4 { margin: 0; overflow-wrap: anywhere; }
+.ym-reminder-content { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ym-reminder-occurrences { display: grid; gap: 12px; margin-bottom: 16px; }
+.ym-reminder-summary { padding: 16px; border-left: 4px solid var(--ym-accent-strong); background: var(--ym-surface-muted); border-radius: var(--ym-radius-md); overflow-wrap: anywhere; }
+.ym-reminder-danger, .ym-reminder-form [role="alert"] { color: var(--ym-danger); }
+.ym-reminder-form { margin: 18px 0; }
+.ym-reminder-form fieldset { min-width: 0; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-md); padding: 16px; display: grid; gap: 12px; }
+.ym-reminder-form textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px; background: var(--ym-surface-muted); color: var(--ym-text); border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); font: inherit; }
+.ym-reminder-form input[type="checkbox"] { width: auto; }
+.ym-reminder-form .ym-reminder-form__choices { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); }
+.ym-reminder-form__choices label { display: flex; align-items: center; gap: 6px; }
+.ym-reminder-rule p, .ym-reminder-occurrence p { overflow-wrap: anywhere; }
+.ym-reminder-dialog { max-width: min(500px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; background: var(--ym-surface); color: var(--ym-text); border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); font: inherit; }
+.ym-reminder-dialog::backdrop { background: var(--ym-scrim); }

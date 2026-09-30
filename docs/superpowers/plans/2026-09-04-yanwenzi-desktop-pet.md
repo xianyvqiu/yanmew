@@ -12,6 +12,21 @@
 
 ## 约定
 
+### 当前实现边界（按代码与开发记录核对）
+
+- 已接通：桌面壳与主题、SQLite/DPAPI、聊天/记忆提供商配置、人设基础管理和表情库生成、会话创建/切换/改名/历史、基础流式聊天和中断保存、会话桌宠状态与互动、提醒管理和宠窗投递、天气定位及配置、时间与桌宠配置页面、记忆全局设置及基础模型、有限聊天工具循环、会话记事本读写及管理窗口、聊天创建提醒、会话游记只读查询。
+- 已接通的记忆增量：每轮短期记忆后台生成与缺失恢复、生成状态与手动重试；优先记忆专用提供商，未指定时跟随聊天提供商。
+- 已有底层但尚未形成完整功能：短期记忆已经真实生成并保存，但内容管理、长期整合与 Embedding 未接入；旅行/饰品相关配置可保存，游记可查询，但玩法和内容生成尚未接通。完整数据库表不表示对应业务已实现。
+- 待实现：短期/长期记忆内容管理、长期整合与混合 RAG、完整上下文、用户设定管理、消息编辑/底部删除/重说、会话删除、人设自调和差异视图、聊天背景、自启、无聊主动消息与游走、签到钱包与插件游戏、旅行信件/游记生成/伴手礼、饰品、导入导出及节日业务。
+- 待人工验收：原生拖动/点击穿透/多 DPI/挂起恢复、Windows 定位权限及真实天气服务。自动测试和构建通过不替代这些验收。
+- 后续顺序：阶段 9.1 模型与配置、9.2 记事本及只读游记工具、9.3 每轮短期记忆生成已接通，接下来从 9.4 的长期整合继续，随后接入检索、上下文与内容管理。依赖后续业务的设置页随对应阶段交付，不开放空壳。
+
+### 执行约定
+
+- 交接执行口径：`[x]` 只表示该项已实现；`[ ]` 必须区分“增量实现”与“人工验收”。旧阶段中列出的文件/接口是职责定位，不是重新生成文件的指令。以当前代码为底，复用 `chat/coordinator.rs`、`chat/tools.rs`、`state.rs`、`sessions.rs`、`notebook.rs` 和现有前端页面；不得另建聊天持久化或工具循环。
+- 已确认但尚未编码：聊天默认最大输出 32768、自动容量解析、长度继续、流式异常守卫。执行入口为 Task 9.6/9.8；数据库设计 11.1 明确待迁移字段，当前版本仍为 3。交接先做 9.4，不因这些规划重写已经完成的 9.2/9.3。
+- 验证按本次改动选择必要用例；相同代码已通过的检查不反复执行。接手先读最近开发记录，只有新改动、失败或明确风险才补测；全量检查留给跨模块影响或正式交付，不按每个小 Task 重跑。
+
 - 所有命令在项目根目录 `C:\my_program\my_idea\yanwenzi` 执行。
 - 前端包管理器：npm。
 - 提交信息用中文，格式如 `feat: 添加xxx`、`fix: 修复xxx`、`test: 添加xxx测试`。
@@ -19,7 +34,7 @@
 - 小 Task 完成后不单独提交；一个较大功能或完整阶段通过测试和人工验收后，再统一创建一次可审阅提交并按需推送。本计划不安排逐 Task Git 操作。
 - Windows 换行：仓库用 LF，Git 已配置自动转换，不要手动改 CRLF。
 - 本计划分 19 个阶段（阶段 0 到阶段 18），每个阶段结束时应用可编译运行。
-- 数据库结构只维护 `db/schema.sql`，初始化阶段建立当前已确认的完整 V1 结构，其中已经包含小游戏插件表和通用插件账单字段；后续任务补齐模型、命令和交互，不重复增加已存在表或列。事务与备份协议统一遵守 `docs/数据库与持久化设计.md`。
+- `db/schema.sql` 维护新库目标结构；已有库由 `db/migrations/` 顺序升级，当前版本 3，已有 002/003 不改写。初始化已含记忆、插件、饰品和节日表，后续接入业务不重复建表。新增已确认字段必须同步新库 schema 与正式迁移，不能只改 schema 或在功能入口临时 ALTER TABLE。事务与备份协议统一遵守《数据库与持久化设计》。
 - AI 请求不持有数据库锁或事务；读取快照、请求完成后短事务校验并提交。
 - 阶段 0–18 交付 Windows；为未来 Android 预留《项目架构与代码职责》的平台边界。共享业务不接收 Tauri 窗口句柄或调用 Windows API，Windows 实现经平台接口注入；本计划中的 DPAPI、托盘、多窗口和便携路径均是 Windows 适配，不是跨平台业务规则。Android 工程与跨设备同步不在本阶段创建。
 
@@ -82,12 +97,12 @@
 ### Task 0.1: 前端基线
 
 - [x] 前端工程与 Vitest 已建立。
-- [ ] 接手时检查 `package.json` 与锁文件，运行 `npm run test`、`npm run build`，记录结果。已有依赖优先复用，不照旧模板重装另一套版本。
+- [ ] 接手核对 `package.json`、锁文件与最近验证记录；仅有相关新改动或记录不足时运行对应检查。已有依赖优先复用，不重装另一套版本。
 
 ### Task 0.2: Tauri 基线
 
 - [x] Rust 入口、应用配置、托盘及 Windows 依赖已建立。
-- [ ] 接手时运行 `cargo test --manifest-path src-tauri/Cargo.toml`；扩展现有 `lib.rs` 和命令注册，不替换整份文件。
+- [ ] 接手核对现有 Rust 验证记录，后续按改动模块选择测试；扩展现有 `lib.rs` 和命令注册，不替换整份文件。
 
 ## 阶段 1：桌面壳（已实现，人工验收待补齐）
 
@@ -104,7 +119,7 @@
 ### Task 1.2: 托盘
 
 - [x] 托盘退出、隐藏恢复入口已实现。
-- [ ] 人工验证：隐藏后托盘可恢复；重复恢复只有一个宠窗；退出后无遗留进程或托盘图标。当前设置入口保持未实现状态，阶段 8 接入后启用。
+- [ ] 人工验证：隐藏后托盘可恢复；重复恢复只有一个宠窗；退出后无遗留进程或托盘图标。设置入口已启用，复用现有入口，不恢复为禁用。
 
 ### Task 1.3: 点击穿透与隐藏恢复
 
@@ -120,7 +135,7 @@
 
 目标：Rust 端可持久化提供商、人设和参数，API Key 加密；提供前端增删改查与切换的类型化接口，完整设置页在阶段 8 接入。
 
-当前实施进度：建库、版本识别、默认值、DPAPI、提供商与人设 CRUD、当前项选择、数值/主题设置、独立天气凭据接口和连接测试已实现。`src/api.ts` 可调用上述接口；设置窗口尚未实现。人设切换已具备旅行与待回信取消事务，并已接入阶段 3 请求注册器以取消旧人设任务；聊天回合的 interrupted 保存和恢复在阶段 5 接入。Embedding 当前仅初始化内置配置，尚未运行模型；插件包未构建，因此不登记可运行插件。
+当前实施进度：建库、版本识别、默认值、DPAPI、提供商与人设 CRUD、当前项选择、数值/主题设置、独立天气凭据接口和连接测试已实现。`src/api.ts` 可调用上述接口；设置窗口已开放主题与聊天/记忆提供商管理。人设切换已具备旅行与待回信取消事务，并已接入阶段 3 请求注册器以取消旧人设任务；聊天回合的 interrupted 保存和恢复在阶段 5 接入。Embedding 当前仅初始化内置配置，尚未运行模型；插件包未构建，因此不登记可运行插件。
 
 当前命令约定：数据库 ID 使用十进制字符串；DTO 字段用 camelCase。`get_settings/save_settings` 只处理已登记的数值和主题键，批量更新原子提交；`get_weather_settings/save_weather_settings` 单独处理 Host 和密钥三态更新，返回 `apiHost/hasApiKey`。`current_session_id` 与窗口位置属于内部状态，不允许从通用设置写入。密钥输入为 `{ action: "keep" }`、`{ action: "clear" }` 或 `{ action: "set", value: "..." }`，省略时保留；列表不返回明文或密文。
 
@@ -135,7 +150,7 @@
 3. 每个连接在事务外开启外键并确认值为 1。新库在一个事务内执行 `include_str!("../../db/schema.sql")`、种子和 `user_version` 写入。
 4. schema 一次建立完整 V1 表、索引和触发器。唯一内置人设、全局钱包、默认设置、内置 Embedding 配置幂等初始化；当前项必须存在且归属正确。设置模型逐项对应 schema 注释和专题设计，不使用只包含部分字段的样例代替完整配置。
 5. 阶段 2 只登记 Embedding 配置，模型推理由阶段 9 验收；插件资源由阶段 13 构建。只有实际存在且校验通过的随包插件才能登记为可用，不提前制造可启动的石头剪刀布条目。完整 V1 发布必须通过随包资源检查。
-6. 已有库按 `user_version` 执行明确的版本化迁移；迁移前生成一致性备份。未知版本或无法识别的无版本数据库停止升级并提示，不删库、不猜测修复。当前未发布数据库功能，不虚构历史版本迁移脚本。
+6. 已有库按 `user_version` 执行明确的版本化迁移；迁移前生成一致性备份。未知版本或无法识别的无版本数据库停止升级并提示，不删库、不猜测修复。当前已有版本 1→2→3 的正式迁移，后续从实际最高版本顺延，不改写历史脚本。
 7. 保留现有宠窗共享状态，增量接入数据库服务。仓储锁只覆盖同步数据库工作；不跨 AI、HTTP、文件下载或用户确认持有锁。
 8. 分离内部持久化模型与前端 DTO。提供商 DTO 只返回 `hasApiKey`，不得返回密钥明文或 DPAPI 密文。
 
@@ -281,17 +296,17 @@
 
 ### Task 6.1: 提醒规则与每次触发记录
 
-当前实现边界（2026-09-28）：提醒规则 CRUD、日/周/月日期计算、在线调度、启动离线补偿、触发记录分页、展示确认、手动状态管理和汇总接口已接入 SQLite，并注册 Tauri 命令和前端 API。循环提醒跟随电脑当前时区，跳过不存在时刻，重复时刻只采用第一次。现有唯一后台循环先补偿再调度，提交后通知页面；queued/missed 未展示记录始终可重查。一次性最新记录在没有未来计划时与规则同步状态，操作旧记录不覆盖重新安排的计划。AI 润色、提醒页面/气泡、启动汇总 UI、聊天工具接入尚未完成，不能将阶段 6 整体标为完成。
+当前实现边界（2026-09-28）：提醒规则 CRUD、日/周/月日期计算、在线调度、启动离线补偿、触发记录分页、展示确认、手动状态管理和汇总接口已接入 SQLite，并注册 Tauri 命令和前端 API。循环提醒跟随电脑当前时区，跳过不存在时刻，重复时刻只采用第一次。现有唯一后台循环先补偿再调度，提交后通知页面；queued/missed 未展示记录始终可重查。一次性最新记录在没有未来计划时与规则同步状态，操作旧记录不覆盖重新安排的计划。提醒管理、宠窗提醒气泡和启动汇总已接入；AI 润色与聊天工具循环尚未完成，不能将阶段 6 整体标为完成。
 
 **Files:** `src-tauri/src/reminders.rs`、`models.rs`、`commands.rs`、`lib.rs`。
 
 - [x] 从完整 schema 接入 reminders 与 reminder_occurrences 模型；提醒规则包含非空 name 和详情 content，触发记录保存 scheduled_at、status、delivery_state。
 - [x] 实现规则 CRUD 和下一次时间计算。日/周/月规则统一本地日期计算、UTC 保存；月度不存在的日期跳过。重复规则 status 保持 pending，删除才永久停止。
 - [ ] 在线调度事务：插入唯一 occurrence(queued) 并推进 fire_at；一次性 fire_at 可置 NULL，但原时间已经存到 occurrence。后台 AI 润色在事务外执行，失败固定回退为“`{提醒名}事件提醒：{提醒详情}{提醒时间}`”。
-- [ ] 重启先恢复已存在但尚未展示的 queued occurrence，再处理 missed 汇总；不得把已入队记录丢弃或重复创建。投递事件丢失时前端可主动查询，展示确认接口只更新 delivery_state。
+- [x] 重启先恢复已存在但尚未展示的 queued occurrence，再处理 missed 汇总；不得把已入队记录丢弃或重复创建。投递事件丢失时前端可主动查询，展示确认接口只更新 delivery_state。
 - [x] 启动补偿先于常规循环：所有错过的一次性提醒分别写 missed occurrence；每个重复规则只为最近一次错过时间写一条 missed occurrence 并推进到未来，其余跳过。两者均用唯一约束避免重复。
 - [x] 暴露 `get_missed_reminder_summary`、`ack_missed_reminder_summary`、`list_reminder_occurrences`、`update_reminder_occurrence_status` 和 `complete_reminder_occurrence`。完成重复提醒只改本次，一次性仅最新记录且无未来计划时同步规则。
-- [ ] 前端启动后主动读取 missed 汇总，显示“你离开这段时间，{提醒名称1-n}过期了！”。确认展示后更新 delivery_state，避免下次启动重复弹出；未修改状态的记录继续保留在提醒页面。
+- [x] 前端启动后主动读取 missed 汇总，显示“你离开这段时间，{提醒名称1-n}过期了！”。确认展示后更新 delivery_state，避免下次启动重复弹出；未修改状态的记录继续保留在提醒页面。
 - [ ] 验证：启动时监听未就绪、多个一次性提醒、同一循环错过多次、汇总只展示一次、手动修改状态、重复点击完成、调度与补偿同时发生、月末无日期、删除规则级联记录。事务失败不推进游标。
 
 ### Task 6.2: 聊天提醒工具
@@ -305,7 +320,7 @@
 - [x] 验证四种类型、缺失时间、非法规则、调用重复/冲突、取消、跨请求/跨会话及数据库失败；本地假模型验证 SSE 解析后真实落库。六项专项测试及 Rust 编译通过。
 - [ ] 阶段 9 工具循环注册该工具并加入时间上下文，前端设置页显示结果。普通聊天每个请求只建立一个处理器并跨轮保留；重说不注册写入工具；不要依靠前端猜测用户消息是否要求提醒。
 
-当前边界：后台处理器已完成，现有 `chat::run_reply` 仍使用无工具的传输流程，聊天 UI、工具结果回传模型及真实供应商语言理解尚未联调；不能称为已交付的聊天提醒交互。阶段 6.1 的 AI 润色与提醒界面也仍待接入。
+当前边界：后台处理器已完成，现有 `chat::run_reply` 仍使用无工具的传输流程，聊天 UI、工具结果回传模型及真实供应商语言理解尚未联调；不能称为已交付的聊天提醒交互。阶段 6.1 的提醒管理、宠窗气泡与启动汇总已实现，AI 润色仍待接入。
 
 ---
 
@@ -336,7 +351,7 @@
 - [x] 运行期缓存携带经纬度、定位时间、来源、观测时间、接收时间。接收不超过 30 分钟且观测不超过 60 分钟为有效；时间回拨或超龄标记 stale。刷新失败有有效缓存标记 cached，无缓存标记 unavailable。位置仅使用实测坐标，不伪造城市名称。
 - [x] `get_weather` / `refresh_weather(contextRevision)` / `cancel_weather_refresh` 与 TypeScript 封装；请求租约随退出或上下文切换取消，提交前再次检查 revision；修改天气配置取消旧请求并清空缓存。
 - [x] 固定响应验证主服务、兜底、双失败、字段缺失、Gzip、拒绝定位、取消、旧上下文和缓存时效；不访问真实位置与在线服务。
-- [ ] 阶段 8 设置页接入定位授权、刷新/取消及状态显示；前端只接收当前 contextRevision 的结果，窗口关闭取消其发起的刷新。
+- [x] 阶段 8 设置页接入定位授权、刷新/取消及状态显示；前端只接收当前 contextRevision 的结果，离开页面取消其发起的刷新。打开页面只读取缓存与配置，不自动定位；和风密钥保留、替换与清除分别处理。
 - [ ] 阶段 9 上下文服务读取天气快照并携带状态、来源和观测时间，不在每条聊天回复前等待天气刷新；stale/cached 不作为当前事实。
 - [ ] Windows 实机验证授权允许/拒绝、位置服务关闭、无定位硬件与真实网络。旧版和风 v7 官方已提示未来弃用，发布前复核支持情况；新版 v1 的时间语义需单独核对后迁移，不用请求时刻冒充观测时间。
 
@@ -357,7 +372,7 @@
 - [x] 后端配置命令仅允许 `main/chat/settings`，新增精确标签的 `content-windows` capability，不将权限授予插件窗口。
 - [ ] 验证重复打开、关闭重开、切换过程中返回旧请求、事件丢失后查询恢复、最小窗口布局与 DPI。
 
-当前交付边界：窗口基础、会话新建/切换/改名/历史分页及主题设置已接入既有 SQLite 命令；聊天发送、完整设置表单和其他窗口尚未开放。会话页面旧响应、卸载、分页去重与焦点补查已有定向自动测试；原生窗口重复聚焦、关闭重开和真实 DPI 仍需 Windows 实机验收。Task 8.2–8.6 仅上述对应部分已接入，不将整体阶段标记完成。
+当前交付边界：窗口基础、会话新建/切换/改名/历史分页及主题设置已接入既有 SQLite 命令；聊天发送/流式/暂停、提供商和人设基础管理已接通，其余设置表单和其他窗口尚未开放。会话页面旧响应、卸载、分页去重与焦点补查已有定向自动测试；原生窗口重复聚焦、关闭重开和真实 DPI 仍需 Windows 实机验收。Task 8.2–8.6 仅上述对应部分已接入，不将整体阶段标记完成。
 
 ### Task 8.2: 前端类型与 API 封装
 
@@ -449,7 +464,7 @@ Expected: 无错误。
 - [ ] 记忆上下文在阶段 9 接入同一后端流程；删除、编辑与重说在阶段 10 按确认规则接入，不另建消息保存入口。
 - [x] 验证重复发送、切换、关闭、失败和中断；运行前端测试与构建。
 
-当前不包含背景图片管理（Task 12.4）、写信、完整记忆与工具、回复奖励。提供商设置页面尚待 8.6；没有可用提供商时保留草稿并展示后台错误。真实供应商与原生窗口交互需人工验收，自动测试覆盖页面/状态逻辑。
+当前不包含背景图片管理（Task 12.4）、写信、完整记忆与工具、回复奖励。提供商设置页面已由 8.6 接入；没有可用提供商时保留草稿并展示后台错误。真实供应商与原生窗口交互需人工验收，自动测试覆盖页面/状态逻辑。
 
 ### Task 8.6: 设置窗
 
@@ -460,6 +475,20 @@ Expected: 无错误。
 - Create: `src/styles/base.css`
 - Create: `src/styles/components.css`
 - Create: `src/styles/motion.css`
+
+当前已实现子项：
+
+- [x] 提供商页响应式导航、列表、新增/编辑、密钥保留/替换/清除、测试已保存配置。
+- [x] 聊天当前项、记忆专用项与跟随聊天选择；使用中删除保护、非当前项确认删除。
+- [x] 保存后广播与列表重读、聚焦补查、字段错误保留草稿；相关前端与后台定向测试。
+- [x] 人设响应式卡片、新建/编辑/切换、默认项删除保护、其他项级联删除确认、本体颜色预设和自定义。
+- [x] 查看当前/初始设定、确认后保存/恢复初始设定、表情库分类查看、重新生成与取消、后台生成失败提示。
+- [ ] 人设自调与差异视图（Task 12.3）、聊天背景（Task 12.4）、导出（阶段 17）；自调开关目前仅保存偏好。
+- [x] 提醒规则新增/编辑/删除、触发记录分页与本次状态管理、页面内离线汇总及分批展示确认。
+- [x] 宠窗到点气泡、启动汇总、自动恢复隐藏宠窗、实际显示后确认以及提醒管理跳转。
+- [x] 时间与天气页：缓存与来源/时间展示、主动定位刷新、取消、和风 Host/Key 配置、旧上下文回执丢弃；实际 Windows 定位权限与在线服务仍需实机验收。
+- [x] 时间与桌宠页：15 项配置、范围和四档递增校验、只保存改动字段、只读后台默认值恢复草稿；出行/饰品玩法未接通，界面明确区分配置与玩法。
+- [ ] AI 提醒文案润色；其余设置表单及 Task 9.5 的 Embedding 运行与设置。
 
 - [ ] **Step 1: 编写设置窗**
 
@@ -498,31 +527,42 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 **Files:** `src-tauri/src/models.rs`、`db.rs`、`config.rs`。
 
-- [ ] 按 `db/schema.sql` 增加 `ShortMemory`、带 `title` 的 `LongMemory`、`LongMemorySource`、`LongMemoryEmbedding`、`Notebook` 模型，并让消息模型携带 `round_id`。
-- [ ] `ShortMemory` 包含来源回合和 `pending/integrated` 状态；`LongMemory` 包含简短标题、实际来源数量和触发回合。覆盖边界从 `long_memory_sources` 最大 `source_order` 对应的短期记忆及回合推导，不保存重复字段。
-- [ ] `AppSettings` 按《数据库与持久化设计》第 2.7 节增加短期记忆字数范围（默认 `12–100`）、长期记忆字数范围（默认 `150–250`）、`memory_merge_count`（默认 20）、`recent_message_count`（默认 30）、`recent_long_memory_count`（默认 30）、旅行游记字数范围（默认 `250–350`）、工具轮数和记事本上限；初始化、恢复默认值、前端表单与后端成对校验使用同一组数值。
-- [ ] 设置读写统一校验正整数与最小值不大于最大值；修改 `memory_merge_count` 只作用于以后尚未整合的短期记忆。Rust 不暴露任意 key/value 写入命令，前端 DTO 使用明确字段。
-- [ ] 运行 Rust 编译与设置往返测试。
+- [x] 已按 `db/schema.sql` 增加 `ShortMemory`、带 `title` 的 `LongMemory`、`LongMemorySource`、`LongMemoryEmbedding`、`Notebook` 模型，消息模型原本已有 `round_id`，继续复用。
+- [x] `ShortMemory` 包含来源回合和 `pending/integrated` 状态；`LongMemory` 包含简短标题、实际来源数量和触发回合。覆盖边界从 `long_memory_sources` 最大 `source_order` 对应的短期记忆及回合推导，不保存重复字段。
+- [x] 复用已有 `config::Settings` 与 TypeScript `Settings`，按《数据库与持久化设计》第 2.7 节增加短期记忆字数范围（默认 `12–100`）、长期记忆字数范围（默认 `150–250`）、`memory_merge_count`（默认 20）、`recent_message_count`（默认 30）、`recent_long_memory_count`（默认 30）、旅行游记字数范围（默认 `250–350`）、工具轮数和记事本上限；初始化、恢复默认值、前端表单与后端成对校验使用同一组数值。
+- [x] 设置读写统一校验正整数与最小值不大于最大值；修改 `memory_merge_count` 只作用于以后尚未整合的短期记忆。Rust 不暴露任意 key/value 写入命令，前端 DTO 使用明确字段。
+- [x] 运行 Rust 编译与设置往返测试。
+
+当前完成范围仅为数据契约与 11 项配置页面，不包含记忆仓储读写、自动生成、整合、检索或工具执行。数据库表已存在，本步不修改 schema 或版本；默认值统一来自 Rust，保存仍复用白名单事务接口。
 
 ### Task 9.2: 记事本与只读旅行游记工具
 
-**Files:** `src-tauri/src/ai/client.rs`、`ai/streaming.rs`、`notebook.rs`、`travel_journal_tools.rs`、`chat.rs`、`lib.rs`。
+**Files:** `src-tauri/src/ai/provider.rs`、`ai/openai_compatible.rs`、`notebook.rs`、`notebook_tools.rs`、`travel_journal_tools.rs`、`chat.rs`、`chat/tools.rs`、`commands.rs`、`events.rs`、`models.rs`、`desktop_windows.rs`、`lib.rs`、`src-tauri/capabilities/content-windows.json`、`src/api.ts`、`types.ts`、`App.tsx`、`platform/navigation.ts`、`pages/ChatPage.tsx`、`windows/MemoryWindow.tsx`、`components/settings/NotebookPanel.tsx` 及测试；复用已有 `ai/client.rs` 与 `ai/streaming.rs`。
 
-- [ ] 保留 `read_notebook` / `update_notebook` 结构化工具和现有工具轮次上限；工具结果提供 `limit_chars`、`current_chars`、`remaining_chars` 和 `over_limit`，字符数按 Unicode 字符计算。
-- [ ] `notebook_max_chars` 默认 `4000`，仅作为 AI 维护软限制：系统提示要求整份记事本保持在范围内，接近上限先合并和精简；超限内容照常完整保存且不截断，后续 AI 修改优先压缩。前端显示当前字数、建议上限和超限提示。
-- [ ] 增加只读工具：列出当前会话旅行游记、按条件查找以前旅行、读取指定游记正文。
-- [ ] 所有工具由后端注入当前 `session_id` 并校验归属，模型参数不能绕过会话边界。
-- [ ] 流式解析正确拼接跨数据块的 tool_calls，按调用 ID 返回工具结果。
+- [x] 记事本仓储及 `read_notebook` / `update_notebook` 工具定义和处理器：事务保存全文、段落追加/替换/删除、后台会话绑定、请求取消/上下文校验、旧快照冲突保护及成功写调用去重。工具结果提供 `limit_chars`、`current_chars`、`remaining_chars` 和 `over_limit`，字符数按 Unicode 字符计算。
+- [x] 把记事本工具接入公共聊天执行循环，并统一执行配置中的工具轮次上限；同轮按顺序执行，到上限关闭工具并请求正文收束，仍要求工具则保存中断终态。既有 create_reminder 处理器也已复用接通。
+- [x] `notebook_max_chars` 默认 `4000`，仅作为 AI 维护软限制：系统提示要求整份记事本保持在范围内，接近上限先合并和精简；超限内容照常完整保存且不截断，后续 AI 修改优先压缩。聊天窗已提供记事本窗口入口，显示当前字数、建议上限和超限提示，支持带旧快照校验的全文编辑保存。
+- [x] 增加只读工具：列出当前会话旅行游记、按标题/正文关键词查找以前旅行、读取指定游记正文；分页有界，无数据返回空，旅行生成仍属后续阶段。
+- [x] 所有工具由后端注入当前 `session_id` 并校验归属，模型参数不能绕过会话边界。
+- [x] 流式解析正确拼接跨数据块的 tool_calls，按调用 ID 返回工具结果；工具协议消息不写入聊天历史。取消后保留已成功的独立工具事务，不重放。
+
+真实提供商的工具兼容性、记事本原生窗口亮暗主题与缩放仍需实机验收；自动验证使用本地假服务，不消耗用户 API 配额。完整记忆上下文按 Task 9.6 接入，不因本任务完成而标为已完成。
 
 ### Task 9.3: 每轮短期记忆生成
 
-**Files:** `src-tauri/src/memory.rs`、`chat.rs`、`models.rs`、`commands.rs`、`lib.rs`。
+执行边界：扩展现有 `jobs` 调度，不建立第二套后台线程循环。以 completed 回合缺少 short_memory 为持久化待办依据；同会话按 roundId 顺序处理，同一回合同一时刻最多一个任务。启动/正常完成通知触发扫描，数据库唯一约束兜底；调用 AI 时不持有锁。取消、会话删除或版本冲突不当成成功；快照过期重新入队，网络/提供商失败不能立即无限循环重试，应保留缺失状态并报告，提供商恢复或用户再次触发时重试。不会因错误清空已有人为编辑的记忆。
 
-- [ ] 每个 `completed` 回合生成且只生成一条短期记忆；中断回合和主动消息不生成。
-- [ ] 生成输入固定为该回合的用户消息和 AI 回复，并使用以下原文作为系统约束：**短期记忆和长期记忆是中性事实记录，不使用人设口吻，不需要任何氛围总结或主观评价，必须只是如同剧本一样的叙事描述。**
-- [ ] 读取回合、消息与 `memory_revision` 快照后释放锁请求 AI；返回后重新校验并用短事务写入。快照过期时拒绝写入并立即按最新正文重新排队；若此时关闭应用，启动扫描仍要通过“completed 回合没有 short_memory”发现并补做，不能让该轮永久缺少记忆。
-- [ ] 短期记忆初始为 `pending`，整合后只改为 `integrated`，不删除。
-- [ ] 验证失败重试、重复调度、消息在生成期间被编辑和会话被删除；按回合顺序补做缺失短期记忆，不跨过未补齐的完整回合进行长期整合。
+**Files:** `src-tauri/src/memory.rs`、`memory/tests.rs`、`runtime.rs`、`jobs.rs`、`chat/coordinator.rs`、`events.rs`、`platform/windows/events.rs`、`commands.rs`、`lib.rs`；`src/api.ts`、`types.ts`、`windows/MemoryWindow.tsx`、`components/settings/MemoryGenerationPanel.tsx` 及测试、`MemorySettingsPanel.tsx`。复用已有 `models.rs`、`sessions.rs`、`state.rs` 与 AI 客户端；不修改 schema、迁移或依赖。
+
+- [x] 每个 `completed` 回合生成且只生成一条短期记忆；中断回合和主动消息不生成。
+- [x] 生成输入固定为该回合的用户消息和 AI 回复，并使用以下原文作为系统约束：**短期记忆和长期记忆是中性事实记录，不使用人设口吻，不需要任何氛围总结或主观评价，必须只是如同剧本一样的叙事描述。**
+- [x] 读取回合、消息与 `memory_revision` 快照后释放锁请求 AI；返回后复核版本、两条原文、有效记忆提供商及字数设置，短事务插入并递增版本。过期结果不保存，最新缺失回合重新扫描；启动同样能补做。
+- [x] 新短期记忆写为 `pending`，已有记忆保持原内容；`integrated` 的更新由 Task 9.4 实现，本任务不提前整合。
+- [x] 复用唯一 jobs 循环和请求取消管理器，推理异步执行；同一时刻一个短期生成任务，同会话严格按 roundId 顺序，某会话失败不阻塞其他会话。
+- [x] 首次失败后 30 秒、再次失败后 120 秒重试，最多三次；第三次失败后等待手动重试、有效记忆配置变化、有效记忆提供商测试成功或重启。取消和过期快照不消耗失败次数；重试不覆盖已有记忆，不使桌宠休眠。
+- [x] 当前会话小窗显示已生成/待生成数量、活动/失败回合与安全错误，支持“重试待生成记忆”；查询和重试验证人设、会话与 contextRevision，变化通知和聚焦补查恢复状态。
+- [x] 8 项后端定向测试覆盖提供商选择/回退、顺序、重复调度、版本/原文/配置过期、取消/删除、格式/汉字范围、截断拒绝、有限重试及重启恢复；2 项前端测试及 TypeScript/Vite 构建通过。
+- [ ] 人工验收：实际供应商的摘要质量、真实小窗通知与重试交互。长期记忆、RAG、短期内容编辑和注入聊天上下文仍属后续任务。
 
 ### Task 9.4: `k+1` 长期整合与回退关系
 
@@ -538,14 +578,17 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 **Files:** `src-tauri/src/embedding_providers.rs`、`embedding.rs`、`memory_search.rs`、`models.rs`、`db.rs`、`commands.rs`、`lib.rs`、`src/windows/SettingsWindow.tsx`、`src/api.ts`，以及随应用打包的 `resources/models/bge-small-zh-v1.5/`。
 
-- [ ] 首次启动幂等写入并启用不可删除的内置本地 `BAAI/bge-small-zh-v1.5`；模型资源随便携版打包，验证离线向量生成、维度与相同输入稳定性。
+- [x] 内置本地 Embedding 配置种子已有，复用现有初始化，不重复新增配置。
+- [ ] 按记忆设计 4.5 运行契约接入实际模型与资源；配置存在不代表可运行。资源验证一次锁定版本、精度与测量结果。
 - [ ] 增加 Embedding 提供商列表、新增、编辑、删除、切换和测试命令；联网项使用 OpenAI-compatible `/embeddings`，API Key 经 DPAPI 加密，当前项切换使用事务。
-- [ ] 创建并维护 `long_memories_fts`，使用 FTS5 `trigram` 索引标题与正文；为少于三个字符的中文检索词提供普通匹配兜底，并验证插入、编辑、重新整合、删除与 rebuild。
-- [ ] 创建 `long_memory_embeddings`，以归一化 float32 BLOB 保存当前模型向量和内容哈希；新增长期记忆后异步生成，标题/正文变化使旧向量失效，模型切换和导入后支持可恢复的后台重建。
+- [ ] 接入已有 `long_memories_fts` 及同步触发器，不重复创建；使用 FTS5 `trigram` 检索标题与正文，为少于三个字符的中文检索词提供普通匹配兜底，验证编辑、删除与 rebuild。
+- [ ] 接入已有 `long_memory_embeddings`，以归一化 float32 BLOB 保存当前模型向量和内容哈希；新增长期记忆后异步生成，标题/正文变化使旧向量失效，模型切换和导入后支持可恢复的后台重建。
 - [ ] 每次在当前会话的最近 `m` 条之外并行执行 FTS5 与向量候选检索，使用排名融合、ID 去重、相关阈值、数量上限和上下文预算筛选；第一版直接在 Rust 中计算当前会话向量相似度，不引入向量数据库。
 - [ ] 联网 Embedding 失败时本次降级为 FTS5，记录可见错误但不让聊天进入休眠；测试本地/联网切换、部分向量待建、跨会话隔离和降级路径。
 
 ### Task 9.6: 上下文组装与深层回忆工具
+
+先落实容量来源和预算 DTO，再接入裁剪，禁止凭模型名猜容量或写死 16K。完整契约见记忆设计 6.2/6.4。已确认最大输出默认 32768；未知容量允许请求，明确超限后只自动重试一次。工具副作用不重放，固定人设与当前输入不截断。前端高级设置、数据库迁移与 9.8 长度终止需一起交付，不能只加一个提示文案。
 
 **Files:** `src-tauri/src/context.rs`、`memory_tools.rs`、`chat.rs`、`commands.rs`、`lib.rs`。
 
@@ -557,12 +600,14 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 - [ ] 把上下文构建实现为明确流水线：先使用本次输入与当前对话主题执行混合 RAG，再按“系统与环境规则 → 用户设定 → 人设 → 记事本 → 最近长期 → RAG 旧长期 → 未整合短期 → 游记标题 → 最近原文 → 本次输入”构造初始 `messages`；测试同一记忆和本次输入不重复。
 - [ ] 主请求必须同时构造 `messages` 与当前可用的 `tools` 定义；不把工具说明文字误当成可执行工具，也不注册未实现工具或空实现。
 - [ ] 提供只读 `search_long_memories`、`open_long_memory`、`open_long_memory_sources`、`open_chat_round`；后端注入并校验当前 `session_id`，支持从候选标题逐层打开长期记忆、来源短期记忆和原始回合。
-- [ ] 工具循环把 assistant tool call 与对应 tool result 成对追加到 `messages`，复用原请求 ID、上下文快照和取消信号；每轮重算剩余上下文预算，达到 `tool_call_rounds`、取消、超时或预算边界时安全终止，不保存伪完整回复。
+- [ ] 复用 9.2 已有工具循环，把 assistant tool call 与对应 tool result 成对追加到 `messages`，复用原请求 ID、上下文快照和取消信号；每轮重算剩余上下文预算，达到 `tool_call_rounds`、取消、超时或预算边界时安全终止，不保存伪完整回复。
 - [ ] 验证普通聊天、一次混合检索后回复和多轮深层回忆三条路径，确保前两条正文只调用一次聊天 AI；独立颜文字、联网 Embedding 和深层工具往返分别计数并在测试断言中区分。
 
 - [ ] 上下文超过容量时，按《记忆与旅行游记设计》第 6.2 节缩减本次较旧内容并通知前端，不改数据库记忆或用户设置；测试固定部分超限、缩减后可发送以及最低必要内容仍超限。
 
 ### Task 9.7: 记忆命令与管理小窗
+
+`MemoryWindow.tsx` 与 `NotebookPanel` 已在 9.2 接通。扩展现有窗口加入记忆页签，不重建窗口、记事本保存命令或冲突保护；新增页签须等真实命令接通后开放。
 
 **Files:** `src-tauri/src/memory_commands.rs`、`commands.rs`、`src/windows/MemoryWindow.tsx`、`src/App.tsx`、`src/api.ts`。
 
@@ -578,12 +623,13 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 **Files:** `src-tauri/src/chat.rs`、`ai/client.rs`、`ai/streaming.rs`、`state.rs`、`commands.rs`、`src/windows/ChatWindow.tsx`、`src/api.ts`。
 
-- [ ] 为聊天请求分配 request_id，同一会话只允许一个执行中的请求；事件携带 session_id 与 request_id。
-- [ ] 暴露取消命令并覆盖表情请求、正文流与工具边界；切换/删除会话或关闭聊天窗时取消当前请求。
-- [ ] 正常流程：事务建立 pending 回合并保存用户消息 → 组装上下文 → 生成表情和正文 → 事务保存 AI 消息并完成回合 → 增加亲密度 → 后台生成本轮短期记忆。
-- [ ] 中断保留已经收到的正文一次，无正文不插空消息；回合不算完整，不增加亲密度、不生成人设自调或短期记忆，已提交工具操作不回滚。
-- [ ] 前端不重复保存用户或 AI 消息；窗口事件丢失不影响后端持久化。
-- [ ] 验证取消时机、晚到事件、重复发送、工具循环和正文仅保存一次。
+- [x] 已有 requestId、单会话请求门禁、活动快照、事件归属与取消，复用 coordinator/state，不重新实现。
+- [x] 已有 pending 建立、用户消息保存、完成/中断终态及部分正文保存，前端不承担保存。9.2 已有有限工具循环及取消边界。
+- [ ] 增量接入 9.6 完整上下文和预算：提供商高级字段、能力来源解析、未知容量、保护长人设、最大输出默认 32768 及实际生效值。按数据库设计 11.1 正式迁移，不改变现有字段语义。
+- [ ] 增量实现 length_limit 持久化与 `continue_chat`；同 roundId、新 requestId、原回复追加、无新用户消息、首版续写不开放工具。前端修改 `ChatPage.tsx` 和已有聊天 hook，保留薄窗口结构。
+- [ ] 增量加入连接无进展、持续重复、编码异常和工具无进展保护，复用原取消及唯一终态入口；具体边界见记忆设计 6.5。不得把所有异常统一成提供商休眠。
+- [ ] completed 成功提交后接入一次性亲密度与 9.3 记忆调度，阶段 13.2 复用本入口；不在前端或另一调度器再次奖励。中断不调度记忆/人设自调，已经成功的工具不回滚、不重放。
+- [ ] 针对增量验证长度续写、多次长度停止、取消/重启前缀恢复、最终记忆一次、正常颜文字和代码不误杀，以及异常重复自动停止；复用现有取消/晚到事件测试，不重建同义测试全集。
 
 ---
 ## 阶段 10：会话与消息操作、默认人设、自启
@@ -602,7 +648,7 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 - [ ] **Step 1: 添加删除会话与标题命令**
 
-`src-tauri/src/sessions.rs` 增加可序列化的 `SessionDeleteResult { current_session_id: Option<i64> }` 和 `delete_session(conn: &mut Connection, session_id: i64) -> Result<SessionDeleteResult, String>`。`rename_session` 后端命令与 1–100 字符校验已在阶段 5 实现，本阶段复用，不再建立第二套改名入口。
+在现有 sessions 服务扩展删除操作，使用 AppResult；返回 DTO 的 current_session_id 为 Option<String>。命令校验当前人设、目标归属与 context revision，内部仓储才使用 i64。`rename_session` 后端命令与 1–100 字符校验已在阶段 5 实现，本阶段复用，不再建立第二套改名入口。
 
 `delete_session` 使用一个事务校验会话存在并读取所属人设，先删除目标会话的长期记忆以解除短期来源上的 RESTRICT 引用，再删除会话及剩余级联数据；若删的是 `settings.current_session_id`，则从同一人设剩余会话中选择最近更新项并写回，没有剩余项时删除该设置键。小游戏插件、授权、设置、存档、游戏局与喵币账单均为全局数据，不参与删除事务。数据库函数返回新的当前会话 ID；命令提交后递增内存中的 context revision，并广播 `window_context_changed` 供所有已打开窗口刷新。调用命令前先中断该会话正在执行的聊天请求。
 
@@ -709,17 +755,17 @@ Expected: 构建成功；可执行文件名由 Cargo target 决定，当前为 `
 
 user_profiles 与 sessions.user_profile_id 已由完整 schema 建立；本 Task 接入模型和 CRUD。旧库升级仅由 Task 2.1 版本化迁移处理，不在功能模块重复 ALTER TABLE。
 
-`models.rs` 增加 `UserProfile`；`sessions.rs` 的 `Session` 增加 `user_profile_id: Option<i64>`，`list_sessions` 同步读取该字段。
+复用现有 Session DTO 中的 `user_profile_id: Option<String>`；补齐 UserProfile 业务与绑定入口，不新增同名字段。Rust 仓储内部可用 i64，跨 IPC ID 必须为字符串，错误统一 AppError/AppResult。
 
 - [ ] **Step 2: 实现用户设定 CRUD**
 
 `src-tauri/src/user_profiles.rs` 提供：
 
 ```rust
-pub fn create(conn: &Connection, name: &str, content: &str) -> Result<i64, String>
-pub fn list(conn: &Connection) -> Result<Vec<UserProfile>, String>
-pub fn update(conn: &Connection, id: i64, name: &str, content: &str) -> Result<(), String>
-pub fn delete(conn: &Connection, id: i64) -> Result<(), String>
+pub fn create(conn: &Connection, name: &str, content: &str) -> AppResult<i64>
+pub fn list(conn: &Connection) -> AppResult<Vec<UserProfile>>
+pub fn update(conn: &Connection, id: i64, name: &str, content: &str) -> AppResult<()>
+pub fn delete(conn: &Connection, id: i64) -> AppResult<()>
 ```
 
 `delete` 依靠 `sessions.user_profile_id` 的 `ON DELETE SET NULL` 自动把绑定它的会话置为“未绑定”，不删除会话。`commands.rs` 暴露 `create_user_profile`、`list_user_profiles`、`update_user_profile`、`delete_user_profile`，并在 `lib.rs` 注册。
@@ -730,7 +776,7 @@ pub fn delete(conn: &Connection, id: i64) -> Result<(), String>
 
 - [ ] **Step 4: 设置窗用户设定页**
 
-`SettingsWindow.tsx` 将“用户设定（Task 10.6 补齐）”占位替换为 `<UserProfilesTab />`，实现新建、编辑、删除、导出用户设定；删除前提示绑定它的会话会变为“未绑定”。
+`SettingsWindow.tsx` 将“用户设定（Task 10.6 补齐）”占位替换为 `<UserProfilesTab />`，实现新建、编辑、删除；导出依赖阶段 17，未接通前不开放假入口；删除前提示绑定它的会话会变为“未绑定”。
 
 - [ ] **Step 5: 聊天窗绑定与展示**
 
@@ -755,9 +801,9 @@ Expected: 无错误。
 - Modify: `src-tauri/src/persona.rs`
 - Modify: `src-tauri/src/commands.rs`
 
-- [ ] **Step 1: 创建人设后自动生成**
+- [x] **Step 1: 已接通创建人设后自动生成，复用现有服务**
 
-`src-tauri/src/commands.rs` 的 `create_persona` 改为 async，创建成功后调用 `crate::expressions::generate_persona_expressions`（使用聊天当前 provider；若无 provider 则跳过不报错），结果写入该人设 `expressions`。设置页的“生成表情库”按钮保留，复用 `generate_expressions` 命令。
+现有 `src-tauri/src/commands.rs` 的 `create_persona` 已为 async；复用创建成功后调用 `crate::expressions::generate_persona_expressions`（使用聊天当前 provider；若无 provider 则跳过不报错），结果写入该人设 `expressions`。设置页的“生成表情库”按钮保留，复用 `generate_expressions` 命令。
 
 - [ ] **Step 2: 编译验证**
 
@@ -820,17 +866,17 @@ Expected: 无错误。
 - Modify: `src-tauri/src/memory.rs`
 - Modify: `src-tauri/src/db.rs`
 
-- [ ] **Step 1: 提醒编辑命令**
+- [x] **Step 1: 复用已完成的提醒编辑命令**
 
-`src-tauri/src/reminders.rs` 增加 `update_reminder(conn, id, name, kind, schedule, content, fire_at, status)`；`commands.rs` 暴露 `update_reminder`。
+提醒编辑命令、规则校验和前端表单已经接通，复用现有 DTO、状态管理与变更通知，不按旧示意签名重写。
 
-- [ ] **Step 2: 提供商测试连接**
+- [x] **Step 2: 复用已完成的提供商测试连接**
 
-`src-tauri/src/providers.rs` 增加 `test_connection(target: &ApiTarget) -> Result<(), String>`：发送使用所选模型的最小 chat 请求并验证响应；仅 models 列表可访问不能证明模型可用。`commands.rs` 暴露 `test_provider_connection(input)` 临时构造 target 测试。
+提供商测试连接已经接通，复用当前基于已保存提供商 ID 的命令与安全密钥读取；不能换成旧草稿的 input 签名或仅测试 models 列表。
 
 - [ ] **Step 3: 待生成记忆恢复**
 
-`memory.rs` 扫描尚无短期记忆的 `completed` 回合，并按回合 ID 顺序补生成；`short_memories.round_id` 唯一约束阻止重复。中断回合与主动消息不参与。恢复任务继续遵守 `memory_revision` 快照校验；版本冲突不是完成状态，工作器立即重排最新任务，启动扫描负责补偿进程退出造成的遗漏。长期整合冲突时来源短期记忆保持 `pending`，后续重新整合。
+复用 Task 9.3 的唯一恢复工作器：`memory.rs` 扫描尚无短期记忆的 `completed` 回合，并按回合 ID 顺序补生成；`short_memories.round_id` 唯一约束阻止重复。中断回合与主动消息不参与。恢复任务继续遵守 `memory_revision` 快照校验；版本冲突不是完成状态，工作器立即重排最新任务，启动扫描负责补偿进程退出造成的遗漏。长期整合冲突时来源短期记忆保持 `pending`，后续重新整合。
 
 - [ ] **Step 4: 编译验证**
 
@@ -893,11 +939,11 @@ Expected: 无错误。
 - Modify: `src-tauri/src/persona.rs`
 - Modify: `src-tauri/src/commands.rs`
 
-- [ ] **Step 1: 更新人设建表与模型**
+- [x] **Step 1: 已有 schema 与人设模型，复用现有字段**
 
-personas 中 initial_prompt、self_evolve_enabled、last_evolved_at、color 已由完整 schema 创建，本 Task 接入模型与命令；模型字段与 `db/schema.sql` 保持一致。`create_persona` 时把 `initial_prompt` 设为用户填写的 `prompt`，`self_evolve_enabled` 默认 1，`color` 默认 `#ffb6c1`。
+personas 中 initial_prompt、self_evolve_enabled、last_evolved_at、color 已由完整 schema 创建，现有模型与基础命令已接通；模型字段与 `db/schema.sql` 保持一致。`create_persona` 时把 `initial_prompt` 设为用户填写的 `prompt`，`self_evolve_enabled` 默认 1，`color` 默认 `#ffb6c1`。
 
-- [ ] **Step 2: 增加人设命令**
+- [x] **Step 2: 已有基础人设命令，复用保存/恢复/颜色入口**
 
 `commands.rs` 暴露：获取人设详情、更新当前人设、保存当前人设为初始设定、从初始设定恢复当前人设、读取和更新当前人设颜色。恢复操作在 Rust 层做事务更新，不调用 AI。
 
@@ -981,7 +1027,7 @@ Expected: 无错误。
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 
-- [ ] **Step 1: 扩展人设数据模型**
+- [x] **Step 1: 复用已有背景模型字段，上传和显示仍待接入**
 
 personas 的 chat_bg_file、chat_bg_opacity、chat_bg_blur 已存在，本 Task 接入模型与命令；默认无背景图，透明度默认 85，模糊度默认 0。
 
@@ -1247,9 +1293,9 @@ Expected: 全部通过，石头剪刀布与外部本地插件都由同一宿主�
 - Create: `src-tauri/src/accessories.rs`
 - Modify: `src-tauri/src/commands.rs`
 
-- [ ] **Step 1: 创建饰品表和模型**
+- [ ] **Step 1: 接入已有饰品表并补齐模型**
 
-按 `db/schema.sql` 创建 `accessories`；模型包含 `display_text`、`description`、`cost`、`source`、`is_worn`。
+接入 `db/schema.sql` 已有 `accessories` 表，不重复建表；模型包含 `display_text`、`description`、`cost`、`source`、`is_worn`。
 
 - [ ] **Step 2: 实现饰品 CRUD**
 
@@ -1385,6 +1431,12 @@ Expected: 无错误。
 
 ### Task 18.1: 内置农历与节气数据表
 
+数据来源固定为香港天文台公开的[公历与农历对照表](https://www.hko.gov.hk/en/gts/time/conversion.htm)，截取 1950–2100 公历日期范围；使用其年度文本/公开数据文件，在开发阶段离线转换为随包静态资源。不得让模型凭记忆填写常量，也不在用户运行时请求日历接口。保存原始文件、来源 URL、获取日期、校验和、转换脚本及资源版本；分发前核对原始文件对应使用条款并附来源，不能把其他站点的许可证套到该数据上。
+
+转换时保留公历日期、农历年/月/日、闰月标记与节气；年初可属于上一农历年。日历采用该来源的中国历法日期口径，提醒调度仍跟随电脑当前时区，不能把两者混成一次 UTC 时间换算。未来临近午夜的朔/节气可能因预测修订变动，更新必须更换资源版本并复核，不混用多套算法。
+
+一次必要验证包含：全区间连续日期与往返一致性、1950/2100 边界、年初上一农历年、闰月以及无效日期。Golden 用例人工从官方原始文件固定期望，不能由待测转换器生成期望；至少核对 2024-02-10 春节、2024-02-04 立春、2023 年闰二月以及清明/冬至，具体日期/闰月标记从锁定文件提取并审阅。资源生成失败或分发条款未核清时不能交付虚构数据。
+
 **Files:**
 - Create: `src-tauri/src/lunar.rs`
 
@@ -1404,9 +1456,9 @@ Expected: 无错误。
 - Create: `src-tauri/src/festivals.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: 建表与内置数据**
+- [ ] **Step 1: 接入已有表与内置数据**
 
-按 `db/schema.sql` 创建 `festival_catalog`；首次启动按 `code` 幂等写入内置节日（公历：元旦、劳动节、国庆节；农历：腊八、小年、除夕、春节、元宵、端午、七夕、中秋、重阳；节气：清明、冬至），写入时用 `lunar.rs` 直接把当年的公历月日算好一起写入，并写入内置祝福词与 `is_memorial`。
+接入 `db/schema.sql` 已有 `festival_catalog` 表，不重复建表；首次启动按 `code` 幂等写入内置节日（公历：元旦、劳动节、国庆节；农历：腊八、小年、除夕、春节、元宵、端午、七夕、中秋、重阳；节气：清明、冬至），写入时用 `lunar.rs` 直接把当年的公历月日算好一起写入，并写入内置祝福词与 `is_memorial`。
 
 - [ ] **Step 2: 每年查表更新**
 
@@ -1422,9 +1474,9 @@ Expected: 无错误。
 - Modify: `src-tauri/src/context.rs`
 - Modify: `src-tauri/src/chat.rs`
 
-- [ ] **Step 1: 建表与命令**
+- [ ] **Step 1: 接入已有表与命令**
 
-按 `db/schema.sql` 创建 `session_festivals`；提供按会话的列表/新增/编辑/删除命令；year 为本年；lunar 行按目标公历年查内置表换算（年初腊月可能属于上一农历年），无对应日期清空旧换算值，本年不命中。公历行只更新 year，月日不变。
+接入 `db/schema.sql` 已有 `session_festivals` 表，不重复建表；提供按会话的列表/新增/编辑/删除命令；year 为本年；lunar 行按目标公历年查内置表换算（年初腊月可能属于上一农历年），无对应日期清空旧换算值，本年不命中。公历行只更新 year，月日不变。
 
 - [ ] **Step 2: AI 工具**
 

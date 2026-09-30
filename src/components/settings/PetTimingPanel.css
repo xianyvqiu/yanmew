@@ -1,0 +1,30 @@
+.ym-pet-timing-panel h2 { margin-top: 0; }
+.ym-pet-timing-panel form { display: grid; gap: 20px; }
+.ym-pet-timing-group { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); }
+.ym-pet-timing-group legend { padding: 0 6px; color: var(--ym-text); font-weight: 600; }
+.ym-pet-timing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px 18px; }
+.ym-pet-timing-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.ym-pet-timing-field input { box-sizing: border-box; width: 100%; min-width: 0; height: 38px; padding: 7px 10px; color: var(--ym-text); background: var(--ym-surface-muted); border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); font: inherit; }
+.ym-pet-timing-field input:focus-visible { outline: 2px solid var(--ym-accent-strong); outline-offset: 2px; }
+.ym-pet-timing-field input[aria-invalid="true"] { border-color: var(--ym-danger); }
+.ym-pet-timing-input-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ym-pet-timing-unit { flex: 0 0 auto; color: var(--ym-text-secondary); font-size: 13px; }
+.ym-pet-timing-error { color: var(--ym-danger); font-size: 13px; line-height: 1.45; }
+.ym-pet-timing-group > .ym-page-note { margin: 12px 0 0; }
+.ym-pet-level-head, .ym-pet-level-row { display: grid; grid-template-columns: minmax(72px, .55fr) repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.ym-pet-level-head { padding: 0 0 8px; color: var(--ym-text-secondary); font-size: 13px; }
+.ym-pet-level-rows { display: grid; gap: 12px; }
+.ym-pet-level-row { padding-top: 12px; border-top: 1px solid var(--ym-border); }
+.ym-pet-level-row .ym-field { margin: 0; }
+.ym-pet-level-label { padding-top: 9px; color: var(--ym-text-secondary); }
+.ym-pet-timing-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ym-pet-timing-save { color: var(--ym-accent-strong); background: var(--ym-accent-soft); }
+.ym-pet-timing-notice { margin: 0; color: var(--ym-text-secondary); }
+.ym-pet-timing-panel .ym-page-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ym-pet-timing-panel button:disabled { cursor: not-allowed; opacity: .6; }
+@media (max-width: 520px) {
+  .ym-pet-timing-group { padding: 12px; }
+  .ym-pet-level-head { display: none; }
+  .ym-pet-level-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .ym-pet-level-label { grid-column: 1 / -1; padding-top: 0; }
+}

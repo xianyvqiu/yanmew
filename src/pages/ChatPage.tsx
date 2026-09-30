@@ -3,6 +3,7 @@ import { errorMessage, sessionApi } from "../api";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import { useChat } from "../hooks/useChat";
 import ChatComposer from "../components/ChatComposer";
+import { navigation } from "../platform/navigation";
 import "./workspace.css";
 
 export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceContext; onRefresh: () => void }) {
@@ -46,6 +47,7 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
         <button className="ym-button" disabled={busy || !title.trim()} type="submit">保存名称</button>
       </form>}
       <p className="ym-page-note">切换会话会取消已经开始的旅行与待回信。</p>
+      <button className="ym-button" disabled={!context.sessionId || busy} onClick={() => { void act(() => navigation.open("memory")); }}>查看记事本</button>
     </section>
     {(error || chat.error) && <div role="alert" className="ym-page-error">{error || chat.error}<button className="ym-button" onClick={() => { setError(""); void chat.reload(); }}>重新加载</button></div>}
     <section className="ym-page-card ym-chat-history" aria-label="聊天记录">

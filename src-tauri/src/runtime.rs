@@ -23,6 +23,7 @@ pub struct Runtime {
     pub clock: Arc<dyn crate::platform::contracts::Clock>,
     pub random: Arc<Mutex<Box<dyn crate::pet::RandomSource + Send>>>,
     pub jobs_cancel: crate::state::Cancellation,
+    pub memory: Arc<crate::memory::GenerationState>,
 }
 impl Runtime {
     pub fn initialize(
@@ -48,6 +49,7 @@ impl Runtime {
             clock,
             random: Arc::new(Mutex::new(random)),
             jobs_cancel: Default::default(),
+            memory: Default::default(),
         }
     }
 
@@ -192,5 +194,6 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         clock: Arc::new(TestClock(std::time::Instant::now())),
         random: Arc::new(Mutex::new(Box::new(TestRandom))),
         jobs_cancel: Default::default(),
+        memory: Default::default(),
     }
 }
