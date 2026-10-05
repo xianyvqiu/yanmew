@@ -6,8 +6,200 @@ use crate::{
     runtime::{Runtime, Store},
 };
 use tauri::{State, WebviewWindow};
+use crate::memory::management as memory_management;
+
+#[tauri::command]
+pub async fn list_memories(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+    kind: memory_management::Kind,
+    after_id: Option<String>,
+    limit: Option<u32>,
+) -> AppResult<memory_management::Page> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        memory_management::list(&worker, context, kind, after_id, limit.unwrap_or(30))
+    })
+    .await
+    .map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn get_memory(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+    kind: memory_management::Kind,
+    id: String,
+) -> AppResult<memory_management::Detail> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || memory_management::get(&worker, context, kind, id))
+        .await
+        .map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn save_memory(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+    expected: memory_management::Detail,
+    title: Option<String>,
+    content: String,
+) -> AppResult<memory_management::Detail> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        memory_management::save(&worker, context, expected, title, content)
+    })
+    .await
+    .map_err(|_| AppError::storage())??;
+    notify_memory_management(&app, result.record.kind);
+    Ok(result)
+}
+#[tauri::command]
+pub async fn preview_memory(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+    kind: memory_management::Kind,
+    id: String,
+) -> AppResult<memory_management::Preview> {
+    authorize(&window)?;
+    memory_management::preview(runtime.inner().clone(), context, kind, id).await
+}
+#[tauri::command]
+pub async fn confirm_memory_preview(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+    preview_id: String,
+    title: Option<String>,
+    content: String,
+) -> AppResult<memory_management::Detail> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        memory_management::confirm(&worker, context, preview_id, title, content)
+    })
+    .await
+    .map_err(|_| AppError::storage())??;
+    notify_memory_management(&app, result.record.kind);
+    Ok(result)
+}
+#[tauri::command]
+pub async fn cancel_memory_preview(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    context: memory_management::Context,
+) -> AppResult<()> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || memory_management::cancel(&worker, context))
+        .await
+        .map_err(|_| AppError::storage())?
+}
+fn notify_memory_management(app: &AppHandle, kind: memory_management::Kind) {
+    let _ = app.emit(crate::events::MEMORY_GENERATION_CHANGED, ());
+    if kind == memory_management::Kind::Long {
+        let _ = app.emit(crate::events::EMBEDDING_CHANGED, ());
+    }
+}
+
+#[tauri::command]
+pub async fn list_embedding_providers(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<Vec<crate::embedding_providers::Provider>> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s,_| crate::embedding_providers::list(&s.connection)).await
+}
+#[tauri::command]
+pub async fn save_embedding_provider(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: Option<String>, input: crate::providers::ProviderInput) -> AppResult<crate::embedding_providers::Provider> {
+    authorize(&window)?;
+    let id = id.as_deref().map(parse_id).transpose()?;
+    let result = storage(runtime.inner().clone(), move |s,secrets| crate::embedding_providers::save(&mut s.connection,id,input,secrets)).await?;
+    if result.is_active { runtime.memory_index.reset()?; runtime.memory.wake.notify_one(); }
+    let _ = app.emit("configuration_changed", ());
+    let _ = app.emit(crate::events::EMBEDDING_CHANGED, ());
+    Ok(result)
+}
+#[tauri::command]
+pub async fn delete_embedding_provider(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(),move |s,_| crate::embedding_providers::delete(&mut s.connection,id)).await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(())
+}
+#[tauri::command]
+pub async fn set_active_embedding_provider(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    storage(runtime.inner().clone(),move |s,_| crate::embedding_providers::select(&mut s.connection,id)).await?;
+    runtime.memory_index.reset()?;
+    runtime.memory.wake.notify_one();
+    let _ = app.emit("configuration_changed", ());
+    let _ = app.emit(crate::events::EMBEDDING_CHANGED, ());
+    Ok(())
+}
+#[tauri::command]
+pub async fn get_embedding_status(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<crate::memory_index::View> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::memory_index::view(&worker)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn test_embedding_provider(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String) -> AppResult<usize> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let runtime = runtime.inner().clone();
+    let stamp = storage(runtime.clone(), move |s,_| crate::embedding_providers::stamp(&s.connection,Some(id))).await?;
+    if stamp.kind == "local" {
+        let engine = runtime.embedding.clone();
+        tauri::async_runtime::spawn_blocking(move || engine.reset_failure()).await.map_err(|_|AppError::storage())?;
+    }
+    let lease = runtime.requests.start(format!("embedding-test:{id}"), 0)?;
+    let vector = crate::embedding::generate(&runtime,&stamp,"这是一条用于测试本地或联网向量模型的记忆。".into(),false,&lease.cancel).await?;
+    let key = vector.model_key.clone();
+    let active = storage(runtime.clone(),move |s,_| {
+        if crate::embedding_providers::stamp(&s.connection,Some(id))? != stamp { return Err(AppError::new("CONTEXT_CHANGED", "Embedding 配置已改变，请重新测试")); }
+        if crate::embedding_providers::stamp(&s.connection,None)? != stamp { return Ok(false); }
+        s.connection.execute("DELETE FROM long_memory_embeddings WHERE model_key!=?1",[key])?;
+        Ok(true)
+    }).await?;
+    if active { runtime.memory_index.reset()?; runtime.memory_index.observed(&vector.model_key)?; runtime.memory.wake.notify_one(); }
+    let _ = app.emit(crate::events::EMBEDDING_CHANGED, ());
+    Ok(vector.values.len())
+}
 
 struct ChatToolEvents(AppHandle);
+#[derive(serde::Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct ChatContextInput {persona_id:String,session_id:String,context_revision:u64}
+
+#[tauri::command]
+pub async fn get_last_chat_round(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput)->AppResult<Option<crate::models::RoundSnapshot>> {
+    authorize(&window)?;
+    let (persona,session)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?);
+    storage(runtime.inner().clone(),move|store,_| {
+        validate_persona_context(store,persona,context.context_revision)?;
+        let current=crate::persona::context(&store.connection,store.context_revision)?;
+        if current.session_id!=Some(session.to_string()) {return Err(AppError::new("CONTEXT_CHANGED","当前会话已经改变"));}
+        crate::sessions::last_round(&store.connection,persona,session)
+    }).await
+}
+
+#[tauri::command]
+pub async fn chat_continue_reply(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,round_id:String)->AppResult<crate::chat::RequestSnapshot> {
+    authorize(&window)?;
+    let (persona,session,round)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&round_id)?);
+    let worker=runtime.inner().clone();let client=worker.ai.clone()?;
+    let (mut prepared,receipt)=tauri::async_runtime::spawn_blocking(move||crate::chat::continue_reply(&worker,persona,session,context.context_revision,round)).await.map_err(|_|AppError::storage())??;
+    prepared.set_tool_events(std::sync::Arc::new(ChatToolEvents(app.clone())));
+    tauri::async_runtime::spawn(async move {let _=crate::chat::run_persisted(&client,prepared,|event| {let _=app.emit("chat-reply",&event);}).await;});
+    Ok(receipt)
+}
 impl crate::events::ReminderEventSink for ChatToolEvents {
     fn reminders_changed(&self) { let _ = self.0.emit(crate::events::REMINDERS_CHANGED, ()); }
     fn reminder_failed(&self, error: &AppError) { let _ = self.0.emit(crate::events::REMINDER_ERROR, error); }
@@ -361,7 +553,11 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
         Ok((config, token))
     })
     .await?;
-    let result = crate::providers::test_connection(&runtime.ai.clone()?, config).await;
+    let client=runtime.ai.clone()?;
+    let result = crate::providers::test_connection(&client, crate::providers::ConnectionTest {
+        base_url:config.base_url.clone(),model:config.model.clone(),api_key:config.api_key.clone(),
+    }).await;
+    if result.is_ok() {client.discover_capacity(&config).await;}
     let health_result = result.clone();
     let worker = runtime.clone();
     storage(runtime, move |s, p| {
@@ -480,6 +676,7 @@ pub async fn create_session(
         worker.settle_pet(store, secrets)?;
         let before = validate_persona_context(store, persona_id, context_revision)?;
         let session = crate::sessions::create(&mut store.connection, persona_id)?;
+        memory_management::discard(&worker);
         if let Some(old_session) = before.session_id {
             requests.cancel_key(&format!("chat:{old_session}"));
         }
@@ -520,6 +717,7 @@ pub async fn set_active_session(
         if !changed {
             return Ok((before, false, None));
         }
+        memory_management::discard(&worker);
         if let Some(old_session) = before.session_id {
             requests.cancel_key(&format!("chat:{old_session}"));
         }
@@ -967,6 +1165,7 @@ async fn change_persona(
             before.persona_id != after.persona_id || before.session_id != after.session_id;
         if changed {
             requests.cancel_persona(parse_id(&before.persona_id)?);
+            memory_management::discard(&worker);
             s.context_revision += 1;
             after.context_revision = s.context_revision;
             s.pet.reset_context();

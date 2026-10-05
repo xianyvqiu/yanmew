@@ -64,6 +64,9 @@ pub struct Provider {
     pub has_api_key: bool,
     pub is_active: bool,
     pub memory_is_active: bool,
+    pub max_output_tokens: u32,
+    pub context_window_override: Option<u32>,
+    pub capacity: crate::chat_capacity::Capacity,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -73,6 +76,14 @@ pub struct ProviderInput {
     pub model: String,
     #[serde(default)]
     pub api_key: SecretUpdate,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: u32,
+    #[serde(default)]
+    pub context_window_override: Option<u32>,
+}
+
+pub fn default_max_output_tokens() -> u32 {
+    32768
 }
 
 pub fn validate_url(value: &str) -> AppResult<()> {
@@ -93,16 +104,27 @@ pub fn validate_url(value: &str) -> AppResult<()> {
     Ok(())
 }
 pub fn list(c: &Connection) -> AppResult<Vec<Provider>> {
-    let mut stmt=c.prepare("SELECT id,name,base_url,model,api_key_encrypted IS NOT NULL,is_active,memory_is_active FROM providers ORDER BY id")?;
+    let mut stmt=c.prepare("SELECT id,name,base_url,model,api_key_encrypted IS NOT NULL,is_active,memory_is_active,max_output_tokens,context_window_override FROM providers ORDER BY id")?;
     let rows = stmt.query_map([], |r| {
+        let base_url: Option<String> = r.get(2)?;
+        let model: String = r.get(3)?;
+        let context_window_override = r.get(8)?;
+        let capacity = crate::chat_capacity::resolve(
+            base_url.as_deref().unwrap_or("https://api.openai.com/v1"),
+            &model,
+            context_window_override,
+        );
         Ok(Provider {
             id: r.get::<_, i64>(0)?.to_string(),
             name: r.get(1)?,
-            base_url: r.get(2)?,
-            model: r.get(3)?,
+            base_url,
+            model,
             has_api_key: r.get(4)?,
             is_active: r.get(5)?,
             memory_is_active: r.get(6)?,
+            max_output_tokens: r.get(7)?,
+            context_window_override,
+            capacity,
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -118,6 +140,18 @@ pub fn save(
     }
     if input.model.trim().is_empty() {
         return Err(AppError::validation("model", "请填写模型名称"));
+    }
+    if input.max_output_tokens == 0 {
+        return Err(AppError::validation(
+            "maxOutputTokens",
+            "最大输出 token 数必须为正整数",
+        ));
+    }
+    if input.context_window_override == Some(0) {
+        return Err(AppError::validation(
+            "contextWindowOverride",
+            "上下文容量必须为正整数",
+        ));
     }
     let base_url = input.base_url.filter(|v| !v.trim().is_empty());
     if let Some(url) = &base_url {
@@ -135,18 +169,20 @@ pub fn save(
             .optional()?;
         let key = secret.unwrap_or(old.ok_or_else(AppError::not_found)?);
         tx.execute(
-            "UPDATE providers SET name=?1,base_url=?2,model=?3,api_key_encrypted=?4 WHERE id=?5",
-            params![input.name.trim(), base_url, input.model.trim(), key, id],
+            "UPDATE providers SET name=?1,base_url=?2,model=?3,api_key_encrypted=?4,max_output_tokens=?5,context_window_override=?6 WHERE id=?7",
+            params![input.name.trim(), base_url, input.model.trim(), key, input.max_output_tokens, input.context_window_override, id],
         )?;
         id
     } else {
         tx.execute(
-            "INSERT INTO providers(name,base_url,model,api_key_encrypted) VALUES(?1,?2,?3,?4)",
+            "INSERT INTO providers(name,base_url,model,api_key_encrypted,max_output_tokens,context_window_override) VALUES(?1,?2,?3,?4,?5,?6)",
             params![
                 input.name.trim(),
                 base_url,
                 input.model.trim(),
-                secret.flatten()
+                secret.flatten(),
+                input.max_output_tokens,
+                input.context_window_override
             ],
         )?;
         tx.last_insert_rowid()
@@ -270,7 +306,46 @@ mod tests {
             base_url: None,
             model: "test-model".into(),
             api_key: key,
+            max_output_tokens: default_max_output_tokens(),
+            context_window_override: None,
         }
+    }
+    #[test]
+    fn output_budget_defaults_roundtrip_and_validation() {
+        let mut c = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut c).unwrap();
+        let legacy: ProviderInput =
+            serde_json::from_str(r#"{"name":"兼容","baseUrl":null,"model":"test-model"}"#).unwrap();
+        assert_eq!(legacy.max_output_tokens, 32768);
+        assert_eq!(legacy.context_window_override, None);
+        let p = save(&mut c, None, legacy, &Secret).unwrap();
+        assert_eq!(p.max_output_tokens, 32768);
+        let id = p.id.parse().unwrap();
+        let mut updated = input(SecretUpdate::Keep);
+        updated.max_output_tokens = 4096;
+        updated.context_window_override = Some(128000);
+        let p = save(&mut c, Some(id), updated, &Secret).unwrap();
+        assert_eq!(p.max_output_tokens, 4096);
+        assert_eq!(p.context_window_override, Some(128000));
+        let json = serde_json::to_value(&p).unwrap();
+        assert_eq!(json["maxOutputTokens"], 4096);
+        assert_eq!(json["contextWindowOverride"], 128000);
+        assert!(json.get("capacity").is_some());
+        for (max_output_tokens, context_window_override) in [(0, None), (1, Some(0))] {
+            let mut invalid = input(SecretUpdate::Keep);
+            invalid.max_output_tokens = max_output_tokens;
+            invalid.context_window_override = context_window_override;
+            assert!(save(&mut c, Some(id), invalid, &Secret).is_err());
+        }
+        assert_eq!(list(&c).unwrap()[0].max_output_tokens, 4096);
+        assert!(serde_json::from_str::<ProviderInput>(
+            r#"{"name":"x","model":"x","maxOutputTokens":1.5}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<ProviderInput>(
+            r#"{"name":"x","model":"x","maxOutputTokens":-1}"#
+        )
+        .is_err());
     }
     #[test]
     fn secrets_selection_and_deletion() {

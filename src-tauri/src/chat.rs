@@ -15,6 +15,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 mod coordinator;
 mod tools;
+mod guards;
+mod context;
+mod memory_tools;
+#[cfg(test)]
+mod context_tests;
 pub use coordinator::*;
 #[cfg(test)]
 mod coordinator_tests;
@@ -29,6 +34,8 @@ pub struct PreparedReply {
     prompt: String,
     config: ConnectionTest,
     messages: Vec<Message>,
+    context: context::Context,
+    continuation: bool,
     lease: Arc<RequestLease>,
     runtime: Runtime,
     health: crate::pet::controller::HealthToken,
@@ -49,12 +56,12 @@ pub fn prepare_reply(
     if input.trim().is_empty() {
         return Err(AppError::validation("input", "消息不能为空"));
     }
-    prepare(runtime, persona_id, session_id, context_revision, input, false).map(|(reply, _)| reply)
+    prepare(runtime, persona_id, session_id, context_revision, input, false, None).map(|(reply, _)| reply)
 }
 
 fn prepare(
     runtime: &Runtime, persona_id: i64, session_id: i64, context_revision: u64,
-    input: String, persist: bool,
+    mut input: String, persist: bool, continuing: Option<i64>,
 ) -> AppResult<(PreparedReply, Option<RequestSnapshot>)> {
     if input.trim().is_empty() { return Err(AppError::validation("input", "消息不能为空")); }
     runtime.ai.as_ref().map_err(Clone::clone)?;
@@ -68,31 +75,33 @@ fn prepare(
         if s.connection.query_row("SELECT EXISTS(SELECT 1 FROM travels WHERE session_id=?1 AND status='away')",[session_id],|r|r.get::<_,bool>(0))? {return Err(AppError::new("VALIDATION_ERROR","当前人设正在出门，只能按出行规则写信"));}
         let provider_id=s.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请先配置当前聊天提供商"))?;
         let config=providers::connection_test_config(&s.connection,provider_id,p)?;
-        let count:usize=crate::config::get(&s.connection)?["recent_message_count"].parse().map_err(|_|AppError::storage())?;
-        let mut stmt=s.connection.prepare("SELECT role,content FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT ?2")?;
-        let mut messages=stmt.query_map(rusqlite::params![session_id,count],|r|Ok(Message::new(&r.get::<_,String>(0)?,r.get::<_,String>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
-        drop(stmt);
-        messages.reverse();messages.insert(0,Message::new("system",prompt.clone()));messages.push(Message::new("user",input.trim()));
+        let previous = continuing.map(|id| crate::sessions::round_snapshot(&s.connection,persona_id,session_id,id)).transpose()?;
+        if let Some(previous)=&previous { input=previous.user_message.content.clone(); }
+        let prefix=previous.as_ref().and_then(|p|p.assistant_message.as_ref()).map(|m|m.content.clone()).unwrap_or_default();
+        let context=context::Context::snapshot(s,runtime,session_id,provider_id,&prompt,input.trim(),None,continuing.map(|id|(id,prefix.as_str())))?;
+        let messages=vec![Message::new("user",input.trim())];
         let lease=Arc::new(runtime.requests.start(format!("chat:{session_id}"),persona_id)?);
         let pet=crate::pet_store::read(&s.connection,session_id)?;
         crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
         runtime.settle_pet(s,p)?;
         let snapshot = if persist {
-            let round = crate::sessions::start_round(&mut s.connection, persona_id, session_id, &input)?;
+            let round = if let Some(id)=continuing {crate::sessions::continue_round(&mut s.connection,persona_id,session_id,id)?}
+                else {crate::sessions::start_round(&mut s.connection, persona_id, session_id, &input)?};
             let snapshot = RequestSnapshot {
                 request_id: lease.id.to_string(), persona_id: persona_id.to_string(),
                 session_id: session_id.to_string(), context_revision, round_id: round.round.id.clone(),
-                seq: 0, partial_content: String::new(), expression: None, round,
+                seq: 0, partial_content: prefix, expression: round.assistant_message.as_ref().and_then(|m|m.expression.clone()), notice:None,budget:None,round,
             };
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
         } else { None };
-        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some(),lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ReplyEventKind {
+    ContextNotice { message: String, budget: crate::chat_capacity::Budget },
     Expression { expression: String },
     Text { text: String },
     Finished { finish: Finish },
@@ -134,7 +143,16 @@ pub async fn run_reply(
             kind,
         })
     };
-    let result:AppResult<Choice>=async {
+    let result = prepared.lease.cancel.wait(client.total_timeout(), async {
+      let result:AppResult<Choice>=async {
+        // 已知容量先验证最低请求，避免连表情请求都发送后才发现固定资料无法容纳。
+        let mut initial_tools=crate::notebook_tools::definitions();
+        initial_tools.extend(crate::travel_journal_tools::definitions());
+        initial_tools.push(crate::reminder_extract::definition());
+        initial_tools.extend(memory_tools::definitions());
+        if prepared.continuation {initial_tools.clear();}
+        prepared.context.clone().request(initial_tools,&[])?;
+        if !prepared.continuation {
         let expression_request=GenerateRequest{messages:vec![Message::new("system","只返回 JSON：{\"expression\":\"颜文字\"}。生成符合当前人设和对话的单行颜文字，不解释；最多 14 个半角宽度，非 ASCII 字符按 2 计算。"),Message::new("user",format!("人设：{}\n用户消息：{}",prepared.prompt,prepared.messages.last().map(|m|m.content.as_str()).unwrap_or("")))],max_tokens:256,tools:vec![],json:true};
         let expression:Expression=client.structured(&prepared.config,&expression_request,&prepared.lease.cancel,|v:&Expression|validate_expression(&v.expression)).await?;
         prepared.lease.cancel.check()?;
@@ -143,9 +161,19 @@ pub async fn run_reply(
             Ok(())
         })?;
         emit(ReplyEventKind::Expression{expression:expression.expression})?;
+        }
         tools::run(client, prepared, &mut emit).await
-    }.await;
+      }.await;
+      Ok(result)
+    }).await.map_err(|error| {
+        if error.code == "AI_TIMEOUT" {
+            AppError::new("CHAT_TOTAL_TIMEOUT", "整轮聊天已达到总时长上限，已停止生成；已收到的内容仍保留。")
+        } else { error }
+    }).and_then(|result| result);
     if let Err(error) = &result {
+        if guards::stop_reason(error.code).is_some() {
+            prepared.lease.cancel.cancel();
+        }
         if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {
             let _ = prepared.runtime.read(|s, p| {
                 s.pet.health(&s.connection, p)?;
@@ -212,7 +240,7 @@ mod tests {
             }
             let requests = server.requests.lock().unwrap();
             assert_eq!(requests[0]["max_tokens"], 256);
-            assert_eq!(requests[1]["max_tokens"], 4096);
+            assert_eq!(requests[1]["max_tokens"], 32768);
             drop(requests);
             assert_eq!(
                 runtime

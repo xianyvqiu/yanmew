@@ -24,6 +24,7 @@
 'use strict';
 const D=JSON.parse(document.getElementById('schemaData').textContent);
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+$('group').firstElementChild.textContent=`全库 · ${Object.keys(D.tables).length} 张表`;
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let selected=null, scale=.8, width=1300, height=1000, shown=[], positions={};
 for(const g of D.groups){const o=document.createElement('option');o.value=g.name;o.textContent=g.name;$('group').append(o)}
@@ -69,7 +70,7 @@ function details(name){
  if(!edges.length)$('relations').textContent='独立表，无已列出的关联。';
 }
 function intro(){
- $('detail').innerHTML=`<span class="tag">结构来源：db/schema.sql</span><h2>先选模块，再点表</h2><p>所有字段都在类框中。点击任意表，查看它的外键、唯一约束、默认值、CHECK 与完整建表语句。</p><div class="note">29 张业务表 + 1 张 FTS5 虚拟表；${D.edges.filter(e=>!e.logical).length} 组物理外键，${D.edges.filter(e=>e.logical).length} 组逻辑关联。SQLite 内部表与 FTS 影子表不属于业务表，语音规划表尚未纳入当前结构。</div><h3>怎样查看</h3><p>使用上方模块菜单缩小范围；搜索支持字段名。放大后可用滚动条或触控板移动。勾选“全部连线”查看当前模块所有关联，选中表时默认只显示相关连线。</p><h3>删除规则</h3><p><b>CASCADE</b>：删除父记录时删除子记录。<br><b>SET NULL</b>：子记录保留，引用置空。<br><b>RESTRICT</b>：存在引用时立即阻止删除。<br><b>NO ACTION</b>：本图外键未声明延迟检查，在语句结束时检查完整性。</p><h3>关键边界</h3><p>小游戏与钱包属于全局。出行记录是游记、信件和礼物的共同根节点，删除游记不会删除同次出行的信件或礼物。</p><p>删除会话须先按事务规则清理长期记忆，避免短期记忆来源的 RESTRICT 阻止级联。跨表同会话、状态转换等业务校验仍以数据库设计文档为准。</p><p class="muted">此页面完全离线，不依赖 CDN。索引及约束由 SQLite 实际解析；更改 schema 后运行生成脚本刷新。</p><details><summary>来源校验值 SHA-256</summary><pre>${D.sha256}</pre></details>`;
+ $('detail').innerHTML=`<span class="tag">结构来源：db/schema.sql</span><h2>先选模块，再点表</h2><p>所有字段都在类框中。点击任意表，查看它的外键、唯一约束、默认值、CHECK 与完整建表语句。</p><div class="note">${Object.keys(D.tables).length - 1} 张业务表 + 1 张 FTS5 虚拟表；${D.edges.filter(e=>!e.logical).length} 组物理外键，${D.edges.filter(e=>e.logical).length} 组逻辑关联。SQLite 内部表与 FTS 影子表不属于业务表，语音规划表尚未纳入当前结构。</div><h3>怎样查看</h3><p>使用上方模块菜单缩小范围；搜索支持字段名。放大后可用滚动条或触控板移动。勾选“全部连线”查看当前模块所有关联，选中表时默认只显示相关连线。</p><h3>删除规则</h3><p><b>CASCADE</b>：删除父记录时删除子记录。<br><b>SET NULL</b>：子记录保留，引用置空。<br><b>RESTRICT</b>：存在引用时立即阻止删除。<br><b>NO ACTION</b>：本图外键未声明延迟检查，在语句结束时检查完整性。</p><h3>关键边界</h3><p>小游戏与钱包属于全局。出行记录是游记、信件和礼物的共同根节点，删除游记不会删除同次出行的信件或礼物。</p><p>删除会话须先按事务规则清理长期记忆，避免短期记忆来源的 RESTRICT 阻止级联。跨表同会话、状态转换等业务校验仍以数据库设计文档为准。</p><p class="muted">此页面完全离线，不依赖 CDN。索引及约束由 SQLite 实际解析；更改 schema 后运行生成脚本刷新。</p><details><summary>来源校验值 SHA-256</summary><pre>${D.sha256}</pre></details>`;
 }
 function search(){const q=$('search').value.trim().toLowerCase();if(!q)return;const candidates=Object.values(D.tables).filter(t=>t.name.toLowerCase().includes(q)||t.title.includes(q)||t.columns.some(c=>c.name.includes(q)));if(candidates.length===1){select(candidates[0].name);return}if(!candidates.length){$('detail').innerHTML='<h2>没有匹配结果</h2><p>尝试表名、中文名或字段名。</p>';return}$('detail').innerHTML='<h2>搜索结果</h2><p class="muted">点击一项定位。</p>';for(const t of candidates){const b=document.createElement('button');b.className='relation';b.textContent=t.title+' · '+t.name;b.onclick=()=>select(t.name);$('detail').append(b)}}
  $('group').onchange=()=>{selected=null;render();fit();$('viewport').scrollTo(0,0);intro()};$('allEdges').onchange=render;$('plus').onclick=()=>{scale*=1.2;zoom()};$('minus').onclick=()=>{scale/=1.2;zoom()};$('fit').onclick=fit;$('find').onclick=search;$('search').onkeydown=e=>{if(e.key==='Enter')search()};

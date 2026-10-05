@@ -134,6 +134,19 @@ pub(crate) fn finish_event(reason: &str) -> String {
     event(json!({"choices":[{"index":0,"delta":{},"finish_reason":reason}]}))
         + "data: [DONE]\r\n\r\n"
 }
+#[test]
+fn configured_long_output_accepts_sse_metadata_above_old_four_mib_wire_limit() {
+    tauri::async_runtime::block_on(async {
+        let frame=event(json!({"model":"x".repeat(512),"choices":[{"index":0,"delta":{"content":"好"},"finish_reason":null}]}));
+        let wire=frame.repeat(9000)+&finish_event("stop");
+        assert!(wire.len()>4*1024*1024);
+        let server=Server::new(vec![Response::sse(&wire)]);
+        let request=GenerateRequest{messages:vec![Message::new("user","长回复")],max_tokens:32768,tools:vec![],json:false};
+        let result=client().stream(&server.config(),&request,&Cancellation::default(),|_|Ok(())).await.unwrap();
+        assert_eq!(result[0].content.chars().count(),9000);assert_eq!(result[0].finish,Finish::Stop);
+        server.finish();
+    });
+}
 fn input() -> GenerateRequest {
     GenerateRequest {
         messages: vec![Message::new("user", "测试")],
@@ -293,7 +306,7 @@ fn timeout_and_cancellation_drop_late_chunks() {
                 .await
                 .unwrap_err()
                 .code,
-            "AI_TIMEOUT"
+            "CHAT_FIRST_RESPONSE_TIMEOUT"
         );
         server.finish();
         let server = Server::new(vec![Response {
@@ -339,7 +352,7 @@ fn timeout_and_cancellation_drop_late_chunks() {
                 .await
                 .unwrap_err()
                 .code,
-            "AI_TIMEOUT"
+            "CHAT_NO_PROGRESS"
         );
         server.finish();
     });

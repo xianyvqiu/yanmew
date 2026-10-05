@@ -13,6 +13,7 @@ pub async fn run(
     let mut reminders_recovered = false;
     let mut reminder_error = None;
     let mut memory = crate::memory::Worker::default();
+    let mut memory_index = crate::memory_index::Worker::default();
     loop {
         if runtime.jobs_cancel.check().is_err() {
             break;
@@ -76,6 +77,7 @@ pub async fn run(
                 crate::memory::Worker::report_scan_error(&runtime, memory_events.as_ref(), error);
             }
         }
+        memory_index.tick(&runtime, memory_events.clone());
         if runtime
             .jobs_cancel
             .wait(Duration::from_secs(2), async {

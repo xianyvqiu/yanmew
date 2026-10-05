@@ -115,16 +115,23 @@ mod memory_model_tests {
 
     #[test]
     fn memory_contract_preserves_ids_and_integration_states() {
-        for state in [MemoryIntegrationState::Pending, MemoryIntegrationState::Integrated] {
+        for state in [
+            MemoryIntegrationState::Pending,
+            MemoryIntegrationState::Integrated,
+        ] {
             assert_eq!(MemoryIntegrationState::parse(state.as_str()), Some(state));
             assert_eq!(serde_json::to_value(state).unwrap(), state.as_str());
         }
         assert_eq!(MemoryIntegrationState::parse("completed"), None);
         assert!(serde_json::from_str::<MemoryIntegrationState>("\"failed\"").is_err());
         let memory = ShortMemory {
-            id: "9007199254740993".into(), session_id: "1".into(), round_id: "2".into(),
-            content: "用户提到明天出门。".into(), integration_state: MemoryIntegrationState::Integrated,
-            created_at: "2026-09-30T00:00:00Z".into(), updated_at: "2026-09-30T00:00:00Z".into(),
+            id: "9007199254740993".into(),
+            session_id: "1".into(),
+            round_id: "2".into(),
+            content: "用户提到明天出门。".into(),
+            integration_state: MemoryIntegrationState::Integrated,
+            created_at: "2026-09-30T00:00:00Z".into(),
+            updated_at: "2026-09-30T00:00:00Z".into(),
         };
         let value = serde_json::to_value(memory).unwrap();
         assert_eq!(value["id"], "9007199254740993");
@@ -245,6 +252,7 @@ pub struct ChatRound {
     pub status: ChatRoundStatus,
     pub created_at: String,
     pub completed_at: Option<String>,
+    pub stop_reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

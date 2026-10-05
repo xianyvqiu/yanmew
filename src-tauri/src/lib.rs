@@ -1,6 +1,7 @@
 use std::io;
 pub mod ai;
 pub mod chat;
+mod chat_capacity;
 mod commands;
 mod desktop_windows;
 mod config;
@@ -9,6 +10,10 @@ mod db;
 mod error;
 mod events;
 mod expressions;
+pub mod embedding;
+mod embedding_providers;
+pub mod memory_index;
+pub mod memory_search;
 mod jobs;
 pub mod memory;
 mod location;
@@ -62,13 +67,27 @@ pub fn run() {
         .manage(desktop_windows::SettingsNavigation::default())
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
+            commands::list_embedding_providers,
+            commands::save_embedding_provider,
+            commands::delete_embedding_provider,
+            commands::set_active_embedding_provider,
+            commands::test_embedding_provider,
+            commands::get_embedding_status,
             commands::get_memory_generation_status,
+            commands::list_memories,
+            commands::get_memory,
+            commands::save_memory,
+            commands::preview_memory,
+            commands::confirm_memory_preview,
+            commands::cancel_memory_preview,
             commands::retry_short_memories,
             commands::get_notebook,
             commands::save_notebook,
             commands::focus_or_create_window,
             commands::take_reminder_navigation,
             commands::submit_chat,
+            commands::get_last_chat_round,
+            commands::chat_continue_reply,
             commands::get_chat_request,
             commands::cancel_chat,
             commands::list_reminder_occurrences,
@@ -183,6 +202,9 @@ pub fn run() {
             // 原生销毁窗口不保证执行前端卸载回调，主动取消设置页的天气请求。
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "settings") {
                 app.state::<runtime::Runtime>().requests.cancel_key("weather");
+            }
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "memory") {
+                crate::memory::management::discard(app.state::<runtime::Runtime>().inner());
             }
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "chat") {
                 if let Err(error) = crate::chat::interrupt_active(app.state::<runtime::Runtime>().inner()) {

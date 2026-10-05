@@ -54,9 +54,14 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
       <h2>聊天记录</h2>
       {!context.sessionId ? <p className="ym-page-empty">为 {persona.name} 创建一个会话，开始记录彼此的日常。</p>
         : !messages.length && !loading ? <p className="ym-page-empty">这个会话还没有消息。</p>
-        : <ol className="ym-message-list">{messages.map(message => <li key={message.id} data-role={message.role}>
+        : <ol className="ym-message-list">{messages.filter(message => message.id !== chat.active?.round.assistantMessage?.id).map(message => <li key={message.id} data-role={message.role}>
           <div className="ym-message-meta"><strong>{message.role === "user" ? "你" : persona.name}</strong><time>{new Date(message.createdAt).toLocaleString()}</time></div>
           <p>{message.content}</p>
+          {message.role === "assistant" && message.roundId === chat.lastRound?.round.id
+            && chat.lastRound.round.status === "interrupted" && chat.lastRound.round.stopReason === "length_limit" && !chat.active && <div className="ym-inline-form">
+              <span className="ym-page-note">已达到本次输出上限</span>
+              <button className="ym-button" disabled={busy || chat.busy || !chat.ready || loading} onClick={() => { void chat.continueReply(); }}>继续生成</button>
+            </div>}
         </li>)}</ol>}
       {chat.active && <div className="ym-stream-message" aria-label="正在生成的回复">
         <strong>{persona.name} {chat.active.expression}</strong>
@@ -64,6 +69,11 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
         <span className="ym-page-note">正在回复，尚未保存</span>
       </div>}
       {chat.notice && <p role="status" className="ym-page-note">{chat.notice}</p>}
+      {chat.budget && <p className="ym-page-note">本次最大输出：配置 {chat.budget.configuredMaxOutputTokens} tokens，实际 {chat.budget.effectiveMaxOutputTokens} tokens；
+        上下文容量：{chat.budget.contextWindow == null ? "未知" : `${chat.budget.contextWindow} tokens`}；
+        输入{chat.budget.estimated ? "估算" : "计数"}：{chat.budget.estimatedInputTokens} tokens；
+        能力来源：{chat.budget.capacitySource === "manual" ? "手动设置" : chat.budget.capacitySource === "provider" ? "提供商" : chat.budget.capacitySource === "builtin" ? "已核对模型资料" : "未知"}。
+        {chat.budget.effectiveMaxOutputTokens < chat.budget.configuredMaxOutputTokens && "本次输出因模型能力或剩余上下文容量而降低，已保存设置不变。"}</p>}
       {loading && <p role="status">正在读取聊天记录…</p>}
       {afterId && <button className="ym-button" disabled={loading} onClick={() => { void chat.loadMore(); }}>加载后续消息</button>}
     </section>

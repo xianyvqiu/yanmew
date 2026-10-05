@@ -89,8 +89,8 @@
 
 ### 2.5 聊天
 
-- 输出与容量（已确认待实现）：聊天最大输出默认 `32768 tokens`，高级设置可修改；服务商上限更小时取其允许值，显示配置值和实际生效值。token 不等于字数，不保证输出一万字。上下文容量自动识别，未知时不强制填写、不套统一 16K 上限；保护完整人设与本次输入，仅减少本次较旧内容。
-- 长度终止保留原回复并提供主动“继续生成”，不自动续写；沿用原回合，最终完成后才生成一条短期记忆并结算一次完整轮次奖励。连接无进展、持续重复、错误编码及工具无进展分别检测，不能误伤颜文字；复用已有中断机制，不自动重说。细则见《记忆与旅行游记设计》6.2、6.4、6.5，待迁移字段见《数据库与持久化设计》11.1。
+- 输出与容量（Task 9.6 已实现）：聊天最大输出默认 `32768 tokens`，高级设置可修改；服务商上限更小时取其允许值，显示配置值和实际生效值。token 不等于字数，不保证输出一万字。上下文容量自动识别，未知时不强制填写、不套统一 16K 上限；保护完整人设与本次输入，仅减少本次较旧内容。
+- 长度终止保留原回复并提供主动“继续生成”，不自动续写；沿用原回合，最终完成后才生成一条短期记忆并结算一次完整轮次奖励。Task 9.8 已接通连接无进展、持续重复、错误编码及工具无进展检测，保守保留合法颜文字、外语、emoji 与代码；复用已有中断机制，不自动重说。默认首个有效响应和有效进展间隔各 30 秒，整轮总时长 300 秒，包含表情、检索和工具；推理增量只计进展，不展示或持久化。完整回合首次完成同事务增加 1 亲密度，封顶 999，重复完成和中断不加；成功工具副作用保留。细则见《记忆与旅行游记设计》6.2、6.4、6.5，已迁移字段见《数据库与持久化设计》11.1。真实供应商兼容性和原生窗口交互仍需人工验收。
 
 - 点击聊天按钮打开轻量聊天窗。
 - 回复为流式输出；AI 说话前先切换表情。
@@ -256,18 +256,19 @@
 
 当前完整 V1 结构见 `db/schema.sql`，事务和恢复规则见 `docs/数据库与持久化设计.md`。小游戏插件表从初始化阶段就存在；阶段 13 只接入插件业务，不另建一套表。表如下：
 
-- `providers`：id、name、base_url、api_key_encrypted、model、is_active（聊天）、memory_is_active（全表无启用项时跟随聊天）。
+- `providers`：id、name、base_url、api_key_encrypted、model、is_active（聊天）、memory_is_active（全表无启用项时跟随聊天）、max_output_tokens（默认 32768）、context_window_override（可空手动容量覆盖）。
 - `embedding_providers`：id、name、kind（local/online）、base_url、api_key_encrypted、model、is_builtin、is_active；默认本地模型由种子逻辑写入。
 - `personas`：id、name、prompt（当前人设）、initial_prompt（初始设定）、self_evolve_enabled、last_evolved_at、color（本体颜色）、chat_bg_file、chat_bg_opacity、chat_bg_blur、is_active、is_builtin、expressions（分类表情库 JSON）；内置默认人设以 `is_builtin` 保护。
 - `user_profiles`：id、name、content、created_at、updated_at。
 - `sessions`：id、persona_id、user_profile_id、title、created_at、updated_at、memory_revision、craft_tier_1_used、craft_tier_2_used、craft_tier_3_used、intimacy、last_return_at、travel_trigger_remaining_seconds。旅行只持久化剩余有效在线秒数，不同时保存累计值和随机阈值。
-- `chat_rounds`：id、session_id、status、created_at、completed_at；完整回合、待回复回合和中断回合的主记录。
+- `chat_rounds`：id、session_id、status、created_at、completed_at、stop_reason；仅 interrupted 持有原因，枚举见数据库设计 11.1；完整、待回复和中断回合共用原消息，长度续写不新建回合。
 - `messages`：id、session_id、round_id、role、content、expression、created_at；主动消息的 round_id 为空。
 - `settings`：key、value（键值对，见 schema 注释）。
 - `short_memories`：id、session_id、round_id、content、integration_state、created_at、updated_at；每个完整回合一条，整合后仍保留。
 - `long_memories`：id、session_id、title、content、source_count、activated_by_round_id、created_at、updated_at；实际覆盖边界由 `long_memory_sources` 最大 `source_order` 推导。
 - `long_memories_fts`：长期记忆标题和正文的 SQLite FTS5 `trigram` 可重建全文索引。
 - `long_memory_embeddings`：long_memory_id、session_id、model_key、dimensions、vector、content_hash、updated_at；当前 Embedding 模型的可重建向量索引。
+- 实施状态：Task 9.1–9.8 已接通记忆生成、实际 Embedding 资源、联网设置、后台向量补建、混合检索、完整聊天上下文与四个只读回忆工具、短期/长期正文编辑和可编辑预览确认、流式异常守卫及完整轮次亲密度。当前数据库版本为 4，提供商预算、停止原因和同轮长度续写沿用原实现，9.7/9.8 不新增迁移。重开聊天窗从已保存原因恢复提示，仅长度停止可继续。相关定向测试已通过，真实供应商与原生窗口人工验收仍待完成；下一项为 Task 10.1 会话删除与标题，不重建现有聊天持久化。
 - `long_memory_sources`：long_memory_id、short_memory_id、source_order；保存每条长期记忆的固定短期来源。
 - `notebooks`：session_id（主键，一个会话一个记事本）、content、updated_at。
 - `reminders`：id、name、kind、schedule、content、status、fire_at、source、created_at。
@@ -339,7 +340,7 @@
 
 ### 7.4 记忆生成（后台异步，回复完成后检查）
 
-当前实现：Task 9.3 已接通每轮短期记忆后台生成、SQLite 保存、启动缺失恢复、有限失败重试及小窗状态/手动重试；长期整合、混合检索和完整记忆上下文仍按后续任务接入。具体运行和恢复契约见《记忆与旅行游记设计》3.3。
+当前实现：Task 9.3/9.4 已接通每轮短期生成、k+1 长期标题/正文整合、来源与触发回合关系、SQLite 原子保存、启动恢复、有限重试和小窗两类状态；底部完整回合删除回退后端已实现，用户界面按阶段 10 接入。混合检索、完整上下文及正文管理已由 Task 9.5–9.7 接通。手动编辑及修改预览不受生成字数范围限制，只要求正文非空；预览确认重验来源与版本，不覆盖新内容。具体运行和恢复契约见《记忆与旅行游记设计》3.3/4.2.1。
 
 - 记忆整合与聊天 AI 分模块运行，使用记忆专用 provider（默认跟随聊天），不看人设、不显示思考中表情、不阻塞聊天。
 - 一轮完整对话由一条用户消息和一条正常完成的 AI 回复组成，使用 `chat_rounds` 绑定；每轮生成且只生成一条短期记忆。中断回复和主动消息不生成短期记忆。

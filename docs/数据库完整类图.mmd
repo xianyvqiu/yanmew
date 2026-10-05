@@ -9,6 +9,8 @@ class providers {
   TEXT model
   INTEGER is_active
   INTEGER memory_is_active
+  INTEGER max_output_tokens
+  INTEGER context_window_override
 }
 class embedding_providers {
   <<table>>
@@ -80,6 +82,7 @@ class chat_rounds {
   TEXT status
   TEXT created_at
   TEXT completed_at
+  TEXT stop_reason
 }
 class messages {
   <<table>>

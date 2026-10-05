@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS providers (
     api_key_encrypted TEXT,                                -- DPAPI Base64；未配置或导入后 NULL，不存明文
     model             TEXT    NOT NULL,                    -- 模型名，如 gpt-4o-mini / deepseek-chat
     is_active         INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 1=聊天当前提供商（全局唯一），0=非当前聊天提供商
-    memory_is_active  INTEGER NOT NULL DEFAULT 0 CHECK (memory_is_active IN (0, 1))           -- 1=记忆整合专用当前项，0=非当前项；全表无 1 时跟随聊天提供商
+    memory_is_active  INTEGER NOT NULL DEFAULT 0 CHECK (memory_is_active IN (0, 1)),           -- 1=记忆整合专用当前项，0=非当前项；全表无 1 时跟随聊天提供商
+    max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK (max_output_tokens > 0), -- 单次聊天最大输出，实际预算不回写此配置
+    context_window_override INTEGER CHECK (context_window_override > 0) -- NULL=自动解析或未知；正整数=用户手动容量
 );
 
 -- Embedding 提供商与聊天/记忆整合提供商分开管理。
@@ -207,8 +209,23 @@ CREATE TABLE IF NOT EXISTS chat_rounds (
     status       TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'interrupted')), -- pending=只有用户消息、等待 AI；completed=AI 正常回复完成；interrupted=回复被中断或只保存部分回复，不生成短期记忆；pending 仅为新回合默认值
     created_at   TEXT    NOT NULL,                    -- 用户消息落库并创建回合的时间 UTC RFC3339
     completed_at TEXT,                                -- 进入 completed/interrupted 的时间；pending 时为 NULL
+    stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('length_limit', 'user_cancelled', 'timeout', 'repetition', 'invalid_encoding', 'tool_limit', 'provider_error', 'context_changed', 'app_shutdown', 'recovered_after_restart', 'unknown')),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
+
+-- 状态与停止原因共同校验；原地迁移沿用相同触发器，不重建消息及记忆子树。
+CREATE TRIGGER IF NOT EXISTS chat_rounds_stop_reason_insert BEFORE INSERT ON chat_rounds
+WHEN (NEW.status = 'interrupted' AND NEW.stop_reason IS NULL)
+    OR (NEW.status <> 'interrupted' AND NEW.stop_reason IS NOT NULL)
+BEGIN
+    SELECT RAISE(ABORT, 'stop_reason must be present only for interrupted rounds');
+END;
+CREATE TRIGGER IF NOT EXISTS chat_rounds_stop_reason_update BEFORE UPDATE OF status, stop_reason ON chat_rounds
+WHEN (NEW.status = 'interrupted' AND NEW.stop_reason IS NULL)
+    OR (NEW.status <> 'interrupted' AND NEW.stop_reason IS NOT NULL)
+BEGIN
+    SELECT RAISE(ABORT, 'stop_reason must be present only for interrupted rounds');
+END;
 
 CREATE TABLE IF NOT EXISTS messages (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
@@ -343,7 +360,7 @@ END;
 CREATE TABLE IF NOT EXISTS long_memory_embeddings (
     long_memory_id INTEGER PRIMARY KEY,   -- 对应长期记忆 -> long_memories.id；每条长期记忆一份当前向量
     session_id     INTEGER NOT NULL,      -- 所属会话 -> sessions.id，便于按会话检索
-    model_key      TEXT    NOT NULL,      -- 生成向量的提供商类型、地址、模型和维度组合标识
+    model_key      TEXT    NOT NULL,      -- local:<manifest SHA256>:<维度> 或 online:<端点+模型 SHA256>:<维度>；不含密钥
     dimensions     INTEGER NOT NULL CHECK (dimensions > 0), -- 向量维度
     vector         BLOB    NOT NULL,      -- 归一化 float32 向量二进制，字节数必须为 dimensions × 4
     content_hash   TEXT    NOT NULL,      -- 标题与正文内容哈希，用于判断向量是否需要重建

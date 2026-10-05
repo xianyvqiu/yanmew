@@ -6,6 +6,16 @@ use std::path::PathBuf;
 pub struct AppPaths {
     pub data_root: PathBuf,
 }
+impl AppPaths {
+    /// 开发资源显式定位到项目；发布版资源跟随可执行文件，不依赖工作目录。
+    pub fn embedding_resources(&self) -> AppResult<PathBuf> {
+        if cfg!(debug_assertions) {
+            Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/models/bge-small-zh-v1.5"))
+        } else {
+            Ok(self.data_root.parent().ok_or_else(crate::error::AppError::storage)?.join("resources/models/bge-small-zh-v1.5"))
+        }
+    }
+}
 
 pub trait SecretProtector: Send + Sync {
     fn protect(&self, plain: &str) -> AppResult<String>;

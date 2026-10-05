@@ -4,3 +4,5 @@ pub mod provider;
 pub mod streaming;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod progress_tests;

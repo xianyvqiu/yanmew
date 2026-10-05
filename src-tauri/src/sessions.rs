@@ -64,6 +64,7 @@ fn round_from_row(row: &Row<'_>) -> rusqlite::Result<ChatRound> {
         status,
         created_at: row.get(3)?,
         completed_at: row.get(4)?,
+        stop_reason: row.get(5)?,
     })
 }
 
@@ -294,7 +295,7 @@ pub(crate) fn round_snapshot(
     require_session(connection, persona_id, session_id)?;
     let round = connection
         .query_row(
-            "SELECT id,session_id,status,created_at,completed_at FROM chat_rounds WHERE id=?1 AND session_id=?2",
+            "SELECT id,session_id,status,created_at,completed_at,stop_reason FROM chat_rounds WHERE id=?1 AND session_id=?2",
             params![round_id, session_id],
             round_from_row,
         )
@@ -335,8 +336,9 @@ fn finish_round(
     content: Option<&str>,
     expression: Option<&str>,
     completed: bool,
+    stop_reason: Option<&str>,
 ) -> AppResult<RoundSnapshot> {
-    let normalized = content.map(str::trim).filter(|value| !value.is_empty());
+    let normalized = content.filter(|value| !value.trim().is_empty());
     if completed && normalized.is_none() {
         return Err(AppError::validation("content", "完整回复正文不能为空"));
     }
@@ -350,7 +352,8 @@ fn finish_round(
     if let Some(content) = normalized {
         transaction.execute(
             "INSERT INTO messages(session_id,round_id,role,content,expression,created_at)
-             VALUES(?1,?2,'assistant',?3,?4,?5)",
+             VALUES(?1,?2,'assistant',?3,?4,?5)
+             ON CONFLICT(round_id,role) DO UPDATE SET content=excluded.content,expression=COALESCE(excluded.expression,messages.expression)",
             params![session_id, round_id, content, expression, completed_at],
         )?;
     }
@@ -360,13 +363,26 @@ fn finish_round(
         "interrupted"
     };
     transaction.execute(
-        "UPDATE chat_rounds SET status=?1,completed_at=?2 WHERE id=?3 AND session_id=?4 AND status='pending'",
-        params![status, completed_at, round_id, session_id],
+        "UPDATE chat_rounds SET status=?1,completed_at=?2,stop_reason=?3 WHERE id=?4 AND session_id=?5 AND status='pending'",
+        params![status, completed_at, if completed { None } else { stop_reason }, round_id, session_id],
     )?;
-    transaction.execute(
-        "UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",
-        params![completed_at, session_id],
-    )?;
+    if completed {
+        let intimacy = transaction.query_row(
+            "SELECT intimacy FROM sessions WHERE id=?1",
+            [session_id],
+            |row| row.get::<_, i64>(0),
+        )?;
+        let intimacy = crate::pet::rewarded_intimacy(intimacy)?;
+        transaction.execute(
+            "UPDATE sessions SET intimacy=?1,memory_revision=memory_revision+1,updated_at=?2 WHERE id=?3",
+            params![intimacy, completed_at, session_id],
+        )?;
+    } else {
+        transaction.execute(
+            "UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",
+            params![completed_at, session_id],
+        )?;
+    }
     let result = round_snapshot(&transaction, persona_id, session_id, round_id)?;
     transaction.commit()?;
     Ok(result)
@@ -388,6 +404,7 @@ pub fn complete_round(
         Some(content),
         expression,
         true,
+        None,
     )
 }
 
@@ -399,6 +416,42 @@ pub fn interrupt_round(
     partial_content: Option<&str>,
     expression: Option<&str>,
 ) -> AppResult<RoundSnapshot> {
+    interrupt_round_with_reason(
+        connection,
+        persona_id,
+        session_id,
+        round_id,
+        partial_content,
+        expression,
+        "unknown",
+    )
+}
+
+pub fn interrupt_round_with_reason(
+    connection: &mut Connection,
+    persona_id: i64,
+    session_id: i64,
+    round_id: i64,
+    partial_content: Option<&str>,
+    expression: Option<&str>,
+    reason: &str,
+) -> AppResult<RoundSnapshot> {
+    if !matches!(
+        reason,
+        "length_limit"
+            | "user_cancelled"
+            | "timeout"
+            | "repetition"
+            | "invalid_encoding"
+            | "tool_limit"
+            | "provider_error"
+            | "context_changed"
+            | "app_shutdown"
+            | "recovered_after_restart"
+            | "unknown"
+    ) {
+        return Err(AppError::validation("stopReason", "不支持的聊天停止原因"));
+    }
     finish_round(
         connection,
         persona_id,
@@ -407,7 +460,74 @@ pub fn interrupt_round(
         partial_content,
         expression,
         false,
+        Some(reason),
     )
+}
+
+/// 按尾部消息读取回合；主动消息不属于回合，因此返回 None。
+pub fn last_round(
+    connection: &Connection,
+    persona_id: i64,
+    session_id: i64,
+) -> AppResult<Option<RoundSnapshot>> {
+    require_session(connection, persona_id, session_id)?;
+    let round_id: Option<Option<i64>> = connection
+        .query_row(
+            "SELECT round_id FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT 1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    round_id
+        .flatten()
+        .map(|id| round_snapshot(connection, persona_id, session_id, id))
+        .transpose()
+}
+
+/// 续写仍使用原回合、原用户和原 AI 消息；事务中再次验证资格。
+pub fn continue_round(
+    connection: &mut Connection,
+    persona_id: i64,
+    session_id: i64,
+    round_id: i64,
+) -> AppResult<RoundSnapshot> {
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let current = round_snapshot(&transaction, persona_id, session_id, round_id)?;
+    let tail: Option<(Option<i64>, String)> = transaction
+        .query_row(
+            "SELECT round_id,role FROM messages WHERE session_id=?1 ORDER BY id DESC LIMIT 1",
+            [session_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let has_pending: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chat_rounds WHERE session_id=?1 AND status='pending')",
+        [session_id],
+        |row| row.get(0),
+    )?;
+    if current.round.status != ChatRoundStatus::Interrupted
+        || current.round.stop_reason.as_deref() != Some("length_limit")
+        || current.assistant_message.is_none()
+        || tail != Some((Some(round_id), "assistant".into()))
+        || has_pending
+    {
+        return Err(AppError::new(
+            "CONTEXT_CHANGED",
+            "当前回合已不满足继续生成条件，请刷新后重试",
+        ));
+    }
+    transaction.execute(
+        "UPDATE chat_rounds SET status='pending',completed_at=NULL,stop_reason=NULL WHERE id=?1 AND session_id=?2",
+        params![round_id, session_id],
+    )?;
+    transaction.execute(
+        "UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",
+        params![now(), session_id],
+    )?;
+    let result = round_snapshot(&transaction, persona_id, session_id, round_id)?;
+    transaction.commit()?;
+    Ok(result)
 }
 
 pub fn append_proactive_message(
@@ -454,7 +574,7 @@ pub(crate) fn recover_pending_in_transaction(
         [recovered_at],
     )?;
     Ok(connection.execute(
-        "UPDATE chat_rounds SET status='interrupted',completed_at=?1 WHERE status='pending'",
+        "UPDATE chat_rounds SET status='interrupted',completed_at=?1,stop_reason='recovered_after_restart' WHERE status='pending'",
         [recovered_at],
     )?)
 }
@@ -519,6 +639,194 @@ mod tests {
     }
 
     #[test]
+    fn length_limit_continuations_preserve_messages_and_restart_content() {
+        let mut connection = database();
+        let session_id = create(&mut connection, 1).unwrap().id.parse().unwrap();
+        let started = start_round(&mut connection, 1, session_id, "原问题").unwrap();
+        let round_id = started.round.id.parse().unwrap();
+        let first = interrupt_round_with_reason(
+            &mut connection,
+            1,
+            session_id,
+            round_id,
+            Some("第一段 "),
+            Some("(^_^)"),
+            "length_limit",
+        )
+        .unwrap();
+        let assistant = first.assistant_message.as_ref().unwrap();
+        let assistant_id = assistant.id.clone();
+        let created_at = assistant.created_at.clone();
+        assert_eq!(assistant.content, "第一段 ");
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 0);
+        assert_eq!(
+            last_round(&connection, 1, session_id).unwrap(),
+            Some(first.clone())
+        );
+        let pending = continue_round(&mut connection, 1, session_id, round_id).unwrap();
+        assert_eq!(pending.round.status, ChatRoundStatus::Pending);
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 0);
+        assert_eq!(pending.round.stop_reason, None);
+        assert_eq!(pending.round.completed_at, None);
+        assert_eq!(pending.user_message.id, started.user_message.id);
+        assert_eq!(pending.assistant_message.unwrap().id, assistant_id);
+        assert!(continue_round(&mut connection, 1, session_id, round_id).is_err());
+        let second = interrupt_round_with_reason(
+            &mut connection,
+            1,
+            session_id,
+            round_id,
+            Some("第一段 第二段\n"),
+            None,
+            "length_limit",
+        )
+        .unwrap();
+        assert_eq!(second.assistant_message.as_ref().unwrap().id, assistant_id);
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 0);
+        assert_eq!(
+            second.assistant_message.as_ref().unwrap().created_at,
+            created_at
+        );
+        assert_eq!(
+            second
+                .assistant_message
+                .as_ref()
+                .unwrap()
+                .expression
+                .as_deref(),
+            Some("(^_^)")
+        );
+        continue_round(&mut connection, 1, session_id, round_id).unwrap();
+        let completed = complete_round(
+            &mut connection,
+            1,
+            session_id,
+            round_id,
+            "第一段 第二段\n结尾 ",
+            None,
+        )
+        .unwrap();
+        assert_eq!(completed.round.status, ChatRoundStatus::Completed);
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 1);
+        assert_eq!(completed.round.stop_reason, None);
+        assert_eq!(
+            completed.assistant_message.as_ref().unwrap().id,
+            assistant_id
+        );
+        assert_eq!(
+            completed.assistant_message.as_ref().unwrap().content,
+            "第一段 第二段\n结尾 "
+        );
+        assert_eq!(
+            interrupt_round_with_reason(
+                &mut connection,
+                1,
+                session_id,
+                round_id,
+                Some("迟到片段"),
+                None,
+                "timeout"
+            )
+            .unwrap(),
+            completed
+        );
+        assert_eq!(
+            complete_round(
+                &mut connection,
+                1,
+                session_id,
+                round_id,
+                "重复完成不能覆盖",
+                None,
+            )
+            .unwrap(),
+            completed
+        );
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM messages WHERE round_id=?1",
+                    [round_id],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
+
+        let next = start_round(&mut connection, 1, session_id, "新问题").unwrap();
+        let next_id = next.round.id.parse().unwrap();
+        interrupt_round_with_reason(
+            &mut connection,
+            1,
+            session_id,
+            next_id,
+            Some("重启前正文 "),
+            None,
+            "length_limit",
+        )
+        .unwrap();
+        continue_round(&mut connection, 1, session_id, next_id).unwrap();
+        crate::db::initialize(&mut connection).unwrap();
+        let recovered = round_snapshot(&connection, 1, session_id, next_id).unwrap();
+        assert_eq!(
+            recovered.round.stop_reason.as_deref(),
+            Some("recovered_after_restart")
+        );
+        assert_eq!(recovered.assistant_message.unwrap().content, "重启前正文 ");
+        assert!(continue_round(&mut connection, 1, session_id, next_id).is_err());
+        assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 1);
+    }
+
+    #[test]
+    fn continuation_rejects_other_reasons_missing_content_and_changed_tail() {
+        let mut connection = database();
+        let session_id = create(&mut connection, 1).unwrap().id.parse().unwrap();
+        for (reason, content) in [("user_cancelled", Some("部分")), ("length_limit", None)] {
+            let started = start_round(&mut connection, 1, session_id, "问题").unwrap();
+            let id = started.round.id.parse().unwrap();
+            interrupt_round_with_reason(&mut connection, 1, session_id, id, content, None, reason)
+                .unwrap();
+            assert!(continue_round(&mut connection, 1, session_id, id).is_err());
+        }
+        let started = start_round(&mut connection, 1, session_id, "问题").unwrap();
+        let id = started.round.id.parse().unwrap();
+        interrupt_round_with_reason(
+            &mut connection,
+            1,
+            session_id,
+            id,
+            Some("部分"),
+            None,
+            "length_limit",
+        )
+        .unwrap();
+        append_proactive_message(&mut connection, 1, session_id, "主动消息", None).unwrap();
+        assert_eq!(last_round(&connection, 1, session_id).unwrap(), None);
+        assert!(continue_round(&mut connection, 1, session_id, id).is_err());
+        start_round(&mut connection, 1, session_id, "后续问题").unwrap();
+        assert!(continue_round(&mut connection, 1, session_id, id).is_err());
+        assert_eq!(
+            round_snapshot(&connection, 1, session_id, id)
+                .unwrap()
+                .round
+                .stop_reason
+                .as_deref(),
+            Some("length_limit")
+        );
+        assert!(interrupt_round_with_reason(
+            &mut connection,
+            1,
+            session_id,
+            id,
+            None,
+            None,
+            "invalid"
+        )
+        .is_err());
+    }
+
+    #[test]
     fn rounds_are_atomic_idempotent_and_reject_cross_session_writes() {
         let mut connection = database();
         let first = create(&mut connection, 1).unwrap().id.parse().unwrap();
@@ -530,7 +838,14 @@ mod tests {
         let interrupted =
             interrupt_round(&mut connection, 1, first, round_id, Some("  "), None).unwrap();
         assert_eq!(interrupted.round.status, ChatRoundStatus::Interrupted);
+        assert_eq!(interrupted.round.stop_reason.as_deref(), Some("unknown"));
         assert!(interrupted.assistant_message.is_none());
+        assert_eq!(get(&connection, 1, first).unwrap().intimacy, 0);
+        assert_eq!(
+            complete_round(&mut connection, 1, first, round_id, "迟到回复", None).unwrap(),
+            interrupted
+        );
+        assert_eq!(get(&connection, 1, first).unwrap().intimacy, 0);
         let revision: i64 = connection
             .query_row(
                 "SELECT memory_revision FROM sessions WHERE id=?1",
@@ -553,6 +868,7 @@ mod tests {
         .unwrap();
         assert_eq!(result.round.status, ChatRoundStatus::Completed);
         assert_eq!(result.assistant_message.as_ref().unwrap().content, "回答");
+        assert_eq!(get(&connection, 1, first).unwrap().intimacy, 1);
         let revision: i64 = connection
             .query_row(
                 "SELECT memory_revision FROM sessions WHERE id=?1",
@@ -563,6 +879,7 @@ mod tests {
         let repeated =
             complete_round(&mut connection, 1, first, completed_id, "不能覆盖", None).unwrap();
         assert_eq!(repeated.assistant_message.unwrap().content, "回答");
+        assert_eq!(get(&connection, 1, first).unwrap().intimacy, 1);
         assert_eq!(
             connection
                 .query_row(
@@ -576,6 +893,7 @@ mod tests {
 
         let second = create(&mut connection, 1).unwrap().id.parse().unwrap();
         assert!(complete_round(&mut connection, 1, second, completed_id, "串会话", None).is_err());
+        assert_eq!(get(&connection, 1, second).unwrap().intimacy, 0);
         assert_eq!(
             connection
                 .query_row(
@@ -585,6 +903,82 @@ mod tests {
                 )
                 .unwrap(),
             2
+        );
+    }
+
+    #[test]
+    fn completed_round_rewards_cap_intimacy_without_blocking_completion() {
+        let mut connection = database();
+        let session_id = create(&mut connection, 1).unwrap().id.parse().unwrap();
+        connection
+            .execute("UPDATE sessions SET intimacy=998 WHERE id=?1", [session_id])
+            .unwrap();
+        for content in ["达到上限", "满值仍能聊天"] {
+            let pending = start_round(&mut connection, 1, session_id, content).unwrap();
+            let completed = complete_round(
+                &mut connection,
+                1,
+                session_id,
+                pending.round.id.parse().unwrap(),
+                "正常回复",
+                None,
+            )
+            .unwrap();
+            assert_eq!(completed.round.status, ChatRoundStatus::Completed);
+            assert_eq!(completed.assistant_message.unwrap().content, "正常回复");
+            assert_eq!(get(&connection, 1, session_id).unwrap().intimacy, 999);
+        }
+    }
+
+    #[test]
+    fn failed_intimacy_reward_rolls_back_round_message_and_revision() {
+        let mut connection = database();
+        let session_id = create(&mut connection, 1).unwrap().id.parse().unwrap();
+        let pending = start_round(&mut connection, 1, session_id, "用户消息").unwrap();
+        let round_id = pending.round.id.parse().unwrap();
+        let session_before = get(&connection, 1, session_id).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TRIGGER reject_intimacy AFTER UPDATE OF intimacy ON sessions
+                 BEGIN SELECT RAISE(ABORT,'reward failed'); END;",
+            )
+            .unwrap();
+        assert!(complete_round(
+            &mut connection,
+            1,
+            session_id,
+            round_id,
+            "不能半写的回复",
+            None,
+        )
+        .is_err());
+        assert_eq!(
+            round_snapshot(&connection, 1, session_id, round_id).unwrap(),
+            pending
+        );
+        assert_eq!(get(&connection, 1, session_id).unwrap(), session_before);
+        connection
+            .execute_batch("DROP TRIGGER reject_intimacy")
+            .unwrap();
+        let completed = complete_round(
+            &mut connection,
+            1,
+            session_id,
+            round_id,
+            "重试成功的回复",
+            None,
+        )
+        .unwrap();
+        assert_eq!(completed.round.status, ChatRoundStatus::Completed);
+        assert_eq!(
+            completed.assistant_message.unwrap().content,
+            "重试成功的回复"
+        );
+        let session_after = get(&connection, 1, session_id).unwrap();
+        assert_eq!(session_after.intimacy, session_before.intimacy + 1);
+        assert_eq!(
+            session_after.memory_revision,
+            session_before.memory_revision + 1
         );
     }
 
@@ -646,6 +1040,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(recovered.round.status, ChatRoundStatus::Interrupted);
+        assert_eq!(
+            recovered.round.stop_reason.as_deref(),
+            Some("recovered_after_restart")
+        );
         assert!(recovered.assistant_message.is_none());
     }
 

@@ -2,10 +2,15 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ProvidersPanel from "./ProvidersPanel";
 import type { Provider } from "../../types";
+// 子面板使用独立测试验证；本文件保持聊天/记忆配置的既有验收范围。
+vi.mock("./EmbeddingProvidersPanel", () => ({ default: () => null }));
+// 子面板使用独立测试验证；本文件保持聊天/记忆配置的既有验收范围。
+vi.mock("./EmbeddingProvidersPanel", () => ({ default: () => null }));
 
 const api = vi.hoisted(() => ({ listProviders: vi.fn(), listenChanges: vi.fn(), createProvider: vi.fn(), updateProvider: vi.fn(), deleteProvider: vi.fn(), setChatProvider: vi.fn(), setMemoryProvider: vi.fn(), testProvider: vi.fn() }));
 vi.mock("../../api", () => ({ configurationApi: api, errorMessage: (error: { message: string }) => error.message }));
-const first: Provider = { id: "1", name: "模型一", model: "chat-one", baseUrl: null, hasApiKey: true, isActive: true, memoryIsActive: false };
+const first: Provider = { id: "1", name: "模型一", model: "chat-one", baseUrl: null, hasApiKey: true, isActive: true, memoryIsActive: false,
+  maxOutputTokens: 32768, contextWindowOverride: null, capacity: { contextWindow: null, maxOutputTokens: null, source: "unknown", estimated: true } };
 const second: Provider = { ...first, id: "2", name: "模型二", model: "chat-two", isActive: false };
 let rows: Provider[];
 beforeEach(() => {
@@ -20,6 +25,21 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("提供商卡片显示已知能力、未知能力与配置最大输出", async () => {
+  rows = [first, { ...second, contextWindowOverride: 128000, maxOutputTokens: 16000,
+    capacity: { contextWindow: 128000, maxOutputTokens: 8192, source: "manual", estimated: false } }];
+  render(<ProvidersPanel />);
+  await screen.findByText("模型一");
+  const unknown = within(screen.getByRole("heading", { name: "模型一" }).closest("li")!);
+  expect(unknown.getAllByText("未知")).toHaveLength(3);
+  expect(unknown.getByText("32768 tokens")).toBeTruthy();
+  const known = within(screen.getByRole("heading", { name: "模型二" }).closest("li")!);
+  expect(known.getByText("128000 tokens")).toBeTruthy();
+  expect(known.getByText("8192 tokens")).toBeTruthy();
+  expect(known.getByText("16000 tokens")).toBeTruthy();
+  expect(known.getByText("手动设置")).toBeTruthy();
+});
+
 it("空列表可新增，后端拒绝保存时保留输入并显示字段错误", async () => {
   rows = [];
   api.createProvider.mockRejectedValue({ code: "VALIDATION_ERROR", field: "model", message: "模型名称无效" });
@@ -31,7 +51,7 @@ it("空列表可新增，后端拒绝保存时保留输入并显示字段错误"
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
   await screen.findByText("模型名称无效");
   expect((screen.getByLabelText("提供商名称") as HTMLInputElement).value).toBe("我的模型");
-  expect(api.createProvider).toHaveBeenCalledWith({ name: "我的模型", model: "unknown", baseUrl: null, apiKey: { action: "keep" } });
+  expect(api.createProvider).toHaveBeenCalledWith({ name: "我的模型", model: "unknown", baseUrl: null, apiKey: { action: "keep" }, maxOutputTokens: 32768, contextWindowOverride: null });
 });
 
 it("当前项只能查看禁止删除提示，未使用项经确认后删除", async () => {

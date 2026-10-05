@@ -32,7 +32,12 @@ impl SseDecoder {
             if raw.last() == Some(&b'\r') {
                 raw.pop();
             }
-            let line = String::from_utf8(raw).map_err(|_| protocol())?;
+            let line = String::from_utf8(raw).map_err(|_| {
+                AppError::new(
+                    "CHAT_INVALID_ENCODING",
+                    "模型返回了无效 UTF-8 编码，已停止接收；已收到的内容仍保留。",
+                )
+            })?;
             if line.is_empty() {
                 if !self.data.is_empty() {
                     events.push(self.data.join("\n"));
@@ -67,9 +72,11 @@ struct PartialChoice {
 pub struct StreamAccumulator {
     choices: BTreeMap<u32, PartialChoice>,
     done: bool,
+    progress: bool,
 }
 impl StreamAccumulator {
     pub fn push(&mut self, data: &str) -> AppResult<Vec<Delta>> {
+        self.progress = false;
         if self.done {
             return Err(protocol());
         }
@@ -114,10 +121,17 @@ impl StreamAccumulator {
                 let text = text.as_str().ok_or_else(protocol)?;
                 choice.content.push_str(text);
                 if !text.is_empty() {
+                    self.progress = true;
                     deltas.push(Delta::Text {
                         choice_index: index,
                         text: text.into(),
                     });
+                }
+            }
+            // 仅识别适配层支持的字符串推理增量；不保存或展示模型内部推理。
+            for field in ["reasoning_content", "reasoning"] {
+                if let Some(reasoning) = delta.get(field).filter(|v| !v.is_null()) {
+                    self.progress |= !reasoning.as_str().ok_or_else(protocol)?.is_empty();
                 }
             }
             if let Some(tools) = delta.get("tool_calls").filter(|v| !v.is_null()) {
@@ -149,7 +163,9 @@ impl StreamAccumulator {
                             tool.name.push_str(name.as_str().ok_or_else(protocol)?);
                         }
                         if let Some(args) = function.get("arguments").filter(|v| !v.is_null()) {
-                            tool.arguments.push_str(args.as_str().ok_or_else(protocol)?);
+                            let args = args.as_str().ok_or_else(protocol)?;
+                            self.progress |= !args.is_empty();
+                            tool.arguments.push_str(args);
                         }
                     }
                 }
@@ -163,6 +179,9 @@ impl StreamAccumulator {
     }
     pub fn is_done(&self) -> bool {
         self.done
+    }
+    pub fn made_progress(&self) -> bool {
+        self.progress
     }
     pub fn finish(self) -> AppResult<Vec<Choice>> {
         if !self.done {

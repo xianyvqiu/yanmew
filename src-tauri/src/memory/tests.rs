@@ -171,6 +171,9 @@ fn structured_output_and_han_range_are_checked_without_truncation() {
         provider: None,
         minimum: 12,
         maximum: 100,
+        merge_count: 20,
+        long_minimum: 150,
+        long_maximum: 250,
     };
     assert_eq!(han_count("猫cat🙂，𠀀"), 2);
     assert_eq!(
@@ -277,7 +280,7 @@ fn failed_attempts_are_bounded_and_explicit_retry_reopens_missing_work() {
             )
             .unwrap();
         let queue = runtime.memory.queue.lock().unwrap();
-        let failure = &queue.failures[&key.round_id];
+        let failure = &queue.failures[&TaskKey::from(key)];
         assert_eq!(failure.attempts, attempt);
         assert_eq!(
             failure.retry_at,

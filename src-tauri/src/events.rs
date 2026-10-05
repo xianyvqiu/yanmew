@@ -5,8 +5,10 @@ pub const REMINDERS_CHANGED: &str = "reminders-changed";
 pub const REMINDER_ERROR: &str = "reminder-error";
 pub const NOTEBOOK_CHANGED: &str = "notebook-changed";
 pub const MEMORY_GENERATION_CHANGED: &str = "memory-generation-changed";
+pub const EMBEDDING_CHANGED: &str = "embedding-state-changed";
 pub trait MemoryEventSink: Send + Sync {
     fn memory_changed(&self);
+    fn embedding_changed(&self) {}
 }
 pub trait ChatToolEventSink: ReminderEventSink {
     fn notebook_changed(&self);

@@ -194,7 +194,7 @@ export default function MemorySettingsPanel() {
 
   return <section className="ym-page-card ym-memory-settings-panel" aria-labelledby={`${id}-title`}>
     <h2 id={`${id}-title`}>记忆设置</h2>
-    <p className="ym-page-note">以下是全局配置；短期记忆、长期记忆、记事本和旅行游记数据仍按会话分别保存。记事本工具、查看编辑和每轮短期记忆生成已接通；长期整合及 RAG 检索将在后续接入。可在聊天窗打开记事本小窗查看生成状态与重试。</p>
+    <p className="ym-page-note">以下是全局配置；短期记忆、长期记忆、记事本和旅行游记数据仍按会话分别保存。记事本工具、查看编辑、每轮短期记忆生成及 k+1 长期整合已接通；RAG 检索将在后续接入。可在聊天窗打开记事本小窗查看生成、整合状态与重试。</p>
     {readError ? <div className="ym-page-error" role="alert">配置读取失败：{readError}
       <button className="ym-button" type="button" onClick={() => void readSettings()}>重试读取</button>
     </div> : loading ? <p role="status">正在读取设置…</p> : draft && <form onSubmit={save}>

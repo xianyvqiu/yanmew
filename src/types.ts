@@ -2,10 +2,30 @@
 export type RecordId = string;
 /** 记忆记录属于会话；以下契约由后续记忆仓储和管理页面使用。 */
 export type MemoryIntegrationState = "pending" | "integrated";
+export type MemoryKind = "short" | "long";
+export type MemoryRecord = {
+  id: RecordId; sessionId: RecordId; kind: MemoryKind; roundId: RecordId | null;
+  integrationState: MemoryIntegrationState | null; title: string | null; content: string;
+  sourceCount: number | null; activatedByRoundId: RecordId | null; coveredThroughRoundId: RecordId | null;
+  coveredThroughMessageId: RecordId | null;
+  createdAt: string; updatedAt: string;
+};
+export type MemorySource = {
+  shortMemoryId: RecordId; roundId: RecordId; sourceOrder: number; content: string; updatedAt: string;
+};
+export type MemoryDetail = {
+  record: MemoryRecord; memoryRevision: number; sources: MemorySource[];
+  relatedLongMemories: { id: RecordId; title: string }[];
+};
+export type MemoryPage = { items: MemoryRecord[]; nextAfterId: RecordId | null };
+export type MemoryPreview = { previewId: string; detail: MemoryDetail; title: string | null; content: string };
 export type MemoryGenerationView = {
   sessionId: RecordId; completedCount: number; pendingCount: number;
   activeRoundId: RecordId | null; failedRoundId: RecordId | null;
   error: AppError | null; autoRetryPending: boolean;
+  longCompletedCount: number; longPendingCount: number;
+  longActiveRoundId: RecordId | null; longFailedRoundId: RecordId | null;
+  longError: AppError | null; longAutoRetryPending: boolean;
 };
 export type ShortMemory = {
   id: RecordId; sessionId: RecordId; roundId: RecordId; content: string;
@@ -22,13 +42,18 @@ export type Notebook = { sessionId: RecordId; content: string; updatedAt: string
 export type NotebookView = { notebook: Notebook | null; limitChars: number };
 export type ChatRound = {
   id: RecordId; sessionId: RecordId; status: "pending" | "completed" | "interrupted";
-  createdAt: string; completedAt: string | null;
+  createdAt: string; completedAt: string | null; stopReason: string | null;
 };
 export type RoundSnapshot = { round: ChatRound; userMessage: Message; assistantMessage: Message | null };
-/** partialContent 尚未持久化；round 中的消息才是数据库记录。 */
+export type ChatContextBudget = {
+  contextWindow: number | null; configuredMaxOutputTokens: number; effectiveMaxOutputTokens: number;
+  estimatedInputTokens: number; capacitySource: string; estimated: boolean; reduced: boolean;
+};
+/** partialContent 包含续写时已保存的前缀及未保存增量；round 中的消息是数据库记录。 */
 export type ChatRequestSnapshot = {
   requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
   roundId: RecordId; seq: number; partialContent: string; expression: string | null; round: RoundSnapshot;
+  notice?: string | null; budget?: ChatContextBudget | null;
 };
 export type ChatReplyEvent = {
   requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
@@ -36,6 +61,7 @@ export type ChatReplyEvent = {
 } & (
   | { type: "expression"; expression: string }
   | { type: "text"; text: string }
+  | { type: "context_notice"; message: string; budget: ChatContextBudget }
   | { type: "finished"; finish: "stop" | "length" | "content_filter" | "tool_calls" }
   | { type: "cancelled" }
   | { type: "failed"; code: string; message: string }
@@ -72,8 +98,11 @@ export type WeatherInput = { apiHost: string | null; apiKey?: SecretUpdate };
 export type Provider = {
   id: RecordId; name: string; baseUrl: string | null; model: string;
   hasApiKey: boolean; isActive: boolean; memoryIsActive: boolean;
+  maxOutputTokens: number; contextWindowOverride: number | null;
+  capacity: { contextWindow: number | null; maxOutputTokens: number | null; source: string; estimated: boolean; reference?: string | null; checkedAt?: string | null };
 };
-export type ProviderInput = { name: string; baseUrl: string | null; model: string; apiKey?: SecretUpdate };
+export type EmbeddingProviderInput = { name: string; baseUrl: string | null; model: string; apiKey?: SecretUpdate };
+export type ProviderInput = EmbeddingProviderInput & { maxOutputTokens?: number; contextWindowOverride?: number | null };
 export type Persona = {
   id: RecordId; name: string; prompt: string; initialPrompt: string;
   selfEvolveEnabled: boolean; lastEvolvedAt: string | null; color: string;
@@ -131,3 +160,21 @@ export interface MissedReminderSummary {
   nextAfterId: string | null;
   text: string;
 }
+export type EmbeddingProvider = {
+  id: RecordId;
+  name: string;
+  kind: "local" | "online";
+  baseUrl: string | null;
+  model: string;
+  hasApiKey: boolean;
+  isBuiltin: boolean;
+  isActive: boolean;
+};
+export type EmbeddingStatus = {
+  total: number;
+  ready: number;
+  pending: number;
+  unavailable: number;
+  running: boolean;
+  error: AppError | null;
+};

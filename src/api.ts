@@ -1,6 +1,31 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { EmbeddingProvider, EmbeddingProviderInput, EmbeddingStatus } from "./types";
+export const embeddingApi = {
+  list: () => invoke<EmbeddingProvider[]>("list_embedding_providers"),
+  save: (id: RecordId | null, input: EmbeddingProviderInput) => invoke<EmbeddingProvider>("save_embedding_provider", { id, input }),
+  delete: (id: RecordId) => invoke<void>("delete_embedding_provider", { id }),
+  select: (id: RecordId) => invoke<void>("set_active_embedding_provider", { id }),
+  test: (id: RecordId) => invoke<number>("test_embedding_provider", { id }),
+  status: () => invoke<EmbeddingStatus>("get_embedding_status"),
+  listen: (receive: () => void) => listen("embedding-state-changed", receive),
+};
 import type { Notebook, NotebookView } from "./types";
 import type { MemoryGenerationView } from "./types";
+import type { MemoryDetail, MemoryKind, MemoryPage, MemoryPreview } from "./types";
+export const memoryManagementApi = {
+  list: (context: CurrentContext, kind: MemoryKind, afterId: RecordId | null = null, limit = 30) =>
+    invoke<MemoryPage>("list_memories", { context, kind, afterId, limit }),
+  get: (context: CurrentContext, kind: MemoryKind, id: RecordId) =>
+    invoke<MemoryDetail>("get_memory", { context, kind, id }),
+  save: (context: CurrentContext, expected: MemoryDetail, title: string | null, content: string) =>
+    invoke<MemoryDetail>("save_memory", { context, expected, title, content }),
+  preview: (context: CurrentContext, kind: MemoryKind, id: RecordId) =>
+    invoke<MemoryPreview>("preview_memory", { context, kind, id }),
+  confirm: (context: CurrentContext, previewId: string, title: string | null, content: string) =>
+    invoke<MemoryDetail>("confirm_memory_preview", { context, previewId, title, content }),
+  cancel: (context: CurrentContext) => invoke<void>("cancel_memory_preview", { context }),
+  listen: (receive: () => void) => listen("memory-generation-changed", receive),
+};
 export const memoryGenerationApi = {
   get: (context: CurrentContext) => invoke<MemoryGenerationView>("get_memory_generation_status", context),
   retry: (context: CurrentContext) => invoke<void>("retry_short_memories", context),
@@ -18,6 +43,8 @@ export const chatApi = {
   submit: (context: CurrentContext, input: string) => invoke<ChatRequestSnapshot>("submit_chat", {
     personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision, input,
   }),
+  continue: (context: CurrentContext, roundId: RecordId) => invoke<ChatRequestSnapshot>("chat_continue_reply", { context, roundId }),
+  lastRound: (context: CurrentContext) => invoke<RoundSnapshot | null>("get_last_chat_round", { context }),
   current: (context: CurrentContext) => invoke<ChatRequestSnapshot | null>("get_chat_request", {
     personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision,
   }),

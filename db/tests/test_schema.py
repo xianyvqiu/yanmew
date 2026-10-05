@@ -39,6 +39,62 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.c.execute("PRAGMA foreign_key_check").fetchall(),[])
         self.assertEqual(self.c.execute("PRAGMA integrity_check").fetchone()[0],'ok')
         self.c.execute("INSERT INTO long_memories_fts(long_memories_fts) VALUES('rebuild')")
+    def test_chat_budget_and_stop_reason_constraints(self):
+        self.c.execute("INSERT INTO providers(name,model) VALUES('测试','model')")
+        self.assertEqual(self.c.execute("SELECT max_output_tokens,context_window_override FROM providers").fetchone(),(32768,None))
+        for statement in (
+            "UPDATE providers SET max_output_tokens=0",
+            "UPDATE providers SET context_window_override=0",
+            "INSERT INTO chat_rounds(session_id,status,created_at) VALUES(1,'interrupted','a')",
+            "INSERT INTO chat_rounds(session_id,status,created_at,stop_reason) VALUES(1,'pending','a','unknown')",
+            "INSERT INTO chat_rounds(session_id,status,created_at,stop_reason) VALUES(1,'interrupted','a','bad')",
+        ):
+            with self.assertRaises(sqlite3.IntegrityError):
+                self.c.execute(statement)
+        self.c.execute("INSERT INTO chat_rounds(id,session_id,status,created_at,stop_reason) VALUES(1,1,'interrupted','a','length_limit')")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.c.execute("UPDATE chat_rounds SET status='completed' WHERE id=1")
+        self.c.execute("UPDATE chat_rounds SET status='pending',stop_reason=NULL WHERE id=1")
+        self.c.execute("UPDATE chat_rounds SET status='completed' WHERE id=1")
+        self.c.execute("UPDATE chat_rounds SET status='interrupted',stop_reason='timeout' WHERE id=1")
+    def test_v4_migration_preserves_rows_and_transaction_rollback(self):
+        migration = (Path(__file__).resolve().parents[1]/"migrations"/"004_chat_budget.sql").read_text(encoding="utf-8")
+        for fail in (True,False):
+            c=sqlite3.connect(":memory:")
+            c.execute("PRAGMA foreign_keys=ON")
+            c.executescript(self.schema_text)
+            c.executescript("""
+                DROP TRIGGER chat_rounds_stop_reason_insert;
+                DROP TRIGGER chat_rounds_stop_reason_update;
+                ALTER TABLE chat_rounds DROP COLUMN stop_reason;
+                ALTER TABLE providers DROP COLUMN context_window_override;
+                ALTER TABLE providers DROP COLUMN max_output_tokens;
+                PRAGMA user_version=3;
+                INSERT INTO providers(name,model,api_key_encrypted,is_active) VALUES('旧提供商','model','opaque-secret',1);
+                INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(1,'人设','设定','设定');
+                INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'会话','a','a');
+                INSERT INTO chat_rounds(id,session_id,status,created_at) VALUES(1,1,'interrupted','a');
+                INSERT INTO messages(id,session_id,round_id,role,content,created_at) VALUES(1,1,1,'user','问题','a');
+                INSERT INTO messages(id,session_id,round_id,role,content,created_at) VALUES(2,1,1,'assistant','部分正文 ','a');
+            """)
+            before=c.execute("SELECT name,sql FROM sqlite_master ORDER BY name").fetchall()
+            c.executescript("BEGIN IMMEDIATE;\n"+migration+"\nPRAGMA user_version=4;")
+            if fail:
+                with self.assertRaises(sqlite3.IntegrityError):
+                    c.execute("UPDATE providers SET max_output_tokens=0")
+                c.rollback()
+                self.assertEqual(c.execute("SELECT name,sql FROM sqlite_master ORDER BY name").fetchall(),before)
+                self.assertEqual(c.execute("PRAGMA user_version").fetchone()[0],3)
+            else:
+                c.commit()
+                self.assertEqual(c.execute("SELECT max_output_tokens,context_window_override,api_key_encrypted,is_active FROM providers").fetchone(),(32768,None,'opaque-secret',1))
+                self.assertEqual(c.execute("SELECT status,stop_reason FROM chat_rounds").fetchone(),('interrupted','unknown'))
+                for table in ('providers','chat_rounds'):
+                    self.assertEqual(c.execute('PRAGMA table_info('+table+')').fetchall(),self.c.execute('PRAGMA table_info('+table+')').fetchall())
+            self.assertEqual(c.execute("SELECT content FROM messages WHERE id=2").fetchone()[0],'部分正文 ')
+            self.assertEqual(c.execute("PRAGMA foreign_key_check").fetchall(),[])
+            self.assertEqual(c.execute("PRAGMA integrity_check").fetchone()[0],'ok')
+            c.close()
     def test_pet_state_lifecycle_and_constraints(self):
         self.assertEqual(self.c.execute("SELECT session_id,hunger_elapsed_ms,idle_elapsed_ms,idle_branch,sleep_until FROM session_pet_states ORDER BY session_id").fetchall(),[(1,0,0,'none',None),(2,0,0,'none',None)])
         for statement in (

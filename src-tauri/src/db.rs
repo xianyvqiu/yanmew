@@ -6,9 +6,10 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 3;
+const VERSION: i64 = 4;
 const PET_STATE_MIGRATION: &str = include_str!("../../db/migrations/002_session_pet_states.sql");
 const INTIMACY_MIGRATION: &str = include_str!("../../db/migrations/003_intimacy_limit.sql");
+const CHAT_BUDGET_MIGRATION: &str = include_str!("../../db/migrations/004_chat_budget.sql");
 
 /// 通过 SQLite 生成一致性快照；不能复制可能尚有 WAL 数据的数据库主文件。
 fn backup_before_migration(connection: &Connection) -> AppResult<()> {
@@ -78,10 +79,16 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
         1 => {
             tx.execute_batch(PET_STATE_MIGRATION)?;
             tx.execute_batch(INTIMACY_MIGRATION)?;
+            tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
         2 => {
             tx.execute_batch(INTIMACY_MIGRATION)?;
+            tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
+            tx.pragma_update(None, "user_version", VERSION)?;
+        }
+        3 => {
+            tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
         VERSION => {}
@@ -136,8 +143,23 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
 mod tests {
     use super::*;
 
-    fn version_one_fixture() -> Connection {
+    fn version_three_fixture() -> Connection {
         let connection = memory();
+        connection
+            .execute_batch(
+                "DROP TRIGGER chat_rounds_stop_reason_insert;
+             DROP TRIGGER chat_rounds_stop_reason_update;
+             ALTER TABLE chat_rounds DROP COLUMN stop_reason;
+             ALTER TABLE providers DROP COLUMN context_window_override;
+             ALTER TABLE providers DROP COLUMN max_output_tokens;
+             PRAGMA user_version=3;",
+            )
+            .unwrap();
+        connection
+    }
+
+    fn version_one_fixture() -> Connection {
+        let connection = version_three_fixture();
         connection.execute_batch(
             "DROP TRIGGER sessions_intimacy_insert;
              DROP TRIGGER sessions_intimacy_update;
@@ -158,10 +180,143 @@ mod tests {
             .unwrap().collect::<Result<Vec<_>,_>>().unwrap()
     }
 
+    fn assert_current_schema(connection: &Connection) {
+        let expected = memory();
+        let normalized = |connection: &Connection| {
+            objects(connection)
+                .into_iter()
+                .map(|(name, sql)| {
+                    let sql = sql
+                        .lines()
+                        .map(|line| line.split("--").next().unwrap_or(""))
+                        .collect::<String>();
+                    let compact = sql
+                        .chars()
+                        .filter(|c| !c.is_whitespace())
+                        .collect::<String>();
+                    (name, compact)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(normalized(connection), normalized(&expected));
+    }
+
+    #[test]
+    fn version_three_migration_preserves_chat_data_and_rolls_back_on_failure() {
+        for fail in [true, false] {
+            let mut connection = version_three_fixture();
+            connection.execute_batch(
+                "INSERT INTO providers(name,model,api_key_encrypted,is_active,memory_is_active)
+                 VALUES('保留提供商','model','opaque-secret',1,1);
+                 INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'保留会话','a','a');
+                 INSERT INTO chat_rounds(id,session_id,status,created_at,completed_at) VALUES(1,1,'interrupted','a','b');
+                 INSERT INTO messages(id,session_id,round_id,role,content,created_at) VALUES(1,1,1,'user','问题','a');
+                 INSERT INTO messages(id,session_id,round_id,role,content,created_at) VALUES(2,1,1,'assistant','已保存正文 ','b');
+                 INSERT INTO notebooks(session_id,content,updated_at) VALUES(1,'保留记事本','b');",
+            ).unwrap();
+            if fail {
+                connection
+                    .execute(
+                        "UPDATE settings SET value='bad' WHERE key='hungry_minutes'",
+                        [],
+                    )
+                    .unwrap();
+                let before = objects(&connection);
+                assert!(initialize(&mut connection).is_err());
+                assert_eq!(objects(&connection), before);
+                assert_eq!(
+                    connection
+                        .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                        .unwrap(),
+                    3
+                );
+                assert_eq!(
+                    connection
+                        .query_row("SELECT status FROM chat_rounds WHERE id=1", [], |r| r
+                            .get::<_, String>(0))
+                        .unwrap(),
+                    "interrupted"
+                );
+            } else {
+                initialize(&mut connection).unwrap();
+                assert_current_schema(&connection);
+                assert_eq!(
+                    connection
+                        .query_row("SELECT max_output_tokens FROM providers", [], |r| r
+                            .get::<_, i64>(0))
+                        .unwrap(),
+                    32768
+                );
+                assert_eq!(
+                    connection
+                        .query_row("SELECT context_window_override FROM providers", [], |r| {
+                            r.get::<_, Option<i64>>(0)
+                        })
+                        .unwrap(),
+                    None
+                );
+                assert_eq!(
+                    connection
+                        .query_row("SELECT stop_reason FROM chat_rounds", [], |r| r
+                            .get::<_, String>(0))
+                        .unwrap(),
+                    "unknown"
+                );
+                assert_eq!(
+                    connection
+                        .query_row("SELECT api_key_encrypted FROM providers", [], |r| r
+                            .get::<_, String>(0))
+                        .unwrap(),
+                    "opaque-secret"
+                );
+                assert_eq!(
+                    connection
+                        .query_row(
+                            "SELECT is_active+memory_is_active FROM providers",
+                            [],
+                            |r| r.get::<_, i64>(0)
+                        )
+                        .unwrap(),
+                    2
+                );
+                assert_eq!(
+                    connection
+                        .query_row("SELECT content FROM notebooks", [], |r| r
+                            .get::<_, String>(0))
+                        .unwrap(),
+                    "保留记事本"
+                );
+                initialize(&mut connection).unwrap();
+            }
+            assert_eq!(
+                connection
+                    .query_row("SELECT content FROM messages WHERE id=2", [], |r| r
+                        .get::<_, String>(0))
+                    .unwrap(),
+                "已保存正文 "
+            );
+            assert_eq!(
+                connection
+                    .query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                "ok"
+            );
+            assert_eq!(
+                connection
+                    .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r
+                        .get::<_, i64>(
+                        0
+                    ))
+                    .unwrap(),
+                0
+            );
+        }
+    }
+
     #[test]
     fn version_two_caps_intimacy_preserves_state_and_rolls_back_on_failure() {
         for fail in [true, false] {
-            let mut connection = memory();
+            let mut connection = version_three_fixture();
             connection
                 .execute_batch(
                     "DROP TRIGGER sessions_intimacy_insert;
@@ -198,7 +353,7 @@ mod tests {
                 );
             } else {
                 initialize(&mut connection).unwrap();
-                assert_eq!(objects(&connection), objects(&memory()));
+                assert_current_schema(&connection);
                 assert_eq!(
                     connection
                         .query_row("SELECT intimacy FROM sessions", [], |r| r.get::<_, i64>(0))
@@ -228,7 +383,7 @@ mod tests {
     fn version_one_migration_preserves_data_and_matches_new_schema() {
         let mut connection = version_one_fixture();
         initialize(&mut connection).unwrap();
-        assert_eq!(objects(&connection), objects(&memory()));
+        assert_current_schema(&connection);
         assert_eq!(
             connection
                 .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))

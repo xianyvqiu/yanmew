@@ -9,7 +9,6 @@ pub fn request_body(model: &str, input: &GenerateRequest, stream: bool) -> AppRe
     if model.trim().is_empty()
         || input.messages.is_empty()
         || input.max_tokens == 0
-        || input.max_tokens > 32768
     {
         return Err(AppError::validation(
             "request",

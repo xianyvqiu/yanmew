@@ -6,6 +6,7 @@ use crate::{
 use tauri::Emitter;
 pub struct PetEvents(pub tauri::AppHandle);
 impl crate::events::MemoryEventSink for PetEvents {
+    fn embedding_changed(&self) { let _ = self.0.emit(crate::events::EMBEDDING_CHANGED, ()); }
     fn memory_changed(&self) {
         let _ = self.0.emit(crate::events::MEMORY_GENERATION_CHANGED, ());
     }

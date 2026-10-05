@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
-import type { Message, MessagePage, Persona, Session } from "../types";
+import type { ChatReplyEvent, ChatRequestSnapshot, Message, MessagePage, Persona, RoundSnapshot, Session } from "../types";
 import ChatPage from "./ChatPage";
 
 const api = vi.hoisted(() => ({
@@ -9,7 +9,7 @@ const api = vi.hoisted(() => ({
   select: vi.fn(),
   rename: vi.fn(),
   messages: vi.fn(),
-  current: vi.fn(), listen: vi.fn(), submit: vi.fn(), cancel: vi.fn(),
+  current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), listen: vi.fn(), submit: vi.fn(), cancel: vi.fn(),
 }));
 
 vi.mock("../api", () => ({
@@ -56,6 +56,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   api.current.mockReset().mockResolvedValue(null);
+  api.lastRound.mockReset().mockResolvedValue(null); api.continue.mockReset();
   api.listen.mockReset().mockResolvedValue(() => {});
   api.submit.mockReset(); api.cancel.mockReset();
   api.create.mockReset();
@@ -67,6 +68,80 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("长度中断恢复继续按钮，续写只显示一份原正文且保留未发送草稿", async () => {
+    const current = snapshot("session-1");
+    const limited: RoundSnapshot = {
+      round: { id: "10", sessionId: "session-1", status: "interrupted", stopReason: "length_limit", createdAt: "2026-09-28", completedAt: null },
+      userMessage: { ...message("20", "session-1", "原用户消息"), roundId: "10" },
+      assistantMessage: { ...message("21", "session-1", "原回复前缀"), roundId: "10", role: "assistant" },
+    };
+    const receipt: ChatRequestSnapshot = { ...current.context, sessionId: "session-1", requestId: "new-request", roundId: "10", seq: 0,
+      partialContent: "原回复前缀", expression: null, round: { ...limited, round: { ...limited.round, status: "pending", stopReason: null } },
+      notice: "本次上下文过长，已减少部分较旧内容；历史消息和记忆仍完整保留。",
+      budget: { contextWindow: null, configuredMaxOutputTokens: 32768, effectiveMaxOutputTokens: 4096, estimatedInputTokens: 2000, capacitySource: "unknown", estimated: true, reduced: true } };
+    let receive!: (event: ChatReplyEvent) => void;
+    api.listen.mockImplementation(async callback => { receive = callback; return () => {}; });
+    api.lastRound.mockResolvedValue(limited);
+    api.continue.mockResolvedValue(receipt);
+    render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
+    await screen.findByRole("button", { name: "继续生成" });
+    expect(screen.getByText("已达到本次输出上限")).toBeTruthy();
+    expect(screen.getByText("已达到本次输出上限，已收到的内容已保存。")).toBeTruthy();
+    const input = screen.getByLabelText("聊天消息");
+    fireEvent.change(input, { target: { value: "还没发送的草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "继续生成" }));
+    await screen.findByRole("button", { name: "暂停回复" });
+    expect(api.continue).toHaveBeenCalledWith(current.context, "10");
+    expect(screen.getAllByText("原回复前缀")).toHaveLength(1);
+    expect(screen.getAllByText("原用户消息")).toHaveLength(1);
+    expect(input).toHaveProperty("value", "还没发送的草稿");
+    expect(screen.getByText(/配置 32768 tokens，实际 4096 tokens/)).toBeTruthy();
+    expect(screen.getByText(/上下文容量：未知/)).toBeTruthy();
+    expect(screen.getByText(/本次输出因模型能力或剩余上下文容量而降低/)).toBeTruthy();
+    act(() => receive({ ...current.context, sessionId: "session-1", requestId: "new-request", roundId: "10", seq: 1, saved: null, type: "text", text: "，后续正文" }));
+    expect(screen.getByText("原回复前缀，后续正文")).toBeTruthy();
+    expect(screen.queryByText("原回复前缀")).toBeNull();
+    const completed: RoundSnapshot = { ...limited, round: { ...limited.round, status: "completed", stopReason: null },
+      assistantMessage: { ...limited.assistantMessage!, content: "原回复前缀，后续正文" } };
+    api.lastRound.mockResolvedValue(completed);
+    await act(async () => receive({ ...current.context, sessionId: "session-1", requestId: "new-request", roundId: "10", seq: 2, saved: completed, type: "finished", finish: "stop" }));
+    expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
+    expect(screen.getAllByText("原回复前缀，后续正文")).toHaveLength(1);
+    expect(api.submit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "completed" as const, stopReason: null },
+    { status: "interrupted" as const, stopReason: "cancelled" },
+  ])("$status / $stopReason 回合不显示继续按钮", async ({ status, stopReason }) => {
+    api.lastRound.mockResolvedValue({
+      round: { id: "10", sessionId: "session-1", status, stopReason, createdAt: "2026-09-28", completedAt: null },
+      userMessage: { ...message("20", "session-1", "用户消息"), roundId: "10" },
+      assistantMessage: { ...message("21", "session-1", "已存回复"), roundId: "10", role: "assistant" },
+    } satisfies RoundSnapshot);
+    render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
+    await screen.findByText("已存回复");
+    expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
+  });
+
+  it.each([
+    ["repetition", "持续重复"],
+    ["invalid_encoding", "异常编码"],
+    ["timeout", "回复超时"],
+    ["tool_limit", "工具调用达到上限或持续无进展"],
+  ])("恢复 %s 中断显示原因且不显示继续按钮", async (stopReason, notice) => {
+    api.lastRound.mockResolvedValue({
+      round: { id: "10", sessionId: "session-1", status: "interrupted", stopReason, createdAt: "2026-09-28", completedAt: null },
+      userMessage: { ...message("20", "session-1", "原用户消息"), roundId: "10" },
+      assistantMessage: { ...message("21", "session-1", "已存部分回复"), roundId: "10", role: "assistant" },
+    });
+    render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
+    await screen.findByText("已存部分回复");
+    expect(screen.getByText(new RegExp(notice))).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
+    expect(api.continue).not.toHaveBeenCalled();
+  });
+
   it("发送失败保留草稿并显示原因，不创建本地假消息", async () => {
     api.submit.mockRejectedValue(new Error("请先配置聊天提供商"));
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);

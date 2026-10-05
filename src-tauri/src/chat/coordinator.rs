@@ -13,6 +13,8 @@ pub struct RequestSnapshot {
     pub seq: u64,
     pub partial_content: String,
     pub expression: Option<String>,
+    pub notice: Option<String>,
+    pub budget: Option<crate::chat_capacity::Budget>,
     pub round: RoundSnapshot,
 }
 
@@ -51,8 +53,13 @@ pub fn submit(
     revision: u64,
     input: String,
 ) -> AppResult<(PreparedReply, RequestSnapshot)> {
-    let (reply, snapshot) = prepare(runtime, persona_id, session_id, revision, input, true)?;
+    let (reply, snapshot) = prepare(runtime, persona_id, session_id, revision, input, true, None)?;
     Ok((reply, snapshot.ok_or_else(AppError::storage)?))
+}
+
+pub fn continue_reply(runtime:&Runtime,persona_id:i64,session_id:i64,revision:u64,round_id:i64) -> AppResult<(PreparedReply,RequestSnapshot)> {
+    let (reply,snapshot)=prepare(runtime,persona_id,session_id,revision,"继续生成".into(),true,Some(round_id))?;
+    Ok((reply,snapshot.ok_or_else(AppError::storage)?))
 }
 
 pub fn current(
@@ -102,13 +109,14 @@ pub fn interrupt_active(runtime: &Runtime) -> AppResult<()> {
             let persona_id = crate::error::parse_id(&snapshot.persona_id)?;
             let session_id = crate::error::parse_id(&snapshot.session_id)?;
             runtime.requests.cancel_key(&format!("chat:{session_id}"));
-            crate::sessions::interrupt_round(
+            crate::sessions::interrupt_round_with_reason(
                 &mut store.connection,
                 persona_id,
                 session_id,
                 crate::error::parse_id(&snapshot.round_id)?,
                 Some(&snapshot.partial_content),
                 snapshot.expression.as_deref(),
+                "app_shutdown",
             )?;
         }
         Ok(())
@@ -151,6 +159,10 @@ pub async fn run_persisted(
                 ReplyEventKind::Expression { expression } => {
                     active.expression = Some(expression.clone())
                 }
+                ReplyEventKind::ContextNotice {message,budget} => {
+                    if !message.is_empty() {active.notice=Some(message.clone());}
+                    active.budget=Some(budget.clone());
+                }
                 _ => {}
             }
             Ok(active.round_id.clone())
@@ -185,13 +197,23 @@ pub async fn run_persisted(
                 active.expression.as_deref(),
             )?
         } else {
-            crate::sessions::interrupt_round(
+            let guard_reason = result.as_ref().err().and_then(|error| guards::stop_reason(error.code));
+            let reason=if let Some(reason) = guard_reason { reason }
+                else if prepared.lease.cancel.check().is_err() {"user_cancelled"}
+                else if require_context(store,persona_id,session_id,prepared.context_revision).is_err() {"context_changed"}
+                else {match &result {
+                    Ok(choice) if choice.finish==Finish::Length=>"length_limit",
+                    Err(error)=>match error.code {"AI_TIMEOUT"=>"timeout","TOOL_LIMIT_REACHED"=>"tool_limit","CONTEXT_CHANGED"=>"context_changed","CANCELLED"=>"user_cancelled",_=>"provider_error"},
+                    _=>"unknown",
+                }};
+            crate::sessions::interrupt_round_with_reason(
                 &mut store.connection,
                 persona_id,
                 session_id,
                 round_id,
                 Some(&active.partial_content),
                 active.expression.as_deref(),
+                reason,
             )?
         };
         if saved.round.status == crate::models::ChatRoundStatus::Interrupted {

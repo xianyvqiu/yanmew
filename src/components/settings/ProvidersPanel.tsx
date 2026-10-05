@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Provider, ProviderInput } from "../../types";
 import ProviderForm from "./ProviderForm";
+import EmbeddingProvidersPanel from "./EmbeddingProvidersPanel";
 import "./ProvidersPanel.css";
 
 export default function ProvidersPanel() {
@@ -72,7 +73,7 @@ export default function ProvidersPanel() {
   const test = async (provider: Provider) => {
     if (lock.current) return;
     setTestingId(provider.id);
-    await run(() => configurationApi.testProvider(provider.id), `${provider.name}：连接成功（已保存配置）`, false);
+    await run(() => configurationApi.testProvider(provider.id), `${provider.name}：连接成功（已保存配置）`);
     if (mounted.current) setTestingId(null);
   };
   const remove = async () => {
@@ -104,11 +105,16 @@ export default function ProvidersPanel() {
           <option value="">跟随聊天提供商</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name} · {provider.model}</option>)}
         </select></label>
       </div>}
-      <p className="ym-page-note">切换或编辑当前聊天提供商会中断正在生成的回复。记忆提供商选择会保存，记忆整合功能尚未开放。</p>
+      <p className="ym-page-note">切换或编辑当前聊天提供商会中断正在生成的回复。记忆提供商用于后台短期记忆生成与长期整合。</p>
       {editing !== undefined && <ProviderForm key={editing?.id ?? "new"} provider={editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
       <ul className="ym-provider-list">{providers.map(provider => <li key={provider.id}>
         <div className="ym-page-heading"><h3>{provider.name}</h3><span>{provider.isActive && "聊天当前项"}{provider.isActive && provider.memoryIsActive && " · "}{provider.memoryIsActive && "记忆专用项"}</span></div>
         <dl><dt>模型</dt><dd>{provider.model}</dd><dt>接口地址</dt><dd>{provider.baseUrl || "https://api.openai.com/v1"}</dd><dt>API Key</dt><dd>{provider.hasApiKey ? "已保存" : "未保存"}</dd></dl>
+        <dl><dt>上下文容量</dt><dd>{provider.capacity.contextWindow == null ? "未知" : `${provider.capacity.contextWindow} tokens`}</dd>
+          <dt>模型最大输出</dt><dd>{provider.capacity.maxOutputTokens == null ? "未知" : `${provider.capacity.maxOutputTokens} tokens`}</dd>
+          <dt>能力来源</dt><dd>{provider.capacity.source === "manual" ? "手动设置" : provider.capacity.source === "provider" ? "提供商" : provider.capacity.source === "builtin" ? "已核对模型资料" : "未知"}{provider.capacity.checkedAt && `（${provider.capacity.checkedAt}）`}</dd>
+          <dt>配置最大输出</dt><dd>{provider.maxOutputTokens} tokens</dd>
+          <dt>输出生效上限</dt><dd>{Math.min(provider.maxOutputTokens, provider.capacity.maxOutputTokens ?? provider.maxOutputTokens)} tokens；发送时还会按实际上下文剩余容量调整。</dd></dl>
         <div className="ym-inline-form">
           <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(provider); setError(null); setNotice(""); }} aria-label={`编辑 ${provider.name}`}>编辑</button>
           <button className="ym-button" disabled={disabled} onClick={() => { void test(provider); }} aria-label={`测试连接 ${provider.name}`}>{testingId === provider.id ? "正在测试…" : "测试连接"}</button>
@@ -116,7 +122,7 @@ export default function ProvidersPanel() {
         </div>
       </li>)}</ul>
     </section>
-    <section className="ym-page-card"><h2>Embedding 模型</h2><p className="ym-page-note">尚未开放。计划接入内置本地 BAAI/bge-small-zh-v1.5 与用户配置的联网模型。</p></section>
+    <EmbeddingProvidersPanel />
     <dialog ref={dialog} className="ym-provider-dialog" aria-labelledby="provider-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>
       <h2 id="provider-delete-title">{protectedProvider ? "此提供商正在使用" : "删除提供商"}</h2>
       <p>{protectedProvider ? "正在使用的提供商不能删除，请先切换聊天提供商或更改记忆提供商。" : `确定删除“${deleting?.name ?? ""}”的配置和密钥吗？已保存的聊天与记忆不会删除。`}</p>

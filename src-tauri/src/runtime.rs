@@ -24,6 +24,8 @@ pub struct Runtime {
     pub random: Arc<Mutex<Box<dyn crate::pet::RandomSource + Send>>>,
     pub jobs_cancel: crate::state::Cancellation,
     pub memory: Arc<crate::memory::GenerationState>,
+    pub embedding: Arc<crate::embedding::Engine>,
+    pub memory_index: Arc<crate::memory_index::State>,
 }
 impl Runtime {
     pub fn initialize(
@@ -32,6 +34,7 @@ impl Runtime {
         clock: Arc<dyn crate::platform::contracts::Clock>,
         random: Box<dyn crate::pet::RandomSource + Send>,
     ) -> Self {
+        let embedding_paths = paths.as_ref().map_err(Clone::clone).and_then(|p| p.embedding_resources());
         let store = paths
             .and_then(|p| crate::db::open(&p))
             .map(|connection| Store {
@@ -50,6 +53,8 @@ impl Runtime {
             random: Arc::new(Mutex::new(random)),
             jobs_cancel: Default::default(),
             memory: Default::default(),
+            embedding: Arc::new(crate::embedding::Engine::new(embedding_paths)),
+            memory_index: Default::default(),
         }
     }
 
@@ -195,5 +200,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         random: Arc::new(Mutex::new(Box::new(TestRandom))),
         jobs_cancel: Default::default(),
         memory: Default::default(),
+        embedding: Arc::new(crate::embedding::Engine::new(Ok(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/models/bge-small-zh-v1.5")))),
+        memory_index: Default::default(),
     }
 }
