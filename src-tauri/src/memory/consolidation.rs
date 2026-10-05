@@ -267,7 +267,7 @@ pub(super) async fn generate(runtime: Runtime, key: WorkKey) -> AppResult<Outcom
 }
 
 /// 供消息删除事务复用；先恢复来源状态，再解除 RESTRICT 关联。
-fn rollback_trigger(
+pub(crate) fn rollback_trigger(
     tx: &Transaction<'_>,
     session_id: i64,
     round_id: i64,

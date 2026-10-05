@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS embedding_providers (
 -- 2. 人设（AI 角色）
 -- prompt 是当前人设，AI 自调会直接改写。
 -- initial_prompt 是用户手动保存的初始设定，AI 不会改写。
--- is_builtin 标记系统自带默认人设“喵喵桌宠”；只允许一条，由 Rust 禁止删除。
+-- is_builtin 标记系统自带默认人设“电子小猫”；只允许一条，由 Rust 禁止删除。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS personas (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
@@ -132,6 +132,8 @@ CREATE TABLE IF NOT EXISTS personas (
 -- ------------------------------------------------------------
 -- 2.1 用户设定
 -- 用户自己写的个人设定/背景，可创建多个；会话可选绑定一个，未绑定则为空。
+-- 全局共享资料；名称和正文 trim 后非空，手动正文不受 AI 生成字数范围限制。
+-- 编辑/删除正在使用的资料或修改绑定，Rust 先中断受影响回复再保存；删除仅 SET NULL，不删除聊天或记忆。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS user_profiles (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
@@ -279,8 +281,9 @@ CREATE TABLE IF NOT EXISTS messages (
 --   weather_qweather_api_host          和风天气用户专属 HTTPS API Host，可选
 --   weather_qweather_api_key_encrypted  和风天气 API Key（DPAPI 加密后的 Base64，可选）
 --   current_session_id                当前会话 ID；启动校验，导入重映射
---   window_pos_x                      桌宠窗上次位置 X，启动时恢复；默认屏幕右下角
---   window_pos_y                      桌宠窗上次位置 Y，启动时恢复；默认屏幕右下角
+--   window_pos_x                      主宠窗左上角物理像素 X，规范有符号 i32 文本；无默认行，与 Y 同事务保存；可为负数
+--   window_pos_y                      主宠窗左上角物理像素 Y，规范有符号 i32 文本；缺失/残缺/无效坐标回退当前工作区右下角
+--   窗口位置只由原生拖动服务写入，不能经通用 save_settings 修改；显示器/DPI 临时回位不覆盖用户首选位置
 --   theme_mode                       主程序主题：system / light / dark，默认 system；不传递给小游戏插件
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS settings (

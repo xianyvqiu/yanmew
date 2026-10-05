@@ -19,9 +19,9 @@
 - 已接通的检索增量：实际本地 BGE FP32 ONNX 与运行库、独立 Embedding 提供商管理、持久化向量补建、当前会话 FTS5/向量混合检索及失败降级，资源已完成一次 Rust/Windows CPU 验证。
 - 已有底层但尚未形成完整功能：短期/长期记忆已经真实生成并保存，混合检索、完整聊天上下文及记忆内容管理已接通；旅行/饰品相关配置可保存，游记可查询，但玩法和内容生成尚未接通。完整数据库表不表示对应业务已实现。
 - 已接通的可靠性增量：Task 9.8 的有效进展超时、持续重复/异常编码/工具无进展守卫、异常部分正文及原因保存、重开聊天窗恢复停止提示，以及原完成事务内的封顶一次性亲密度奖励。推理增量只计进展，不展示或保存；数据库仍为版本 4。
-- 待实现：用户设定管理、消息编辑/底部删除界面/重说、会话删除、人设自调和差异视图、聊天背景、自启、无聊主动消息与游走、签到钱包与插件游戏、旅行信件/游记生成/伴手礼、饰品、导入导出及节日业务。
+- 待实现：用户设定管理、人设自调和差异视图、聊天背景、无聊主动消息与游走、签到钱包与插件游戏、旅行信件/游记生成/伴手礼、饰品、导入导出及节日业务。消息编辑/底部删除/重说已由 10.2 接通，自启与默认人设已由 10.3 接通，正式应用名和宠窗位置记忆已由 10.4/10.5 接通。
 - 待人工验收：原生拖动/点击穿透/多 DPI/挂起恢复、Windows 定位权限及真实天气服务。自动测试和构建通过不替代这些验收。
-- 后续顺序：阶段 9.1–9.8 已接通配置、记事本/游记工具、短期生成、k+1 整合、Embedding/混合检索、完整上下文、深层回忆、内容编辑/预览确认及流式异常守卫和完整回合亲密度。下一项从 Task 10.1 会话删除与标题继续；复用已有模型、仓储、检索和请求协调，不重写。
+- 后续顺序：阶段 9.1–9.8 已接通配置、记事本/游记工具、短期生成、k+1 整合、Embedding/混合检索、完整上下文、深层回忆、内容编辑/预览确认及流式异常守卫和完整回合亲密度；Task 10.1 会话删除与标题、10.2 消息操作、10.3 自启与默认人设已接通。Task 10.4 正式应用名已完成，Task 10.5 宠窗默认位置与位置记忆已接通，Task 10.6 用户设定 CRUD 与会话绑定已接通，下一项从 Task 11.1 表情库自动生成与手动生成验收继续；复用已有模型、仓储、检索和请求协调，不重写。
 
 ### 执行约定
 
@@ -289,7 +289,7 @@
 - [x] 注册会话管理和历史查询 Tauri 命令；回合终态只暴露为 Rust 业务 API，不允许前端伪造。验证同会话只存在一个 pending、同一回合不能写两个相同角色、跨会话 round/message 写入被 Rust 拒绝。
 - [x] Rust 全量测试、Clippy 严格检查及前端构建通过，完成本任务验收。
 
-当前实现边界：`models.rs` 与 `sessions.rs` 已提供持久化服务；`list_sessions/create_session/set_active_session/rename_session/list_messages` 已注册并在 `api.ts` 封装。创建或切换会话先结算旧桌宠状态，在切换事务内取消旧会话已开始旅行和待回信，提交后取消旧聊天请求、递增上下文版本并恢复目标桌宠状态。启动把没有运行请求的遗留 pending 回合收束为 interrupted，一次恢复只递增一次版本。阶段 8 已建立聊天窗口，8.4 已把 AI 流式服务与回合仓储串成基础发送流程；8.5 已接发送界面，9.2 已接工具、9.6 已接完整上下文与长度续写，9.8 接流式守卫和完整轮次奖励。当前页面可基础聊天，也不把未持久化增量误称为已保存消息。会话删除及完整记忆级联回退仍按阶段 10 实现。
+当前实现边界：`models.rs` 与 `sessions.rs` 已提供持久化服务；`list_sessions/create_session/set_active_session/rename_session/list_messages` 已注册并在 `api.ts` 封装。创建或切换会话先结算旧桌宠状态，在切换事务内取消旧会话已开始旅行和待回信，提交后取消旧聊天请求、递增上下文版本并恢复目标桌宠状态。启动把没有运行请求的遗留 pending 回合收束为 interrupted，一次恢复只递增一次版本。阶段 8 已建立聊天窗口，8.4 已把 AI 流式服务与回合仓储串成基础发送流程；8.5 已接发送界面，9.2 已接工具、9.6 已接完整上下文与长度续写，9.8 接流式守卫和完整轮次奖励。当前页面可基础聊天，也不把未持久化增量误称为已保存消息。会话删除已由 Task 10.1 接通；消息操作界面由 Task 10.2 接入，复用已有完整回合记忆级联回退服务。
 
 ---
 ## 阶段 6：提醒系统
@@ -645,7 +645,7 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 - [x] 完成相关 Rust 与前端定向测试，覆盖守卫、持久化、事务奖励及记忆管理取消恢复。
 - [ ] 完成真实供应商兼容性、原生窗口停止/重开恢复人工验收，不因功能接通宣称人工验收完成。
 
-功能已接通，数据库保持版本 4，无新增表或迁移。前端重开后显示持久化停止原因，仅 length_limit 可继续；推理内容不存储或展示。记忆管理生成中取消失败后的界面入口恢复及写回预览前锁内取消复核也已修复；取消失败不代表后端请求已经结束。下一项为 Task 10.1 会话删除与标题。
+功能已接通，数据库保持版本 4，无新增表或迁移。前端重开后显示持久化停止原因，仅 length_limit 可继续；推理内容不存储或展示。记忆管理生成中取消失败后的界面入口恢复及写回预览前锁内取消复核也已修复；取消失败不代表后端请求已经结束。Task 10.1 会话删除与标题代码已接通，相关 Rust 测试 22 项、聊天页面测试 24 项及开发版构建已通过；Task 10.2 消息编辑、尾部删除与重说已接通，Task 10.3 开机自启与默认人设已接通，Task 10.4 正式应用名已完成，Task 10.5 宠窗默认位置与位置记忆已接通，Task 10.6 用户设定 CRUD 与会话绑定已接通，下一项为 Task 11.1 表情库自动生成与手动生成验收。
 
 ---
 ## 阶段 10：会话与消息操作、默认人设、自启
@@ -654,51 +654,73 @@ Expected: 无错误；三个主题模式可即时切换，跟随系统时响应 
 
 ### Task 10.1: 会话删除与标题
 
+会话删除与首次完整回复后的自动标题代码已接通，相关 Rust 测试 22 项、聊天页面测试 24 项及开发版构建已通过。现有改名接口、会话列表和聊天持久化继续复用；数据库保持版本 4，不新增表或迁移。原生确认弹窗、窗口联动与真实供应商标题质量仍待人工验收，Task 10.2 与 10.3 已接通，Task 10.4 正式应用名已完成，Task 10.5 已接通，Task 10.6 已接通，下一项为 Task 11.1 表情库自动生成与手动生成验收。
+
 **Files:**
 - Modify: `src-tauri/src/sessions.rs`
+- Create: `src-tauri/src/sessions/operations.rs`（删除请求取消、事务调用与当前会话恢复协调）
+- Create: `src-tauri/src/sessions/titles.rs`（标题快照、后台请求与提交复核）
+- Modify: `src-tauri/src/models.rs`（删除结果 DTO）
 - Modify: `src-tauri/src/commands.rs`
 - Modify: `src-tauri/src/lib.rs`
-- Modify: `src/windows/ChatWindow.tsx`
+- Modify: `src/pages/ChatPage.tsx`（会话业务入口和原生删除确认；窗口壳不承载业务）
+- Modify: `src/pages/ChatPage.test.tsx`
+- Modify: `src/pages/workspace.css`（删除确认的主题与响应式样式）
 - Modify: `src/api.ts`
 - Modify: `src/types.ts`
 
-- [ ] **Step 1: 添加删除会话与标题命令**
+- [x] **Step 1: 添加删除会话与标题命令**
 
-在现有 sessions 服务扩展删除操作，使用 AppResult；返回 DTO 的 current_session_id 为 Option<String>。命令校验当前人设、目标归属与 context revision，内部仓储才使用 i64。`rename_session` 后端命令与 1–100 字符校验已在阶段 5 实现，本阶段复用，不再建立第二套改名入口。
+在现有 sessions 服务扩展删除操作，使用 AppResult；返回 `SessionDeleteResult`，跨 IPC 为 `{currentSessionId: string | null, contextRevision: number}`。命令携带当前 `personaId/contextRevision` 及目标 `sessionId`，校验当前人设、目标归属与上下文版本，内部仓储才使用 i64。`rename_session` 后端命令与 1–100 字符校验已在阶段 5 实现，本阶段复用，不再建立第二套改名入口。
 
-`delete_session` 使用一个事务校验会话存在并读取所属人设，先删除目标会话的长期记忆以解除短期来源上的 RESTRICT 引用，再删除会话及剩余级联数据；若删的是 `settings.current_session_id`，则从同一人设剩余会话中选择最近更新项并写回，没有剩余项时删除该设置键。小游戏插件、授权、设置、存档、游戏局与喵币账单均为全局数据，不参与删除事务。数据库函数返回新的当前会话 ID；命令提交后递增内存中的 context revision，并广播 `window_context_changed` 供所有已打开窗口刷新。调用命令前先中断该会话正在执行的聊天请求。
+`delete_session` 使用一个事务校验会话存在并读取所属人设，先删除目标会话的长期记忆以解除短期来源上的 RESTRICT 引用，再删除会话及剩余级联数据；若删的是 `settings.current_session_id`，则从同一人设剩余会话中选择最近更新项并写回，没有剩余项时删除该设置键，不自动创建新会话。小游戏插件、授权、设置、存档、游戏局、喵币钱包、账单和提醒均为全局数据，不参与删除事务。只有删除当前会话才取消当前聊天、记忆及标题任务，事务提交后将内存 `contextRevision` 加 1、恢复目标桌宠状态并广播 `window_context_changed`。删除非当前会话仅清理目标会话任务与数据，保持当前会话及 `contextRevision` 不变，广播 `configuration_changed` 刷新会话列表，不中断当前聊天或记忆。
 
-- [ ] **Step 2: 暴露命令**
+- [x] **Step 2: 暴露命令**
 
-`src-tauri/src/commands.rs` 暴露 `delete_session(session_id) -> SessionDeleteResult` 并注册到 `lib.rs`；已有 `rename_session` 直接接入会话列表。删除命令依次中断目标会话的聊天请求、调用上述事务函数、递增 context revision、广播 `window_context_changed`，再把新的当前会话 ID 返回前端；任一步在数据库提交前失败都不得改变当前会话。
+`src-tauri/src/commands.rs` 暴露 `delete_session` 并注册到 `lib.rs`，`api.ts/types.ts` 封装输入与删除结果。当前会话删除先中断目标聊天请求，再调用事务函数，提交后更新上下文、广播 `window_context_changed` 并返回当前会话 ID 与新版本；非当前删除保持当前请求和版本，仅发出 `configuration_changed`。任一步在数据库提交前失败都不得改变当前会话。已有 `rename_session` 和会话列表 UI 继续使用，手动改名成功保存后在同一存储锁内取消目标标题生成任务。
 
-- [ ] **Step 3: 会话标题 AI 生成**
+- [x] **Step 3: 会话标题 AI 生成**
 
-首次完整回复后，若标题仍为“新会话”，读取会话 ID、首条用户消息和当前标题快照，再在锁外请求不超过 12 个中文字符的标题。使用明确的文本响应或结构化 `{title}`，不能把 JSON 文本直接作为标题。提交前重查会话存在、标题仍等于快照；用户已经重命名则丢弃生成结果。空结果、取消或请求失败保留原标题，不影响已完成聊天。
+首个正常完成的回复保存为 `completed` 回合后，若标题仍为“新会话”，读取会话 ID、整个会话的首条用户消息和标题快照，再在数据库锁外请求 1–12 个字符的简短中文标题。只接受结构化 JSON `{title}`，不将完整 JSON 文本或混杂说明直接作为标题。提交前重查会话存在、标题仍等于快照及任务未取消；手动改名取消标题任务，迟到结果不覆盖用户名称。中断或长度停止的聊天回合不触发；标题请求取消、空结果、长度停止、格式不合法或失败时保留“新会话”，不影响已经保存的聊天。成功后广播 `configuration_changed` 刷新列表。
 
-- [ ] **Step 4: 聊天窗会话与聊天记录查看**
+- [x] **Step 4: 聊天窗会话与聊天记录查看**
 
-`ChatWindow.tsx` 展示当前人设下的会话列表，可切换会话、查看历史消息、重命名、删除。删除前确认框明确列出会话级聊天、记忆、旅行、节日、饰品、信件和伴手礼会被删除，并说明全局小游戏插件及其数据不受影响。确认后先中断该会话流式请求，再调用删除命令并用返回的当前会话刷新全部会话级窗口。
+`ChatPage.tsx` 复用当前人设下的会话列表、切换、历史读取和改名入口，新增当前会话“删除会话”按钮与原生 `dialog`。确认框明确说明不可恢复，并列出会话级聊天、记忆及来源、记事本、出行与旅行游记、节日、饰品、信件和伴手礼将清理；全局钱包、账单、提醒和插件数据保留。确认对象固定为打开时的会话及 `personaId/sessionId/contextRevision` 快照，提交前及取消回执后再次核对，上下文改变则关闭旧确认。确认后先调用现有聊天取消入口，不等待网络终态，再提交删除；成功后重读权威上下文，失败保留确认和中文错误。取消不调用删除接口，忙碌时禁止重复确认、取消及 Escape。弹窗取消在左、危险确认在右，长说明内部滚动，窄窗与主题沿用现有变量。
 
-- [ ] **Step 5: 编译验证**
+- [x] **Step 5: 定向验证与开发版构建**
 
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
+Run: `cargo test --manifest-path src-tauri/Cargo.toml --lib sessions::`；聊天页面定向测试；`npm run tauri build -- --debug --no-bundle`
+Result: Rust 22 项和聊天页面 24 项通过，开发版构建成功。只运行相关验证，不重复全量测试。
+
+- [ ] 人工验收：真实供应商生成标题、改名与标题迟到竞态、当前/非当前会话删除、最后会话删除后的空态、多窗口刷新，以及亮暗主题、窄窗、键盘 Escape 和 Windows DPI 下的确认弹窗。
 
 
 ### Task 10.2: 消息编辑、尾部删除与重说
 
-**Files:** `src-tauri/src/sessions.rs`、`memory.rs`、`chat.rs`、`commands.rs`、`src/windows/ChatWindow.tsx`、`src/api.ts`。
+已接通。数据库保持版本 4，无新增表、列或迁移。Task 10.3 自启与默认人设已接通，Task 10.4 正式应用名已完成，Task 10.5 已接通，Task 10.6 已接通，后续从 Task 11.1 表情库自动生成与手动生成验收继续。
 
-- [ ] 编辑任意历史消息只更新原文和 `memory_revision`，不自动修改或删除短期记忆、长期记忆或旅行游记；尚未生成短期记忆的回合以后使用编辑后正文。
-- [ ] 删除只允许从聊天底部执行。最后完整回合在 AI 消息下显示“删除本轮”，一个事务删除两条消息、回合和对应短期记忆；底部只有待回复用户消息时删除该消息与未完整回合。
-- [ ] 底部为中断回合时允许整轮删除用户消息、部分 AI 回复与回合；底部为主动消息（round_id=NULL）时只删除该条。两者均不修改已有记忆，不得越过底部主动消息删除更早回合。删除前取消未结束请求，事务内重验底部、会话与版本，成功后递增 memory_revision；迟到结果不得重新写入。
-- [ ] 验证有部分正文的中断回合、无 AI 正文的未完整回合、底部主动消息、越过底部删除被拒绝，以及删除与迟到回复竞态；确认中断回合与主动消息删除均保留已有记忆。
-- [ ] 若被删回合是 `activated_by_round_id`，同一事务先读取 `long_memory_sources` 的来源 ID 并恢复短期记忆为 `pending`，再删除相应长期记忆及其级联关联，最后删除目标回合；操作成功后刷新消息与记忆窗口。
-- [ ] `regenerate_last_reply` 只接受最后完整回合，组装上下文时排除旧 AI 回复并保留用户消息一次。
-- [ ] 重说成功后保持原回合和消息 ID，更新 AI 回复、表情和本轮短期记忆；通过 `long_memory_sources` 找到并重新生成受影响长期记忆，提交前校验版本，最终替换使用一个短事务。
-- [ ] 重说失败或中断保留旧结果，不重复增加亲密度，不重放已有有副作用工具。
-- [ ] 验证尾部限制、触发回退、编辑不联动、重说涉及/不涉及长期记忆、生成失败和并发版本变化。
+**Files:** `sessions/messages.rs`、`chat/regeneration.rs`、`memory/regeneration.rs` 及各自定向测试；`sessions.rs`、`chat.rs`、`chat/coordinator.rs`、`chat/context.rs`、`chat/tools.rs`、`memory.rs`、`memory/consolidation.rs`、`commands.rs`、`lib.rs`；前端 `api.ts/types.ts`、`hooks/useChat.ts` 及测试、`pages/ChatPage.tsx` 及测试、`workspace.css`。复用原仓储、触发回退、AI 客户端、工具、请求取消、索引和窗口壳，不在 ChatWindow 新建业务服务。
+
+接口：`update_chat_message({context,messageId,expectedContent,content}) -> Message`；`delete_tail_message({context,messageId,expectedContent}) -> void`；`regenerate_last_reply({context,roundId}) -> ChatRequestSnapshot`。context 同既有 ChatContextInput，目标 ID 为十进制字符串，错误消息为中文。编辑检查旧原文快照，生成中拒绝；编辑后的 length_limit 回合改为 user_cancelled，不继续旧前缀。
+
+重说仍占用 chat:<session> 租约，活动快照 regenerating=true；原回合始终 completed，预览只进内存。上下文排除原轮旧 AI，并保留用户输入一次，当前轮短期不重复注入；仅开放只读工具，update_notebook/create_reminder 不注册且伪造也拒绝。准备新短期及所有关联长期时暂停该会话自动记忆的新扫描，全部内容准备后在同一事务重验原文/来源/配置/version，先替换记忆再 UPDATE 原 AI 消息及版本。保留全部既有 ID、整合状态、来源/边界，缺失短期才新增 pending，不新增长期组、不增加亲密度；总时长包含记忆准备。
+
+取消重说时旧 completed 快照不代表新请求已结束，界面等待终态或活动查询消失；关闭只取消、不保存预览。删除锁内验证真实尾部后取消目标请求，失败数据整体回滚、已发出的取消不恢复；迟到终态须核对 requestId，不能复活已删回合或清理新请求。
+
+前端编辑失败保留草稿；底部删除确认固定消息/上下文，分页未到底不显示尾部操作。消息变更事件只带 sessionId，重新读取已展开页并替换列表；重说旧正文与预览并存，成功才更新，局部错误不重复显示。
+
+- [x] 编辑任意历史消息只更新原文和 `memory_revision`，不自动修改或删除短期记忆、长期记忆或旅行游记；尚未生成短期记忆的回合以后使用编辑后正文。
+- [x] 删除只允许从聊天底部执行。最后完整回合在 AI 消息下显示“删除本轮”，一个事务删除两条消息、回合和对应短期记忆；底部只有待回复用户消息时删除该消息与未完整回合。
+- [x] 底部为中断回合时允许整轮删除用户消息、部分 AI 回复与回合；底部为主动消息（round_id=NULL）时只删除该条。两者均不修改已有记忆，不得越过底部主动消息删除更早回合。删除前取消未结束请求，事务内重验底部、会话与版本，成功后递增 memory_revision；迟到结果不得重新写入。
+- [x] 验证有部分正文的中断回合、无 AI 正文的未完整回合、底部主动消息、越过底部删除被拒绝，以及删除与迟到回复竞态；确认中断回合与主动消息删除均保留已有记忆。
+- [x] 若被删回合是 `activated_by_round_id`，同一事务先读取 `long_memory_sources` 的来源 ID 并恢复短期记忆为 `pending`，再删除相应长期记忆及其级联关联，最后删除目标回合；操作成功后刷新消息与记忆窗口。
+- [x] `regenerate_last_reply` 只接受最后完整回合，组装上下文时排除旧 AI 回复并保留用户消息一次。
+- [x] 重说成功后保持原回合和消息 ID，更新 AI 回复、表情和本轮短期记忆；通过 `long_memory_sources` 找到并重新生成受影响长期记忆，提交前校验版本，最终替换使用一个短事务。
+- [x] 重说失败或中断保留旧结果，不重复增加亲密度，不重放已有有副作用工具。
+- [x] 验证尾部限制、触发回退、编辑不联动、重说涉及/不涉及长期记忆、生成失败和并发版本变化。
+
+- [x] 定向验证与构建：Rust 聊天 32 项、消息操作 4 项、记忆替换 7 项通过；ChatPage 35 项与 useChat 23 项均通过；`npm run tauri build -- --debug --no-bundle` 成功。未重复运行无关全量测试。
+- [ ] 原生人工验收：真实供应商生成质量、等待/暂停体验、亮暗/窄窗/DPI、确认框键盘、关闭重开及多窗口同步。
 
 ### Task 10.3: 开机自启与默认人设
 
@@ -706,21 +728,23 @@ Expected: 无错误。
 - Modify: `src-tauri/Cargo.toml`
 - Modify: `src-tauri/src/lib.rs`
 - Modify: `src-tauri/src/db.rs`
-- Modify: `package.json`
-- Create: `src-tauri/src/autostart.rs`
+- Modify: `src-tauri/Cargo.lock`
+- Modify: `src/api.ts`、`src/types.ts`、`src/components/settings/GeneralPanel.tsx`
+- Create: `src-tauri/src/autostart.rs`、`src/components/settings/AutostartPanel.tsx` 及定向测试
 
-- [ ] **Step 1: 添加 autostart 插件**
+- [x] **Step 1: 添加 autostart 插件**
 
-使用与当前 Tauri 2 兼容的 autostart 插件，按实际锁定版本的 Windows API 注册并配置最小 capabilities；不复制其他平台的初始化示例。前端封装启用、关闭和查询，界面保存值以系统实际结果为准。便携目录移动后检查注册路径并提示修复，不继续显示无效的“已开启”。验证开启后重新登录启动、关闭后不启动、系统写入失败不假报成功。
+锁定 `tauri-plugin-autostart=2.5.1`、间接构建依赖 `tauri-plugin=2.6.3`，保留已有 Tauri/运行时/窗口版本。Windows 组装点使用 `Builder::new().app_name("YanMew").build()`；默认只初始化，不启用。由设置专用 commands 封装查询与设置，Rust 校验窗口标签，不授予任何页面原始 `autostart:*` 权限，因此不增加 JS 插件包或放宽现有 capabilities。查询核对 HKCU Run 命令与当前 exe、StartupApproved 禁用标记；启用通过插件后补写完整带引号命令，支持空格/中文路径，操作后复查。便携目录移动后提示修复，系统禁用不自行覆盖；数据库与备份不保存自启开关。
 
-- [ ] **Step 2: 默认人设种子**
+- [x] **Step 2: 默认人设种子**
 
-复用阶段 2 的种子服务，以 `is_builtin=1` 校验内置默认人设，而不是只判断 personas 总行数是否为零。发现有普通人设却没有默认人设时补齐默认项；多个内置项属于数据不一致，不随意删除。默认人设不可删除，删除当前非内置人设须调用统一删除服务并切回默认。导入新建副本不得复制内置身份。
+复用阶段 2 初始化事务，以 `is_builtin=1` 校验唯一默认人设“电子小猫”，不以 personas 总行数判断。普通人设存在但默认项缺失时仍补齐，有当前普通人设时不抢占。多个内置项报数据不一致并回滚，不删除。旧版种子的名称/正文/初始设定分别只替换未修改原值，保留用户自定义内容和关联数据；不新建会话、不改变数据库版本。默认项删除保护和删除当前非内置后的回退复用现有服务。后续导入新建副本不得复制内置身份。
 
-- [ ] **Step 3: 编译验证**
+- [x] **Step 3: 定向验证**
 
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Expected: 无错误。
+自启路径/系统禁用/窗口权限 3 项、默认种子/用户编辑/异常回滚 3 项及既有人设删除回退 1 项 Rust 测试通过；自启面板 19 项前端测试通过。`npm run tauri build -- --debug --no-bundle` 构建成功，产物为 `src-tauri/target/debug/yanwenzi.exe`。详细记录见 `my_doc/040-实现开机自启与电子小猫默认人设.md`。
+
+- [ ] **原生人工验收**：开启后重新登录 Windows 能启动，关闭后不启动；目录移动后从新 exe 修复；含空格/中文路径、任务管理器禁用、权限拒绝。自动验证不操作本机启动登记，不替代实际登录验收。
 
 
 ### Task 10.4: 正式应用名
@@ -728,82 +752,72 @@ Expected: 无错误。
 **Files:**
 - Modify: `src-tauri/tauri.conf.json`
 - Modify: `index.html`
-- Modify: `package.json`
+- Modify: `package.json`、`package-lock.json`
 
-- [ ] **Step 1: 更新产品名与标识**
+- [x] **Step 1: 更新产品名与标识**
 
 `src-tauri/tauri.conf.json`：`productName` 改为 `"颜喵 YanMew"`，`identifier` 改为 `"com.yanmew.pet"`，主窗口 `title` 改为 `"颜喵 YanMew"`。
 `index.html` 的 `<title>` 改为 `颜喵 YanMew`。
-`package.json` 的 `name` 改为 `"yanmew"`。
+`package.json` 的 `name` 改为 `"yanmew"`；同步锁文件的根项目名称，不更新任何依赖版本。
 
-- [ ] **Step 2: 构建验证**
+- [x] **Step 2: 开发版构建验证**
 
-Run: `npm run tauri build`
-Expected: 构建成功；可执行文件名由 Cargo target 决定，当前为 `src-tauri/target/release/yanwenzi.exe`，修改 productName 不等于修改二进制文件名。完整便携包按收尾流程另行组装。
+Run: `npm run tauri build -- --debug --no-bundle`
+Expected: 开发版构建成功，Windows 文件属性中的产品名为“颜喵 YanMew”。可执行文件名仍由 Cargo target 决定，产物为 `src-tauri/target/debug/yanwenzi.exe`；不改 `data/yanwenzi.db`、模型相对目录或自启登记名 `YanMew`。不新增数据库迁移。正式 release 与完整便携包在收尾阶段另行组装验收；本 Task 不重复执行无关全量测试。
 
 ---
 
 ### Task 10.5: 宠窗默认位置与位置记忆
 
-实施位置：窗口服务、`config.rs` 和现有 `lib.rs`。
+实施位置：`pet_position.rs`、`config.rs` 和现有 `lib.rs`/`commands.rs`。前端复用现有拖动起止，不新增位置上传命令。
 
-- [ ] 使用一致的物理像素坐标保存和恢复窗口移动事件；不能把 `WindowEvent::Moved` 的物理坐标直接交给逻辑坐标 API。
-- [ ] 首次启动按当前显示器工作区与真实窗口尺寸定位，避开任务栏；允许多显示器负坐标，不把所有坐标简单截为非负。
-- [ ] 恢复前验证窗口与当前显示器工作区相交；原显示器移除时将窗口移回可见区域。尺寸、DPI 和工作区均从运行环境获取。
-- [ ] x/y 在同一事务保存；拖动时节流保存，退出补存。保留现有拖动和隐藏恢复逻辑，宠窗内部游走不更新窗口位置。
-- [ ] 验收：默认位置、重新启动、负坐标副屏、不同缩放、拔掉副屏、任务栏位置改变，确认恢复后可见且可拖动。
+- [x] 使用一致的物理像素坐标保存和恢复窗口移动事件；不能把 `WindowEvent::Moved` 的物理坐标直接交给逻辑坐标 API。
+- [x] 首次启动按当前显示器工作区与真实窗口尺寸定位，避开任务栏；允许多显示器负坐标，不把所有坐标简单截为非负。
+- [x] 恢复前验证窗口与当前显示器工作区相交；原显示器移除时将窗口移回可见区域。尺寸、DPI 和工作区均从运行环境获取。
+- [x] x/y 在同一事务保存；拖动时 250ms 节流保存，退出补存。只有原生用户拖动产生待存坐标，程序恢复/屏幕调整不覆盖原坐标；保留现有拖动和隐藏恢复逻辑，宠窗内部游走不更新窗口位置。
+- [ ] 原生人工验收：默认位置、重新启动、负坐标副屏、不同缩放、拔掉副屏、任务栏位置改变，确认恢复后可见且可拖动。
+
+
+验证记录：内部存储 5 项与窗口几何/状态 4 项、失败待存与退出重试 1 项测试通过；开发版构建结果见 `my_doc/042-实现宠窗默认位置与位置记忆.md`；数据库仍为版本 4。
 
 ### Task 10.6: 用户设定 CRUD 与会话绑定
 
-**Files:**
-- Create: `src-tauri/src/user_profiles.rs`
-- Modify: `src-tauri/src/db.rs`
-- Modify: `src-tauri/src/sessions.rs`
-- Modify: `src-tauri/src/models.rs`
-- Modify: `src-tauri/src/commands.rs`
-- Modify: `src-tauri/src/lib.rs`
-- Modify: `src/windows/SettingsWindow.tsx`
-- Modify: `src/windows/ChatWindow.tsx`
-- Modify: `src/api.ts`
-- Modify: `src/types.ts`
+已接通。数据库仍为版本 4；复用已有表、上下文和回合终态保存，不新增迁移或依赖。验证与文件清单见 `my_doc/043-实现用户设定管理与会话绑定.md`，真实 Windows 多窗口操作仍待人工验收。
 
-- [ ] **Step 1: 建表与迁移**
+**实际文件：**
+- 新增：`src-tauri/src/user_profiles.rs`、`src-tauri/src/user_profiles/runtime_tests.rs`。
+- Rust 接入：`models.rs`、`sessions.rs`、`commands.rs`、`lib.rs`；`chat/context_tests.rs` 验证既有上下文，不重写拼装逻辑。
+- 前端：`components/settings/UserProfilePanel.tsx` 及其测试、`pages/SettingsPage.tsx`、`pages/ChatPage.tsx` 及相关测试、`hooks/useCurrentContext.ts`、`api.ts`、`types.ts`。窗口外壳继续组合共享页面。
 
-user_profiles 与 sessions.user_profile_id 已由完整 schema 建立；本 Task 接入模型和 CRUD。旧库升级仅由 Task 2.1 版本化迁移处理，不在功能模块重复 ALTER TABLE。
+- [x] **Step 1: 接入已有表与模型**
 
-复用现有 Session DTO 中的 `user_profile_id: Option<String>`；补齐 UserProfile 业务与绑定入口，不新增同名字段。Rust 仓储内部可用 i64，跨 IPC ID 必须为字符串，错误统一 AppError/AppResult。
+`user_profiles` 与 `sessions.user_profile_id` 已由 schema 建立，删除引用为 `ON DELETE SET NULL`。复用 Session DTO 的 `userProfileId`，增加 UserProfile：字符串 ID、名称、正文、创建/更新时间。名称与正文 trim 后非空，手动正文不设生成字数上限。
 
-- [ ] **Step 2: 实现用户设定 CRUD**
+- [x] **Step 2: 全局用户设定 CRUD**
 
-`src-tauri/src/user_profiles.rs` 提供：
+仓储 `create/list/get/update/delete` 使用现有 SQLite 连接；commands 注册 `create_user_profile`、`list_user_profiles`、`update_user_profile`、`delete_user_profile`。全局资料可被多个会话引用，删除不删除会话或聊天记忆。导入导出留在阶段 17。
 
-```rust
-pub fn create(conn: &Connection, name: &str, content: &str) -> AppResult<i64>
-pub fn list(conn: &Connection) -> AppResult<Vec<UserProfile>>
-pub fn update(conn: &Connection, id: i64, name: &str, content: &str) -> AppResult<()>
-pub fn delete(conn: &Connection, id: i64) -> AppResult<()>
-```
+- [x] **Step 3: 会话绑定与中断协调**
 
-`delete` 依靠 `sessions.user_profile_id` 的 `ON DELETE SET NULL` 自动把绑定它的会话置为“未绑定”，不删除会话。`commands.rs` 暴露 `create_user_profile`、`list_user_profiles`、`update_user_profile`、`delete_user_profile`，并在 `lib.rs` 注册。
+`create_session` 接受可空 `userProfileId`；仓储 `create_with_profile` 在创建事务内验证引用，已有 `create(conn,persona)` 保留供既有模块复用。`set_session_user_profile` 接收 `personaId/sessionId/contextRevision/userProfileId`，仅修改当前有效会话；未绑定为 null。
 
-- [ ] **Step 3: 会话绑定**
+编辑/删除资料，或修改当前绑定时，先验证输入、目标和引用，再在同一 Runtime store 锁内只中断受影响的聊天请求，然后保存变更。普通回复通过原回合服务保存已收到片段为 `interrupted/user_cancelled`；重说仅取消预览，原回复和记忆保留。未改变的绑定/资料不取消任务，非法输入或过期上下文也不取消。若中断成功而资料保存失败，中断不恢复，原资料/绑定保留并可重试。租约由现有聊天工作器结束时释放，不等待网络来保存变更，不另建请求管理器。
 
-`create_session(conn, persona_id, user_profile_id: Option<i64>)` 增加可选绑定参数；`list_sessions` 返回 `user_profile_id`。`commands.rs` 增加 `set_session_user_profile(session_id, user_profile_id)`，允许用户在聊天窗修改绑定；未绑定传 `None`。
+绑定变更不修改当前选择、不递增 `contextRevision`、不重置桌宠、不取消旅行或回信。已有历史与记忆不重写，已中断回合的内容版本仍按原规则递增。通过 `configuration_changed` 刷新资料与会话列表，通过 `chat-messages-changed` 按会话补查中断结果；通知失败可在聚焦时补查。
 
-- [ ] **Step 4: 设置窗用户设定页**
+- [x] **Step 4: 设置页资料管理**
 
-`SettingsWindow.tsx` 将“用户设定（Task 10.6 补齐）”占位替换为 `<UserProfilesTab />`，实现新建、编辑、删除；导出依赖阶段 17，未接通前不开放假入口；删除前提示绑定它的会话会变为“未绑定”。
+设置导航和窄窗选择器接入 `UserProfilePanel`；新建/编辑仅名称与正文，支持取消、保存、删除确认。失败保留草稿/确认，事件与焦点补查不覆盖用户草稿，丢弃过期响应。删除确认说明只解除引用，聊天与记忆保留；页面说明编辑/删除会先中断受影响回复。未开放导入导出假按钮。
 
-- [ ] **Step 5: 聊天窗绑定与展示**
+- [x] **Step 5: 聊天窗绑定与展示**
 
-`ChatWindow.tsx` 新建会话时允许选择用户设定或留空；会话行显示“用户设定：未绑定/名称”；会话详情中提供“修改绑定”。`api.ts`、`types.ts` 同步命令和类型。
+新建会话选择用户设定，默认未绑定；会话选项显示未绑定或名称。当前会话表单支持修改/解除绑定，回复中也可提交，由后端可靠中断；操作期间防重复提交，失败保留选择，切换会话清除旧草稿。`useCurrentContext` 同步读取全局设定列表，不新增独立窗口数据流。
 
-- [ ] **Step 6: 编译验证**
+- [x] **Step 6: 定向验证与构建**
 
-Run: `cargo check --manifest-path src-tauri/Cargo.toml`
-Run: `npm run build`
-Expected: 无错误。
+Rust 仓储/引用 3 项、运行时中断/真实流式/完整上下文 7 项均通过。前端当前相关 46 项通过（聊天页 38、设置导航 2、资料管理 6）。`npm run tauri build -- --debug --no-bundle` 同时验证 TypeScript/Vite 和 Rust；不再重复运行独立编译检查或无关全量测试。
 
+- [ ] **人工验收：**真实 Windows 设置/聊天双窗口编辑与删除、生成中变更与重说取消、关闭重启后的资料及绑定恢复、窄窗口和不同 DPI。未经实测不标记通过。
 
 ---
 

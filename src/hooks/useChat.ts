@@ -23,7 +23,9 @@ const interruptedNotice = (round: RoundSnapshot) => {
 /** 页面只渲染后端保存结果；未保存增量单独展示，不另发消息写入命令。 */
 export function useChat(context: CurrentContext) {
   const [view, setView] = useState<ChatView>(empty);
-  const actions = useRef({ send: async (_input: string): Promise<boolean> => false, continueReply: async (): Promise<boolean> => false, cancel: async () => {}, reload: async () => {}, more: async () => {} });
+  const actions = useRef({ send: async (_input: string): Promise<boolean> => false, continueReply: async (): Promise<boolean> => false,
+    regenerateReply: async (): Promise<boolean> => false, editMessage: async (_message:Message,_content:string): Promise<boolean> => false,
+    deleteTail: async (_message:Message): Promise<boolean> => false, cancel: async () => {}, reload: async () => {}, more: async () => {} });
   useEffect(() => {
     let disposed = false;
     let state = { ...empty };
@@ -31,9 +33,12 @@ export function useChat(context: CurrentContext) {
     let syncing = false;
     let connecting = false;
     let paging = false;
+    let mutating = false;
+    let loadedPages = 1;
     let cancelWanted = false;
     let buffered: ChatReplyEvent[] = [];
     let unlisten: (() => void) | undefined;
+    let unlistenMessages: (() => void) | undefined;
     const rows = new Map<string, Message>();
     const ended = new Set<string>();
     const publish = () => {
@@ -41,7 +46,7 @@ export function useChat(context: CurrentContext) {
       state = { ...state, messages: [...rows.values()].sort((a, b) => {
         if (/^\d+$/.test(a.id) && /^\d+$/.test(b.id)) return BigInt(a.id) < BigInt(b.id) ? -1 : a.id === b.id ? 0 : 1;
         return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
-      }), busy: submitting || state.active !== null };
+      }), busy: submitting || mutating || state.active !== null };
       setView(state);
     };
     const save = (round: RoundSnapshot) => {
@@ -51,11 +56,18 @@ export function useChat(context: CurrentContext) {
     const matches = (event: ChatReplyEvent) => event.personaId === context.personaId
       && event.sessionId === context.sessionId && event.contextRevision === context.contextRevision;
     const refreshMessages = async () => {
-      const page = await sessionApi.messages(context);
+      const fresh = new Map<string,Message>();
+      let cursor:string|null=null;
+      for(let index=0;index<loadedPages;index++) {
+        const page: import("../types").MessagePage=await (cursor ? sessionApi.messages(context,cursor) : sessionApi.messages(context));
+        if(disposed) return;
+        page.items.forEach(item=>fresh.set(item.id,item));
+        cursor=page.nextAfterId;
+        if(!cursor) break;
+      }
       if (disposed) return;
-      page.items.forEach(item => rows.set(item.id, item));
-      // 保留已经翻页的位置；首次加载才设置游标。
-      if (!state.ready) state.afterId = page.nextAfterId;
+      rows.clear();fresh.forEach((item,id)=>rows.set(id,item));
+      state.afterId=cursor;
       publish();
     };
     const apply = (event: ChatReplyEvent) => {
@@ -77,6 +89,7 @@ export function useChat(context: CurrentContext) {
         state.active = null; state.cancelling = false; cancelWanted = false;
         if (event.type === "failed") state.error = event.message;
         state.notice = [active?.notice, event.saved ? interruptedNotice(event.saved) : ""].filter(Boolean).join(" ");
+        if(active?.regenerating) state.notice=event.type==="finished" ? "重说回复和记忆已一起保存。" : "重说已停止，原回复和记忆保留。";
         if (!event.saved) state.notice = "回复未能确认保存，请重新加载查看记录。";
         void (async () => {
           await refreshMessages();
@@ -101,7 +114,7 @@ export function useChat(context: CurrentContext) {
       }
     };
     const synchronize = async () => {
-      if (disposed || syncing || submitting || !context.sessionId) return;
+      if (disposed || syncing || submitting || mutating || !context.sessionId) return;
       syncing = true; state.loading = true; publish();
       try {
         // 查询期间事件暂存；快照 seq 之前的增量在重放时自动忽略。
@@ -143,7 +156,7 @@ export function useChat(context: CurrentContext) {
       try {
         const saved = await chatApi.cancel(active);
         if (disposed || state.active?.requestId !== active.requestId) return;
-        if (saved.round.status !== "pending") {
+        if (saved.round.status !== "pending" && !active.regenerating) {
           ended.add(active.requestId);
           save(saved); state.lastRound = saved; state.active = null; state.cancelling = false;
           state.notice = [active.notice, interruptedNotice(saved)].filter(Boolean).join(" ");
@@ -152,7 +165,7 @@ export function useChat(context: CurrentContext) {
       publish();
     };
     const submitRequest = async (request: () => Promise<ChatRequestSnapshot>) => {
-        if (disposed || !state.ready || submitting || syncing || state.active) return false;
+        if (disposed || !state.ready || submitting || syncing || mutating || paging || state.active) return false;
         submitting = true; cancelWanted = false; state.error = ""; state.notice = ""; state.budget = null; publish();
         try {
           const receipt = await request();
@@ -174,6 +187,49 @@ export function useChat(context: CurrentContext) {
         if (lastRound?.round.status !== "interrupted" || lastRound.round.stopReason !== "length_limit" || !lastRound.assistantMessage) return false;
         return submitRequest(() => chatApi.continue(context, lastRound.round.id));
       },
+      regenerateReply: async () => {
+        if(state.afterId || state.lastRound?.round.status!=="completed") return false;
+        return submitRequest(()=>chatApi.regenerate(context,state.lastRound!.round.id));
+      },
+      editMessage: async (message,content) => {
+        if(disposed || !state.ready || syncing || submitting || mutating || paging || state.active || !content.trim()) return false;
+        mutating=true;state.error="";publish();
+        let saved=false;
+        try {
+          const result=await chatApi.edit(context,message,content);
+          saved=true;
+          if(disposed) return true;
+          rows.set(result.id,result);
+          state.lastRound=await chatApi.lastRound(context);
+          if(disposed) return true;
+          if(state.lastRound) save(state.lastRound);
+          state.notice="消息已保存；已有记忆不自动变化，可在记忆窗口手动修改。";
+        } catch(cause) {if(!disposed) state.error=saved ? `消息已保存，但刷新失败：${errorMessage(cause)}` : errorMessage(cause);}
+        finally {mutating=false;replay();publish();}
+        return saved;
+      },
+      deleteTail: async message => {
+        if(disposed || !state.ready || syncing || submitting || mutating || paging || state.afterId) return false;
+        mutating=true;state.error="";
+        const active=state.active;
+        if(active) ended.add(active.requestId);
+        publish();
+        let saved=false;
+        try {
+          await chatApi.deleteTail(context,message);
+          saved=true;
+          if(disposed) return true;
+          if(active && state.active?.requestId===active.requestId) {state.active=null;state.cancelling=false;cancelWanted=false;}
+          state.lastRound=null;
+          await refreshMessages();
+          const last=await chatApi.lastRound(context);
+          if(disposed) return true;
+          state.lastRound=last;if(last) save(last);
+          state.notice="底部消息已删除。";
+        } catch(cause) {if(!disposed) {state.error=saved ? `消息已删除，但刷新失败：${errorMessage(cause)}` : errorMessage(cause);if(!saved && active) ended.delete(active.requestId);}}
+        finally {mutating=false;replay();publish();}
+        return saved;
+      },
       cancel,
       reload: async () => { if (!unlisten) await connect(); else await synchronize(); },
       more: async () => {
@@ -182,14 +238,14 @@ export function useChat(context: CurrentContext) {
         try {
           const page = await sessionApi.messages(context, state.afterId);
           if (disposed) return;
-          page.items.forEach(item => rows.set(item.id, item)); state.afterId = page.nextAfterId;
+          page.items.forEach(item => rows.set(item.id, item)); state.afterId = page.nextAfterId;loadedPages++;
         } catch (cause) { if (!disposed) state.error = errorMessage(cause); }
         finally { paging = false; state.loading = false; publish(); }
       },
     };
     const receive = (event: ChatReplyEvent) => {
       if (disposed || !matches(event)) return;
-      if (submitting || syncing) buffered.push(event);
+      if (submitting || syncing || mutating) buffered.push(event);
       else if (state.active && event.requestId === state.active.requestId && event.seq > state.active.seq + 1) {
         buffered.push(event); void synchronize();
       } else apply(event);
@@ -203,6 +259,9 @@ export function useChat(context: CurrentContext) {
           const stop = await chatApi.listen(receive);
           if (disposed) { stop(); return; }
           unlisten = stop;
+          const stopMessages=await chatApi.listenMessages(change=>{if(change.sessionId===context.sessionId) void synchronize();});
+          if(disposed) {stopMessages();return;}
+          unlistenMessages=stopMessages;
           window.addEventListener("focus", focus);
           await synchronize();
         } catch (cause) { if (!disposed) { state.error = errorMessage(cause); publish(); } }
@@ -210,10 +269,11 @@ export function useChat(context: CurrentContext) {
     };
     void connect();
     return () => {
-      disposed = true; unlisten?.(); window.removeEventListener("focus", focus);
+      disposed = true; unlisten?.(); unlistenMessages?.(); window.removeEventListener("focus", focus);
       if (state.active) void chatApi.cancel(state.active).catch(() => {});
     };
   }, [context.personaId, context.sessionId, context.contextRevision]);
   return { ...view, send: (input: string) => actions.current.send(input), continueReply: () => actions.current.continueReply(), cancel: () => actions.current.cancel(),
+    regenerateReply: () => actions.current.regenerateReply(),editMessage: (message:Message,content:string)=>actions.current.editMessage(message,content),deleteTail:(message:Message)=>actions.current.deleteTail(message),
     reload: () => actions.current.reload(), loadMore: () => actions.current.more() };
 }

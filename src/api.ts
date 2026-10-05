@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AutostartStatus } from "./types";
+export const autostartApi = {
+  get: () => invoke<AutostartStatus>("get_autostart_status"),
+  set: (enabled: boolean) => invoke<AutostartStatus>("set_autostart", { enabled }),
+};
 import type { EmbeddingProvider, EmbeddingProviderInput, EmbeddingStatus } from "./types";
 export const embeddingApi = {
   list: () => invoke<EmbeddingProvider[]>("list_embedding_providers"),
@@ -38,8 +43,13 @@ export const notebookApi = {
   listen: (receive: () => void) => listen("notebook-changed", receive),
 };
 import type { ChatReplyEvent, ChatRequestSnapshot, RoundSnapshot } from "./types";
+import type { Message } from "./types";
 
 export const chatApi = {
+  edit: (context: CurrentContext, message: Message, content: string) => invoke<Message>("update_chat_message", { context, messageId: message.id, expectedContent: message.content, content }),
+  deleteTail: (context: CurrentContext, message: Message) => invoke<void>("delete_tail_message", { context, messageId: message.id, expectedContent: message.content }),
+  regenerate: (context: CurrentContext, roundId: RecordId) => invoke<ChatRequestSnapshot>("regenerate_last_reply", { context, roundId }),
+  listenMessages: (receive: (change: { sessionId: RecordId }) => void) => listen<{ sessionId: RecordId }>("chat-messages-changed", event => receive(event.payload)),
   submit: (context: CurrentContext, input: string) => invoke<ChatRequestSnapshot>("submit_chat", {
     personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision, input,
   }),
@@ -81,7 +91,7 @@ export const reminderApi = {
 };
 import type { ExpressionLibrary, PetActivity, PetAction } from "./types";
 import { listen } from "@tauri-apps/api/event";
-import type { CurrentContext, MessagePage, Persona, PersonaInput, Provider, ProviderInput, RecordId, Session, Settings, WeatherInput, WeatherSettings } from "./types";
+import type { CurrentContext, MessagePage, Persona, PersonaInput, Provider, ProviderInput, RecordId, Session, SessionDeleteResult, Settings, WeatherInput, WeatherSettings } from "./types";
 
 export const configurationApi = {
   listenExpressionFailure: (receive: (failure: { personaId: RecordId; error: import("./types").AppError }) => void) =>
@@ -122,18 +132,31 @@ export const petApi = {
   listenError: (receive: (error: unknown) => void) => listen("pet-activity-error", event => receive(event.payload)),
 };
 
+export const userProfileApi = {
+  list: () => invoke<import("./types").UserProfile[]>("list_user_profiles"),
+  create: (input: { name: string; content: string }) => invoke<import("./types").UserProfile>("create_user_profile", input),
+  update: (input: { id: string; name: string; content: string }) => invoke<import("./types").UserProfile>("update_user_profile", input),
+  delete: (id: RecordId) => invoke<void>("delete_user_profile", { id }),
+};
+
 export const sessionApi = {
   list: (context: CurrentContext) => invoke<Session[]>("list_sessions", {
     personaId: context.personaId, contextRevision: context.contextRevision,
   }),
-  create: (context: CurrentContext) => invoke<Session>("create_session", {
-    personaId: context.personaId, contextRevision: context.contextRevision,
+  create: (context: CurrentContext, userProfileId: RecordId | null = null) => invoke<Session>("create_session", {
+    personaId: context.personaId, contextRevision: context.contextRevision, userProfileId,
+  }),
+  setUserProfile: (context: CurrentContext, sessionId: RecordId, userProfileId: RecordId | null) => invoke<Session>("set_session_user_profile", {
+    personaId: context.personaId, sessionId, contextRevision: context.contextRevision, userProfileId,
   }),
   select: (context: CurrentContext, sessionId: RecordId) => invoke<CurrentContext>("set_active_session", {
     personaId: context.personaId, sessionId, contextRevision: context.contextRevision,
   }),
   rename: (context: CurrentContext, sessionId: RecordId, title: string) => invoke<Session>("rename_session", {
     personaId: context.personaId, sessionId, contextRevision: context.contextRevision, title,
+  }),
+  delete: (context: CurrentContext, sessionId: RecordId) => invoke<SessionDeleteResult>("delete_session", {
+    personaId: context.personaId, sessionId, contextRevision: context.contextRevision,
   }),
   messages: (context: CurrentContext, afterId: RecordId | null = null, limit = 100) => invoke<MessagePage>("list_messages", {
     personaId: context.personaId, sessionId: context.sessionId,

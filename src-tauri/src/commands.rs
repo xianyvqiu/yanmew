@@ -179,6 +179,46 @@ struct ChatToolEvents(AppHandle);
 pub struct ChatContextInput {persona_id:String,session_id:String,context_revision:u64}
 
 #[tauri::command]
+pub async fn update_chat_message(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,message_id:String,expected_content:String,content:String)->AppResult<crate::models::Message> {
+    authorize(&window)?;
+    let (persona,session,message)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&message_id)?);
+    let worker=runtime.inner().clone();
+    let saved=tauri::async_runtime::spawn_blocking(move||crate::sessions::messages::edit(&worker,persona,session,context.context_revision,message,&expected_content,&content)).await.map_err(|_|AppError::storage())??;
+    notify_message_change(&app,session);
+    Ok(saved)
+}
+
+#[tauri::command]
+pub async fn delete_tail_message(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,message_id:String,expected_content:String)->AppResult<()> {
+    authorize(&window)?;
+    let (persona,session,message)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&message_id)?);
+    let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::sessions::messages::delete_tail(&worker,persona,session,context.context_revision,message,&expected_content)).await.map_err(|_|AppError::storage())??;
+    notify_message_change(&app,session);
+    Ok(())
+}
+
+fn notify_message_change(app:&AppHandle,session:i64) {
+    let _=app.emit("chat-messages-changed",serde_json::json!({"sessionId":session.to_string()}));
+    let _=app.emit("configuration_changed",());
+    let _=app.emit(crate::events::MEMORY_GENERATION_CHANGED,());
+    let _=app.emit(crate::events::EMBEDDING_CHANGED,());
+}
+
+#[tauri::command]
+pub async fn regenerate_last_reply(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,round_id:String)->AppResult<crate::chat::RequestSnapshot> {
+    authorize(&window)?;
+    let (persona,session,round)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&round_id)?);
+    let worker=runtime.inner().clone();let client=worker.ai.clone()?;
+    let (prepared,receipt,memory)=tauri::async_runtime::spawn_blocking(move||crate::chat::regenerate(&worker,persona,session,context.context_revision,round)).await.map_err(|_|AppError::storage())??;
+    tauri::async_runtime::spawn(async move {
+        let result=crate::chat::run_regenerated(&client,prepared,memory,|event|{let _=app.emit("chat-reply",&event);}).await;
+        if result.is_ok() {notify_message_change(&app,session);}
+    });
+    Ok(receipt)
+}
+
+#[tauri::command]
 pub async fn get_last_chat_round(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput)->AppResult<Option<crate::models::RoundSnapshot>> {
     authorize(&window)?;
     let (persona,session)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?);
@@ -195,9 +235,15 @@ pub async fn chat_continue_reply(window:WebviewWindow,app:AppHandle,runtime:Stat
     authorize(&window)?;
     let (persona,session,round)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&round_id)?);
     let worker=runtime.inner().clone();let client=worker.ai.clone()?;
+    let title_runtime = worker.clone();
+    let revision = context.context_revision;
     let (mut prepared,receipt)=tauri::async_runtime::spawn_blocking(move||crate::chat::continue_reply(&worker,persona,session,context.context_revision,round)).await.map_err(|_|AppError::storage())??;
     prepared.set_tool_events(std::sync::Arc::new(ChatToolEvents(app.clone())));
-    tauri::async_runtime::spawn(async move {let _=crate::chat::run_persisted(&client,prepared,|event| {let _=app.emit("chat-reply",&event);}).await;});
+    tauri::async_runtime::spawn(async move {
+        if let Ok(saved) = crate::chat::run_persisted(&client,prepared,|event| {let _=app.emit("chat-reply",&event);}).await {
+            notify_first_title(&app,title_runtime,persona,session,revision,&saved).await;
+        }
+    });
     Ok(receipt)
 }
 impl crate::events::ReminderEventSink for ChatToolEvents {
@@ -236,17 +282,37 @@ pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'
     let session_id = parse_id(&session_id)?;
     let runtime = runtime.inner().clone();
     let client = runtime.ai.clone()?;
+    let title_runtime = runtime.clone();
     let (mut prepared, receipt) = tauri::async_runtime::spawn_blocking(move ||
         crate::chat::submit(&runtime, persona_id, session_id, context_revision, input)
     ).await.map_err(|_| AppError::storage())??;
     prepared.set_tool_events(std::sync::Arc::new(ChatToolEvents(app.clone())));
     tauri::async_runtime::spawn(async move {
         // 界面可能已经关闭；事件发送失败不撤销已经提交的数据库事务。
-        let _ = crate::chat::run_persisted(&client, prepared, |event| {
+        let saved = crate::chat::run_persisted(&client, prepared, |event| {
             let _ = app.emit("chat-reply", &event);
         }).await;
+        if let Ok(saved) = saved {
+            notify_first_title(&app,title_runtime,persona_id,session_id,context_revision,&saved).await;
+        }
     });
     Ok(receipt)
+}
+
+/// 标题失败保留已完成聊天，不切换健康状态；成功仅刷新会话资料。
+async fn notify_first_title(
+    app: &AppHandle,
+    runtime: Runtime,
+    persona_id: i64,
+    session_id: i64,
+    revision: u64,
+    saved: &crate::models::RoundSnapshot,
+) {
+    if saved.round.status != crate::models::ChatRoundStatus::Completed { return; }
+    let Ok(round_id) = parse_id(&saved.round.id) else { return; };
+    if matches!(crate::sessions::generate_first_title(runtime,persona_id,session_id,revision,round_id).await, Ok(true)) {
+        let _ = app.emit("configuration_changed", ());
+    }
 }
 
 #[tauri::command]
@@ -508,10 +574,21 @@ pub async fn set_pet_dragging(
     dragging: bool,
 ) -> AppResult<()> {
     authorize(&window)?;
+    if window.label() != "main" {
+        return Err(AppError::new("PERMISSION_DENIED", "只有主宠窗可以更新拖动状态"));
+    }
+    let position = window.state::<crate::pet_position::WindowPosition>().inner().clone();
+    if dragging { position.begin_drag(&window)?; }
     let worker = runtime.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(dragging)))
+    let result = tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(dragging)))
         .await
-        .map_err(|_| AppError::storage())?
+        .unwrap_or_else(|_| Err(AppError::storage()));
+    if !dragging {
+        let saved = position.finish_drag(&window, runtime.inner().clone()).await;
+        result?;
+        return saved;
+    }
+    result
 }
 #[tauri::command]
 pub async fn refresh_pet_provider(
@@ -667,15 +744,17 @@ pub async fn create_session(
     runtime: State<'_, Runtime>,
     persona_id: String,
     context_revision: u64,
+    user_profile_id: Option<String>,
 ) -> AppResult<crate::models::Session> {
     authorize(&window)?;
     let persona_id = parse_id(&persona_id)?;
+    let user_profile_id = user_profile_id.as_deref().map(parse_id).transpose()?;
     let worker = runtime.inner().clone();
     let requests = worker.requests.clone();
     let (session, context, pet_error) = storage(worker.clone(), move |store, secrets| {
         worker.settle_pet(store, secrets)?;
         let before = validate_persona_context(store, persona_id, context_revision)?;
-        let session = crate::sessions::create(&mut store.connection, persona_id)?;
+        let session = crate::sessions::create_with_profile(&mut store.connection, persona_id, user_profile_id)?;
         memory_management::discard(&worker);
         if let Some(old_session) = before.session_id {
             requests.cancel_key(&format!("chat:{old_session}"));
@@ -750,13 +829,102 @@ pub async fn rename_session(
     authorize(&window)?;
     let persona_id = parse_id(&persona_id)?;
     let session_id = parse_id(&session_id)?;
+    let requests = runtime.requests.clone();
     let session = storage(runtime.inner().clone(), move |store, _| {
         validate_persona_context(store, persona_id, context_revision)?;
-        crate::sessions::rename(&mut store.connection, persona_id, session_id, &title)
+        let session = crate::sessions::rename(&mut store.connection, persona_id, session_id, &title)?;
+        requests.cancel_key(&format!("session-title:{session_id}"));
+        Ok(session)
     })
     .await?;
     let _ = app.emit("configuration_changed", ());
     Ok(session)
+}
+
+#[tauri::command]
+pub async fn delete_session(
+    window: WebviewWindow,
+    app: AppHandle,
+    runtime: State<'_, Runtime>,
+    persona_id: String,
+    session_id: String,
+    context_revision: u64,
+) -> AppResult<crate::models::SessionDeleteResult> {
+    authorize(&window)?;
+    let (persona_id,session_id) = (parse_id(&persona_id)?,parse_id(&session_id)?);
+    let worker = runtime.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move ||
+        crate::sessions::delete_in_context(&worker,persona_id,session_id,context_revision)
+    ).await.map_err(|_|AppError::storage())??;
+    if let Some(error) = outcome.pet_error { let _ = app.emit(crate::events::PET_ACTIVITY_ERROR,&error); }
+    // 仅删除当前项改变上下文，其余删除刷新列表，不打断当前窗口任务。
+    if outcome.context_changed && app.emit("window_context_changed",&outcome.context).is_err() {
+        eprintln!("上下文变化通知发送失败，请刷新窗口");
+    }
+    let _ = app.emit("configuration_changed",());
+    let _ = app.emit(crate::events::MEMORY_GENERATION_CHANGED,());
+    let _ = app.emit(crate::events::EMBEDDING_CHANGED,());
+    Ok(outcome.result)
+}
+
+#[tauri::command]
+pub async fn list_user_profiles(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<Vec<crate::models::UserProfile>> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |store, _| crate::user_profiles::list(&store.connection)).await
+}
+
+#[tauri::command]
+pub async fn create_user_profile(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, name: String, content: String) -> AppResult<crate::models::UserProfile> {
+    authorize(&window)?;
+    let saved = storage(runtime.inner().clone(), move |store, _| {
+        let id = crate::user_profiles::create(&store.connection, &name, &content)?;
+        crate::user_profiles::get(&store.connection, id)
+    }).await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(saved)
+}
+
+fn notify_user_profile_change<T>(app: &AppHandle, outcome: crate::user_profiles::Change<T>) -> AppResult<T> {
+    for session in outcome.sessions {
+        let _ = app.emit("chat-messages-changed", serde_json::json!({"sessionId":session.to_string()}));
+    }
+    let _ = app.emit("configuration_changed", ());
+    outcome.result
+}
+
+#[tauri::command]
+pub async fn update_user_profile(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String, name: String, content: String) -> AppResult<crate::models::UserProfile> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || crate::user_profiles::update_in_runtime(&worker, id, &name, &content))
+        .await.map_err(|_| AppError::storage())??;
+    runtime.memory.wake.notify_one();
+    notify_user_profile_change(&app, outcome)
+}
+
+#[tauri::command]
+pub async fn delete_user_profile(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String) -> AppResult<()> {
+    authorize(&window)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || crate::user_profiles::delete_in_runtime(&worker, id))
+        .await.map_err(|_| AppError::storage())??;
+    runtime.memory.wake.notify_one();
+    notify_user_profile_change(&app, outcome)
+}
+
+#[tauri::command]
+pub async fn set_session_user_profile(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64, user_profile_id: Option<String>) -> AppResult<crate::models::Session> {
+    authorize(&window)?;
+    let persona = parse_id(&persona_id)?;
+    let session = parse_id(&session_id)?;
+    let profile = parse_optional_id(user_profile_id, "userProfileId")?;
+    let worker = runtime.inner().clone();
+    let outcome = tauri::async_runtime::spawn_blocking(move || crate::user_profiles::bind_in_runtime(&worker, persona, session, context_revision, profile))
+        .await.map_err(|_| AppError::storage())??;
+    runtime.memory.wake.notify_one();
+    notify_user_profile_change(&app, outcome)
 }
 
 #[tauri::command]

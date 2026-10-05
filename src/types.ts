@@ -51,6 +51,7 @@ export type ChatContextBudget = {
 };
 /** partialContent 包含续写时已保存的前缀及未保存增量；round 中的消息是数据库记录。 */
 export type ChatRequestSnapshot = {
+  regenerating?: boolean;
   requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
   roundId: RecordId; seq: number; partialContent: string; expression: string | null; round: RoundSnapshot;
   notice?: string | null; budget?: ChatContextBudget | null;
@@ -112,10 +113,13 @@ export type Persona = {
 export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean };
 export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
+export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };
 export type Session = {
   id: RecordId; personaId: RecordId; userProfileId: RecordId | null; title: string;
   memoryRevision: number; intimacy: number; createdAt: string; updatedAt: string; isCurrent: boolean;
 };
+/** 删除提交后的权威选择；null 表示当前人设没有可用会话，不隐式创建。 */
+export type SessionDeleteResult = { currentSessionId: RecordId | null; contextRevision: number };
 export type Message = {
   id: RecordId; sessionId: RecordId; roundId: RecordId | null; role: "user" | "assistant";
   content: string; expression: string | null; createdAt: string;
@@ -177,4 +181,7 @@ export type EmbeddingStatus = {
   unavailable: number;
   running: boolean;
   error: AppError | null;
+};
+export type AutostartStatus = {
+  supported: boolean; enabled: boolean; needsRepair: boolean; blockedBySystem: boolean;
 };

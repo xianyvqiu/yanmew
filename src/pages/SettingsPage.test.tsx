@@ -9,6 +9,7 @@ beforeEach(() => { nav.takeReminderRequest.mockReset().mockResolvedValue(false);
 vi.mock("../components/settings/GeneralPanel", () => ({ default: () => <p>主题表单</p> }));
 vi.mock("../components/settings/ProvidersPanel", () => ({ default: () => <p>提供商表单</p> }));
 vi.mock("../components/settings/PersonasPanel", () => ({ default: () => <p>人设表单</p> }));
+vi.mock("../components/settings/UserProfilePanel", () => ({ default: () => <p>用户设定表单</p> }));
 vi.mock("../components/settings/ReminderPanel", () => ({ default: () => <p>提醒表单</p> }));
 vi.mock("../components/settings/WeatherPanel", () => ({ default: ({ contextRevision }: { contextRevision: number }) => <p>天气表单：{contextRevision}</p> }));
 vi.mock("../components/settings/PetTimingPanel", () => ({ default: () => <p>桌宠计时表单</p> }));
@@ -20,7 +21,7 @@ it("设置窗就绪后消费提醒导航，即使上下文尚未加载也保留�
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("提醒");
 });
 it("桌面导航和窄窗选择器同步切换已开放设置", async () => {
-  const snapshot: WorkspaceContext = { context: { personaId: "1", sessionId: null, contextRevision: 0 }, sessions: [], persona: { id: "1", name: "颜喵", prompt: "", initialPrompt: "", selfEvolveEnabled: false, lastEvolvedAt: null, color: "#777777", chatBgFile: null, chatBgOpacity: 85, chatBgBlur: 0, isActive: true, isBuiltin: true, expressions: null } };
+  const snapshot: WorkspaceContext = { context: { personaId: "1", sessionId: null, contextRevision: 0 }, sessions: [], userProfiles: [], persona: { id: "1", name: "颜喵", prompt: "", initialPrompt: "", selfEvolveEnabled: false, lastEvolvedAt: null, color: "#777777", chatBgFile: null, chatBgOpacity: 85, chatBgBlur: 0, isActive: true, isBuiltin: true, expressions: null } };
   await act(async () => { render(<SettingsPage snapshot={snapshot} loading={false} error="" onRefresh={() => {}} />); });
   expect(screen.getByText("主题表单")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "提供商" }));
@@ -30,6 +31,10 @@ it("桌面导航和窄窗选择器同步切换已开放设置", async () => {
   expect(screen.getByText("主题表单")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "人设" }));
   expect(screen.getByText("人设表单")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "用户设定" }));
+  expect(screen.getByText("用户设定表单")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("设置页面"), { target: { value: "用户设定" } });
+  expect(screen.getByText("用户设定表单")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "提醒" }));
   expect(screen.getByText("提醒表单")).toBeTruthy();
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("提醒");

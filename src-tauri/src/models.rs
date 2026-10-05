@@ -1,5 +1,14 @@
 use serde::Serialize;
 
+/// 删除事务提交后的权威当前选择；没有剩余会话时为 None。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionDeleteResult {
+    pub current_session_id: Option<String>,
+    /// 仅删除当前会话时递增，不相关删除保留当前生成任务。
+    pub context_revision: u64,
+}
+
 /// 短期记忆的整合状态，不表示 AI 生成任务状态。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -223,6 +232,17 @@ pub struct Session {
     pub created_at: String,
     pub updated_at: String,
     pub is_current: bool,
+}
+
+/// 全局用户设定资料，可被多个会话引用，删除仅解除引用。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserProfile {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

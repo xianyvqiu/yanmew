@@ -9,6 +9,7 @@ import GeneralPanel from "../components/settings/GeneralPanel";
 import WeatherPanel from "../components/settings/WeatherPanel";
 import PetTimingPanel from "../components/settings/PetTimingPanel";
 import MemorySettingsPanel from "../components/settings/MemorySettingsPanel";
+import UserProfilePanel from "../components/settings/UserProfilePanel";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import "./workspace.css";
 
@@ -39,7 +40,7 @@ export default function SettingsPage({ snapshot, loading, error, onRefresh }: {
     window.addEventListener("focus", reload);
     return () => { disposed = true; stop?.(); window.removeEventListener("focus", reload); };
   }, []);
-  const enabled = (item: string) => item === "通用" || item === "提供商" || item === "人设" || item === "提醒" || item === "时间与天气" || item === "时间与桌宠" || item === "记忆";
+  const enabled = (item: string) => item === "通用" || item === "提供商" || item === "人设" || item === "用户设定" || item === "提醒" || item === "时间与天气" || item === "时间与桌宠" || item === "记忆";
   return <ResponsiveWindowShell title="设置" subtitle="把日常陪伴，调成你喜欢的样子。"
     contextLabel={snapshot ? `当前人设：${snapshot.persona.name} · ${snapshot.sessions.find(item => item.id === snapshot.context.sessionId)?.title ?? "尚无会话"}` : "正在读取当前人设"}
     loading={loading} error={snapshot ? "" : error} onRetry={onRefresh}
@@ -48,6 +49,6 @@ export default function SettingsPage({ snapshot, loading, error, onRefresh }: {
       <h2>{group.title}</h2>{group.items.map(item => <button key={item} className="ym-button" disabled={!enabled(item)} onClick={() => setPage(item)}
         aria-current={item === page ? "page" : undefined} title={!enabled(item) ? "尚未开放" : undefined}>{item}{!enabled(item) && " · 未开放"}</button>)}
     </div>)}</nav></>}>
-    {snapshot && <div className="ym-workspace-page">{navigationError && <p role="alert" className="ym-page-error">提醒页面跳转失败：{navigationError}，可从左侧选择“提醒”。</p>}{error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}{page === "提供商" ? <ProvidersPanel /> : page === "人设" ? <PersonasPanel /> : page === "提醒" ? <ReminderPanel /> : page === "时间与天气" ? <WeatherPanel key={snapshot.context.contextRevision} contextRevision={snapshot.context.contextRevision} /> : page === "时间与桌宠" ? <PetTimingPanel /> : page === "记忆" ? <MemorySettingsPanel /> : <GeneralPanel />}</div>}
+    {snapshot && <div className="ym-workspace-page">{navigationError && <p role="alert" className="ym-page-error">提醒页面跳转失败：{navigationError}，可从左侧选择“提醒”。</p>}{error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}{page === "提供商" ? <ProvidersPanel /> : page === "人设" ? <PersonasPanel /> : page === "用户设定" ? <UserProfilePanel /> : page === "提醒" ? <ReminderPanel /> : page === "时间与天气" ? <WeatherPanel key={snapshot.context.contextRevision} contextRevision={snapshot.context.contextRevision} /> : page === "时间与桌宠" ? <PetTimingPanel /> : page === "记忆" ? <MemorySettingsPanel /> : <GeneralPanel />}</div>}
   </ResponsiveWindowShell>;
 }

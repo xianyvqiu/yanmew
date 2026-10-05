@@ -2,6 +2,7 @@ use std::io;
 pub mod ai;
 pub mod chat;
 mod chat_capacity;
+mod autostart;
 mod commands;
 mod desktop_windows;
 mod config;
@@ -25,6 +26,7 @@ pub mod travel_journal_tools;
 mod persona;
 pub mod pet;
 mod pet_region;
+mod pet_position;
 pub mod pet_store;
 mod platform;
 mod providers;
@@ -32,6 +34,7 @@ pub mod reminders;
 pub mod reminder_extract;
 mod runtime;
 pub mod sessions;
+mod user_profiles;
 pub mod state;
 
 use tauri::{
@@ -47,6 +50,9 @@ pub(crate) fn show_pet_window(app: &AppHandle) -> Result<(), Box<dyn std::error:
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
 
     pet_region::enforce_frameless(&window).map_err(io::Error::other)?;
+    if let Err(error) = app.state::<pet_position::WindowPosition>().ensure_visible(&window, true) {
+        pet_position::report(app, &error);
+    }
     window.show()?;
     window.unminimize()?;
     window.set_focus()?;
@@ -64,9 +70,12 @@ pub fn run() {
     );
     tauri::Builder::default()
         .manage(runtime)
+        .manage(pet_position::WindowPosition::default())
         .manage(desktop_windows::SettingsNavigation::default())
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
+            autostart::get_autostart_status,
+            autostart::set_autostart,
             commands::list_embedding_providers,
             commands::save_embedding_provider,
             commands::delete_embedding_provider,
@@ -111,9 +120,18 @@ pub fn run() {
             commands::get_configuration_status,
             commands::get_current_context,
             commands::list_sessions,
+            commands::list_user_profiles,
+            commands::create_user_profile,
+            commands::update_user_profile,
+            commands::delete_user_profile,
+            commands::set_session_user_profile,
             commands::create_session,
             commands::set_active_session,
             commands::rename_session,
+            commands::delete_session,
+            commands::update_chat_message,
+            commands::delete_tail_message,
+            commands::regenerate_last_reply,
             commands::list_messages,
             commands::get_settings,
             commands::get_settings_defaults,
@@ -139,11 +157,17 @@ pub fn run() {
             commands::set_active_persona
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            app.handle().plugin(tauri_plugin_autostart::Builder::new()
+                .app_name(autostart::ENTRY_NAME).build())?;
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
             pet_region::enforce_frameless(&window).map_err(io::Error::other)?;
             let runtime = app.state::<runtime::Runtime>().inner().clone();
+            if let Err(error) = app.state::<pet_position::WindowPosition>().restore(&window, &runtime) {
+                pet_position::report(app.handle(), &error);
+            }
             tauri::async_runtime::spawn(jobs::run(
                 runtime,
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
@@ -199,6 +223,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("启动颜喵失败")
         .run(|app, event| {
+            if let tauri::RunEvent::WindowEvent { label, event, .. } = &event {
+                if label == "main" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        if let Err(error) = app.state::<pet_position::WindowPosition>()
+                            .handle(&window, event, app.state::<runtime::Runtime>().inner()) {
+                            pet_position::report(app, &error);
+                        }
+                    }
+                }
+            }
             // 原生销毁窗口不保证执行前端卸载回调，主动取消设置页的天气请求。
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "settings") {
                 app.state::<runtime::Runtime>().requests.cancel_key("weather");
@@ -215,6 +249,10 @@ pub fn run() {
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
+                if let Err(error) = app.state::<pet_position::WindowPosition>()
+                    .flush_exit(app.state::<runtime::Runtime>().inner()) {
+                    pet_position::report(app, &error);
+                }
                 if let Err(error) = app.state::<runtime::Runtime>().shutdown() {
                     eprintln!("退出前保存桌宠状态失败：{error}");
                 }

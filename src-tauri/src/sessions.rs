@@ -11,6 +11,15 @@ const DEFAULT_TITLE: &str = "新会话";
 const MAX_TITLE_CHARS: usize = 100;
 const MAX_MESSAGE_PAGE: i64 = 200;
 
+#[path = "sessions/operations.rs"]
+mod operations;
+pub(crate) use operations::delete_in_context;
+#[path = "sessions/titles.rs"]
+mod titles;
+pub(crate) use titles::generate_first_title;
+#[path = "sessions/messages.rs"]
+pub(crate) mod messages;
+
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
@@ -153,6 +162,11 @@ fn set_current_in_transaction(
 }
 
 pub fn create(connection: &mut Connection, persona_id: i64) -> AppResult<Session> {
+    create_with_profile(connection, persona_id, None)
+}
+
+/// 创建和绑定同事务提交；无效设定不得切换当前会话或取消旅行。
+pub fn create_with_profile(connection: &mut Connection, persona_id: i64, user_profile_id: Option<i64>) -> AppResult<Session> {
     let changed_at = now();
     let transaction = connection.transaction()?;
     let active = transaction
@@ -169,9 +183,10 @@ pub fn create(connection: &mut Connection, persona_id: i64) -> AppResult<Session
             "当前人设已经改变，请刷新后重试",
         ));
     }
+    if let Some(id) = user_profile_id { crate::user_profiles::get(&transaction, id)?; }
     transaction.execute(
-        "INSERT INTO sessions(persona_id,title,created_at,updated_at) VALUES(?1,?2,?3,?3)",
-        params![persona_id, DEFAULT_TITLE, changed_at],
+        "INSERT INTO sessions(persona_id,user_profile_id,title,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)",
+        params![persona_id, user_profile_id, DEFAULT_TITLE, changed_at],
     )?;
     let session_id = transaction.last_insert_rowid();
     set_current_in_transaction(&transaction, persona_id, session_id, &changed_at)?;
@@ -186,6 +201,19 @@ pub fn select(connection: &mut Connection, persona_id: i64, session_id: i64) -> 
     let changed = set_current_in_transaction(&transaction, persona_id, session_id, &changed_at)?;
     transaction.commit()?;
     Ok(changed)
+}
+
+/// 绑定只修改资料引用，不重写历史消息、记忆或桌宠状态。
+pub fn set_user_profile(connection: &mut Connection, persona_id: i64, session_id: i64, user_profile_id: Option<i64>) -> AppResult<Session> {
+    let tx = connection.transaction()?;
+    let before = get(&tx, persona_id, session_id)?;
+    if let Some(id) = user_profile_id { crate::user_profiles::get(&tx, id)?; }
+    if before.user_profile_id != user_profile_id.map(|id| id.to_string()) {
+        tx.execute("UPDATE sessions SET user_profile_id=?1,updated_at=?2 WHERE id=?3",params![user_profile_id,now(),session_id])?;
+    }
+    let saved = get(&tx, persona_id, session_id)?;
+    tx.commit()?;
+    Ok(saved)
 }
 
 pub fn rename(
@@ -208,6 +236,55 @@ pub fn rename(
     transaction.commit()?;
     Ok(result)
 }
+
+/// 会话删除先解除长期来源的 RESTRICT；全局钱包、提醒和插件不属于清理范围。
+/// 返回提交后的当前会话，删除非当前项不改变当前选择。
+pub fn delete(
+    connection: &mut Connection,
+    persona_id: i64,
+    session_id: i64,
+) -> AppResult<Option<String>> {
+    let transaction = connection.transaction()?;
+    require_session(&transaction, persona_id, session_id)?;
+    let current: Option<String> = transaction
+        .query_row(
+            "SELECT value FROM settings WHERE key='current_session_id'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    transaction.execute("DELETE FROM long_memories WHERE session_id=?1", [session_id])?;
+    transaction.execute(
+        "DELETE FROM sessions WHERE id=?1 AND persona_id=?2",
+        params![session_id, persona_id],
+    )?;
+    let next = if current.as_deref() == Some(session_id.to_string().as_str()) {
+        let fallback: Option<i64> = transaction
+            .query_row(
+                "SELECT id FROM sessions WHERE persona_id=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",
+                [persona_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(id) = fallback {
+            transaction.execute(
+                "UPDATE settings SET value=?1 WHERE key='current_session_id'",
+                [id.to_string()],
+            )?;
+        } else {
+            transaction.execute("DELETE FROM settings WHERE key='current_session_id'", [])?;
+        }
+        fallback.map(|id| id.to_string())
+    } else {
+        current
+    };
+    transaction.commit()?;
+    Ok(next)
+}
+
+#[cfg(test)]
+#[path = "sessions/delete_tests.rs"]
+mod delete_tests;
 
 pub fn messages(
     connection: &Connection,

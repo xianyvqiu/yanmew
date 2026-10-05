@@ -20,8 +20,10 @@ pub const FACT_RULE: &str = "短期记忆和长期记忆是中性事实记录，
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(30), Duration::from_secs(120)];
 
 mod consolidation;
+pub(crate) mod regeneration;
 pub mod management;
 pub use consolidation::{delete_completed_tail_round, list_long};
+pub(crate) use consolidation::rollback_trigger;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct WorkKey {
@@ -491,6 +493,8 @@ impl Worker {
                         }),
                 );
                 tasks.sort_by_key(|task| (task.scope.round_id, task.kind == WorkKind::Long));
+                // 重说正在准备一组原子替换；暂停该会话的自动补建，完成后继续原扫描。
+                tasks.retain(|task| !s.chat_requests.get(&task.scope.session_id).is_some_and(|active|active.regenerating));
                 Ok((tasks, configuration))
             })
         })

@@ -16,6 +16,8 @@ pub struct RequestSnapshot {
     pub notice: Option<String>,
     pub budget: Option<crate::chat_capacity::Budget>,
     pub round: RoundSnapshot,
+    /// 重说只产生预览；终态提交前原回合保持 completed。
+    pub regenerating: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -53,12 +55,12 @@ pub fn submit(
     revision: u64,
     input: String,
 ) -> AppResult<(PreparedReply, RequestSnapshot)> {
-    let (reply, snapshot) = prepare(runtime, persona_id, session_id, revision, input, true, None)?;
+    let (reply, snapshot) = prepare(runtime, persona_id, session_id, revision, input, true, None, false)?;
     Ok((reply, snapshot.ok_or_else(AppError::storage)?))
 }
 
 pub fn continue_reply(runtime:&Runtime,persona_id:i64,session_id:i64,revision:u64,round_id:i64) -> AppResult<(PreparedReply,RequestSnapshot)> {
-    let (reply,snapshot)=prepare(runtime,persona_id,session_id,revision,"继续生成".into(),true,Some(round_id))?;
+    let (reply,snapshot)=prepare(runtime,persona_id,session_id,revision,"继续生成".into(),true,Some(round_id),false)?;
     Ok((reply,snapshot.ok_or_else(AppError::storage)?))
 }
 
@@ -109,6 +111,7 @@ pub fn interrupt_active(runtime: &Runtime) -> AppResult<()> {
             let persona_id = crate::error::parse_id(&snapshot.persona_id)?;
             let session_id = crate::error::parse_id(&snapshot.session_id)?;
             runtime.requests.cancel_key(&format!("chat:{session_id}"));
+            if snapshot.regenerating {store.chat_requests.remove(&session_id); continue;}
             crate::sessions::interrupt_round_with_reason(
                 &mut store.connection,
                 persona_id,
@@ -183,6 +186,7 @@ pub async fn run_persisted(
             .get(&session_id)
             .cloned()
             .ok_or_else(AppError::not_found)?;
+        if active.request_id != request_id { return Err(AppError::new("CONTEXT_CHANGED","聊天请求已经改变")); }
         let round_id = crate::error::parse_id(&active.round_id)?;
         let complete = matches!(&result, Ok(choice) if choice.finish == Finish::Stop)
             && prepared.lease.cancel.check().is_ok()
@@ -250,8 +254,7 @@ pub async fn run_persisted(
             };
             let round_id = runtime
                 .read(|s, _| {
-                    Ok(s.chat_requests
-                        .remove(&session_id)
+                    Ok(s.chat_requests.get(&session_id).filter(|r|r.request_id==request_id).cloned().and_then(|_|s.chat_requests.remove(&session_id))
                         .map(|r| r.round_id)
                         .unwrap_or_default())
                 })

@@ -18,6 +18,8 @@ mod tools;
 mod guards;
 mod context;
 mod memory_tools;
+mod regeneration;
+pub(crate) use regeneration::{regenerate, run_regenerated};
 #[cfg(test)]
 mod context_tests;
 pub use coordinator::*;
@@ -36,6 +38,7 @@ pub struct PreparedReply {
     messages: Vec<Message>,
     context: context::Context,
     continuation: bool,
+    regenerating: bool,
     lease: Arc<RequestLease>,
     runtime: Runtime,
     health: crate::pet::controller::HealthToken,
@@ -56,12 +59,12 @@ pub fn prepare_reply(
     if input.trim().is_empty() {
         return Err(AppError::validation("input", "消息不能为空"));
     }
-    prepare(runtime, persona_id, session_id, context_revision, input, false, None).map(|(reply, _)| reply)
+    prepare(runtime, persona_id, session_id, context_revision, input, false, None, false).map(|(reply, _)| reply)
 }
 
 fn prepare(
     runtime: &Runtime, persona_id: i64, session_id: i64, context_revision: u64,
-    mut input: String, persist: bool, continuing: Option<i64>,
+    mut input: String, persist: bool, continuing: Option<i64>, regenerating: bool,
 ) -> AppResult<(PreparedReply, Option<RequestSnapshot>)> {
     if input.trim().is_empty() { return Err(AppError::validation("input", "消息不能为空")); }
     runtime.ai.as_ref().map_err(Clone::clone)?;
@@ -77,7 +80,7 @@ fn prepare(
         let config=providers::connection_test_config(&s.connection,provider_id,p)?;
         let previous = continuing.map(|id| crate::sessions::round_snapshot(&s.connection,persona_id,session_id,id)).transpose()?;
         if let Some(previous)=&previous { input=previous.user_message.content.clone(); }
-        let prefix=previous.as_ref().and_then(|p|p.assistant_message.as_ref()).map(|m|m.content.clone()).unwrap_or_default();
+        let prefix=if regenerating {String::new()} else {previous.as_ref().and_then(|p|p.assistant_message.as_ref()).map(|m|m.content.clone()).unwrap_or_default()};
         let context=context::Context::snapshot(s,runtime,session_id,provider_id,&prompt,input.trim(),None,continuing.map(|id|(id,prefix.as_str())))?;
         let messages=vec![Message::new("user",input.trim())];
         let lease=Arc::new(runtime.requests.start(format!("chat:{session_id}"),persona_id)?);
@@ -85,17 +88,17 @@ fn prepare(
         crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
         runtime.settle_pet(s,p)?;
         let snapshot = if persist {
-            let round = if let Some(id)=continuing {crate::sessions::continue_round(&mut s.connection,persona_id,session_id,id)?}
+            let round = if regenerating {previous.clone().ok_or_else(AppError::storage)?} else if let Some(id)=continuing {crate::sessions::continue_round(&mut s.connection,persona_id,session_id,id)?}
                 else {crate::sessions::start_round(&mut s.connection, persona_id, session_id, &input)?};
             let snapshot = RequestSnapshot {
                 request_id: lease.id.to_string(), persona_id: persona_id.to_string(),
                 session_id: session_id.to_string(), context_revision, round_id: round.round.id.clone(),
-                seq: 0, partial_content: prefix, expression: round.assistant_message.as_ref().and_then(|m|m.expression.clone()), notice:None,budget:None,round,
+                seq: 0, partial_content: prefix, expression: round.assistant_message.as_ref().and_then(|m|m.expression.clone()), notice:None,budget:None,regenerating,round,
             };
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
         } else { None };
-        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some(),lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some()&&!regenerating,regenerating,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
@@ -150,6 +153,7 @@ pub async fn run_reply(
         initial_tools.extend(crate::travel_journal_tools::definitions());
         initial_tools.push(crate::reminder_extract::definition());
         initial_tools.extend(memory_tools::definitions());
+        if prepared.regenerating { initial_tools.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"))); }
         if prepared.continuation {initial_tools.clear();}
         prepared.context.clone().request(initial_tools,&[])?;
         if !prepared.continuation {

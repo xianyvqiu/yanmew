@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useChat } from "./useChat";
 import type { ChatContextBudget, ChatReplyEvent, ChatRequestSnapshot, CurrentContext, RoundSnapshot } from "../types";
 
-const api = vi.hoisted(() => ({ listen: vi.fn(), current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), submit: vi.fn(), cancel: vi.fn(), messages: vi.fn() }));
+const api = vi.hoisted(() => ({ listen: vi.fn(), listenMessages: vi.fn().mockResolvedValue(()=>{}),edit:vi.fn(),deleteTail:vi.fn(),regenerate:vi.fn(),current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), submit: vi.fn(), cancel: vi.fn(), messages: vi.fn() }));
 vi.mock("../api", () => ({ chatApi: api, sessionApi: api, errorMessage: (error: Error) => error.message }));
 const context: CurrentContext = { personaId: "1", sessionId: "1", contextRevision: 1 };
 const round: RoundSnapshot = {
@@ -24,6 +24,7 @@ function event(payload: { type: "text"; text: string } | { type: "finished"; fin
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  api.edit.mockReset();api.deleteTail.mockReset();api.regenerate.mockReset();
   api.listen.mockImplementation(async callback => { receive = callback; return stop; });
   api.current.mockResolvedValue(null); api.submit.mockResolvedValue(receipt); api.cancel.mockResolvedValue(round);
   api.lastRound.mockResolvedValue(null); api.continue.mockResolvedValue(receipt);
@@ -47,6 +48,8 @@ it("回执前的事件完整重放，重复事件与旧上下文不污染正文"
   await act(async () => { pending.resolve(receipt); await send; });
   expect(hook.result.current.active?.partialContent).toBe("你好");
   expect(hook.result.current.messages).toHaveLength(1);
+  api.messages.mockResolvedValue({items:[saved.userMessage,saved.assistantMessage!],nextAfterId:null});
+  api.lastRound.mockResolvedValue(saved);
   act(() => receive(event({ type: "finished", finish: "stop" }, 3, saved)));
   await waitFor(() => expect(hook.result.current.busy).toBe(false));
   expect(hook.result.current.messages.map(message => message.content)).toEqual(["你好", "你好喵"]);
@@ -245,4 +248,43 @@ it.each([
   expect(hook.result.current.busy).toBe(false);
   await act(async () => { expect(await hook.result.current.continueReply()).toBe(false); });
   expect(api.continue).not.toHaveBeenCalled();
+});
+
+it("删除后权威重读清理旧列表且拒绝迟到终态",async()=>{
+  api.messages.mockResolvedValue({items:[saved.userMessage,saved.assistantMessage!],nextAfterId:null});
+  api.lastRound.mockResolvedValue(saved);
+  api.current.mockResolvedValue({...receipt,round:saved,partialContent:"预览",regenerating:true});
+  const hook=renderHook(()=>useChat(context));
+  await waitFor(()=>expect(hook.result.current.ready).toBe(true));
+  api.deleteTail.mockImplementation(async()=>{api.messages.mockResolvedValue({items:[],nextAfterId:null});api.lastRound.mockResolvedValue(null);api.current.mockResolvedValue(null);});
+  await act(async()=>{expect(await hook.result.current.deleteTail(saved.assistantMessage!)).toBe(true);});
+  act(()=>receive(event({type:"finished",finish:"stop"},3,saved)));
+  expect(hook.result.current.messages).toEqual([]);
+  expect(hook.result.current.busy).toBe(false);
+});
+it("取消重说等待终态，保留完整原回合和旧正文",async()=>{
+  api.messages.mockResolvedValue({items:[saved.userMessage,saved.assistantMessage!],nextAfterId:null});api.lastRound.mockResolvedValue(saved);
+  api.regenerate.mockResolvedValue({...receipt,round:saved,regenerating:true});api.cancel.mockResolvedValue(saved);
+  const hook=renderHook(()=>useChat(context));
+  await waitFor(()=>expect(hook.result.current.ready).toBe(true));
+  await act(async()=>{expect(await hook.result.current.regenerateReply()).toBe(true);});
+  act(()=>receive(event({type:"text",text:"新预览"},1)));
+  await act(async()=>{await hook.result.current.cancel();});
+  expect(hook.result.current.busy).toBe(true);
+  expect(hook.result.current.cancelling).toBe(true);
+  expect(hook.result.current.messages.find(message=>message.id==="21")?.content).toBe("你好喵");
+  await act(async()=>receive({...event({type:"finished",finish:"stop"},2,saved),type:"cancelled"}));
+  expect(hook.result.current.busy).toBe(false);
+  expect(hook.result.current.notice).toContain("原回复和记忆保留");
+});
+it("编辑失败不改原消息，成功保留原ID并刷新尾轮",async()=>{
+  api.messages.mockResolvedValue({items:[saved.userMessage,saved.assistantMessage!],nextAfterId:null});api.lastRound.mockResolvedValue(saved);
+  const hook=renderHook(()=>useChat(context));await waitFor(()=>expect(hook.result.current.ready).toBe(true));
+  api.edit.mockRejectedValueOnce(new Error("消息已改变"));
+  await act(async()=>{expect(await hook.result.current.editMessage(saved.userMessage,"编辑后的原文")).toBe(false);});
+  expect(hook.result.current.messages[0].content).toBe("你好");
+  const changed={...saved,userMessage:{...saved.userMessage,content:"编辑后的原文"}};
+  api.edit.mockResolvedValue(changed.userMessage);api.lastRound.mockResolvedValue(changed);
+  await act(async()=>{expect(await hook.result.current.editMessage(saved.userMessage,"编辑后的原文")).toBe(true);});
+  expect(hook.result.current.messages[0]).toEqual(changed.userMessage);
 });

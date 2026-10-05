@@ -129,9 +129,9 @@ impl Context {
         }
         // 预检索的位置始终在最近长期之后、短期之前，由 enrich 注入。
         let boundary = raw.first().map(|v| v.0).unwrap_or(i64::MAX);
-        let mut q = c.prepare("SELECT m.id,m.content,m.created_at FROM short_memories m WHERE m.session_id=?1 AND m.integration_state='pending' AND NOT (EXISTS(SELECT 1 FROM messages WHERE round_id=m.round_id AND role='user' AND id>=?2) AND EXISTS(SELECT 1 FROM messages WHERE round_id=m.round_id AND role='assistant' AND id>=?2)) ORDER BY m.round_id,m.id")?;
+        let mut q = c.prepare("SELECT m.id,m.content,m.created_at FROM short_memories m WHERE m.session_id=?1 AND m.integration_state='pending' AND (?3 IS NULL OR m.round_id<>?3) AND NOT (EXISTS(SELECT 1 FROM messages WHERE round_id=m.round_id AND role='user' AND id>=?2) AND EXISTS(SELECT 1 FROM messages WHERE round_id=m.round_id AND role='assistant' AND id>=?2)) ORDER BY m.round_id,m.id")?;
         let shorts = q
-            .query_map(params![session, boundary], |r| {
+            .query_map(params![session, boundary, continuation.map(|v|v.0)], |r| {
                 Ok((
                     r.get::<_, i64>(0)?,
                     r.get::<_, String>(1)?,
@@ -178,12 +178,14 @@ impl Context {
         }
         result.push("user", input, None);
         if let Some((_, prefix)) = continuation {
+            if !prefix.is_empty() {
             result.push("assistant", prefix, None);
             result.push(
                 "system",
                 "请仅续写已有回复尚未完成的部分，不重新开头，不复述已有文字，不执行工具或新操作。",
                 None,
             );
+            }
         }
         Ok(result)
     }

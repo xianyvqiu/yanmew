@@ -81,6 +81,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     definitions.extend(crate::travel_journal_tools::definitions());
     definitions.push(crate::reminder_extract::definition());
     definitions.extend(memory_tools::definitions());
+    if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"))); }
     if prepared.continuation {definitions.clear();}
     let mut content = String::new();
     let rounds=if prepared.continuation {0} else {rounds};
@@ -126,6 +127,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         let mut results=Vec::new();
         let mut observations = Vec::new();
         for call in choice.tools {
+                if prepared.regenerating && matches!(call.name.as_str(),"update_notebook"|"create_reminder") {return Err(AppError::new("PERMISSION_DENIED","重说不执行记事本写入或提醒创建，旧操作保持不变"));}
                 let result=if matches!(call.name.as_str(),"search_long_memories"|"open_long_memory"|"open_long_memory_sources"|"open_chat_round") {
                     match session.check_call(&call) {
                         Ok(())=>memory_tools::execute(&session.runtime,&session.lease,session.persona_id,session.session_id,session.revision,&call).await,

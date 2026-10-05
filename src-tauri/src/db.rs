@@ -109,8 +109,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
         "INSERT OR IGNORE INTO user_state(id,coins,updated_at) VALUES (1,0,?1)",
         [chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)],
     )?;
-    tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin) SELECT '喵喵桌宠',?1,?1,1 WHERE NOT EXISTS(SELECT 1 FROM personas WHERE is_builtin=1)",["你是喵喵桌宠，用自然、亲切的中文与用户交流。"])?;
-    tx.execute("UPDATE personas SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM personas WHERE is_active=1)",[])?;
+    seed_default_persona(&tx)?;
     tx.execute("INSERT INTO embedding_providers(name,kind,model,is_builtin) SELECT '内置中文 Embedding','local','BAAI/bge-small-zh-v1.5',1 WHERE NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_builtin=1)",[])?;
     tx.execute("UPDATE embedding_providers SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_active=1)",[])?;
     // current_session_id 无外键；启动时只保留归属当前人设的有效会话。
@@ -139,9 +138,68 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// 种子在初始化事务内维护；保留用户修改过的名称、正文和初始设定。
+fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
+    const NAME: &str = "电子小猫";
+    const PROMPT: &str = "你是电子小猫，用自然、亲切的中文与用户交流。";
+    const OLD_PROMPT: &str = "你是喵喵桌宠，用自然、亲切的中文与用户交流。";
+    let count: i64 = tx.query_row(
+        "SELECT count(*) FROM personas WHERE is_builtin=1", [], |r| r.get(0),
+    )?;
+    if count > 1 {
+        return Err(AppError::new("STORAGE_ERROR", "存在多个系统默认人设，数据不一致；请保留原数据并检查备份"));
+    }
+    if count == 0 {
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin) VALUES(?1,?2,?2,1)", params![NAME, PROMPT])?;
+    } else {
+        // 只替换上一版种子的原值；三项独立判断，不覆盖手动编辑或人设自调。
+        tx.execute("UPDATE personas SET name=CASE WHEN name='喵喵桌宠' THEN ?1 ELSE name END,
+            prompt=CASE WHEN prompt=?3 THEN ?2 ELSE prompt END,
+            initial_prompt=CASE WHEN initial_prompt=?3 THEN ?2 ELSE initial_prompt END
+            WHERE is_builtin=1", params![NAME, PROMPT, OLD_PROMPT])?;
+    }
+    tx.execute("UPDATE personas SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM personas WHERE is_active=1)",[])?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_persona_is_idempotent_and_missing_builtin_is_seeded() {
+        let mut c = memory();
+        initialize(&mut c).unwrap();
+        let initial: (String, String, bool) = c.query_row("SELECT name,prompt,is_active FROM personas WHERE is_builtin=1", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+        assert_eq!(initial, ("电子小猫".into(), "你是电子小猫，用自然、亲切的中文与用户交流。".into(), true));
+        assert_eq!(c.query_row("SELECT count(*) FROM personas", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
+        c.execute_batch("UPDATE personas SET is_active=0; INSERT INTO personas(name,prompt,initial_prompt,is_active) VALUES('我的人设','内容','初始',1); DELETE FROM personas WHERE is_builtin=1;").unwrap();
+        initialize(&mut c).unwrap();
+        assert_eq!(c.query_row("SELECT count(*) FROM personas WHERE is_builtin=1", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(c.query_row("SELECT name FROM personas WHERE is_active=1", [], |r| r.get::<_,String>(0)).unwrap(), "我的人设");
+        assert_eq!(c.query_row("SELECT count(*) FROM sessions", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn default_persona_updates_seed_values_but_preserves_user_edits() {
+        let mut c = memory();
+        c.execute("UPDATE personas SET name='喵喵桌宠',prompt=?1,initial_prompt=?1 WHERE is_builtin=1", ["你是喵喵桌宠，用自然、亲切的中文与用户交流。"]).unwrap();
+        initialize(&mut c).unwrap();
+        assert_eq!(c.query_row("SELECT name FROM personas WHERE is_builtin=1", [], |r| r.get::<_,String>(0)).unwrap(), "电子小猫");
+        c.execute("UPDATE personas SET name='自己起的名字',prompt='我编辑的正文',initial_prompt='我编辑的初始设定' WHERE is_builtin=1", []).unwrap();
+        initialize(&mut c).unwrap();
+        let values: (String,String,String) = c.query_row("SELECT name,prompt,initial_prompt FROM personas WHERE is_builtin=1", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+        assert_eq!(values, ("自己起的名字".into(), "我编辑的正文".into(), "我编辑的初始设定".into()));
+    }
+
+    #[test]
+    fn default_persona_inconsistent_duplicates_fail_without_deleting_data() {
+        let mut c = memory();
+        c.execute_batch("DROP INDEX idx_personas_one_builtin; INSERT INTO personas(name,prompt,initial_prompt,is_builtin) VALUES('第二个内置','保留','保留',1); DELETE FROM settings WHERE key='hungry_minutes';").unwrap();
+        assert!(initialize(&mut c).unwrap_err().message.contains("多个系统默认人设"));
+        assert_eq!(c.query_row("SELECT count(*) FROM personas WHERE is_builtin=1", [], |r| r.get::<_,i64>(0)).unwrap(), 2);
+        assert_eq!(c.query_row("SELECT count(*) FROM settings WHERE key='hungry_minutes'", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
+    }
 
     fn version_three_fixture() -> Connection {
         let connection = memory();

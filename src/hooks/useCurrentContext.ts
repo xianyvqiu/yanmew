@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { configurationApi, errorMessage, sessionApi } from "../api";
-import type { CurrentContext, Persona, Session } from "../types";
+import { configurationApi, errorMessage, sessionApi, userProfileApi } from "../api";
+import type { CurrentContext, Persona, Session, UserProfile } from "../types";
 
-export type WorkspaceContext = { context: CurrentContext; persona: Persona; sessions: Session[] };
+export type WorkspaceContext = { context: CurrentContext; persona: Persona; sessions: Session[]; userProfiles: UserProfile[] };
 
 /** 先订阅后查询，所有关联数据按同一上下文版本发布，窗口聚焦补偿丢失事件。 */
 export function useCurrentContext() {
@@ -24,7 +24,7 @@ export function useCurrentContext() {
         const context = await configurationApi.getCurrentContext();
         if (disposed || token !== generation) return;
         newestRevision = Math.max(newestRevision, context.contextRevision);
-        const [personas, sessions] = await Promise.all([configurationApi.listPersonas(), sessionApi.list(context)]);
+        const [personas, sessions, userProfiles] = await Promise.all([configurationApi.listPersonas(), sessionApi.list(context), userProfileApi.list()]);
         const check = await configurationApi.getCurrentContext();
         if (disposed || token !== generation) return;
         if (check.contextRevision !== context.contextRevision || context.contextRevision < newestRevision) {
@@ -32,7 +32,7 @@ export function useCurrentContext() {
         }
         const persona = personas.find(item => item.id === context.personaId);
         if (!persona) throw new Error("当前人设不存在，请刷新后重试");
-        setSnapshot({ context, persona, sessions });
+        setSnapshot({ context, persona, sessions, userProfiles });
       } catch (cause) { if (!disposed && token === generation) setError(errorMessage(cause)); }
       finally { if (!disposed && token === generation) setLoading(false); }
     };

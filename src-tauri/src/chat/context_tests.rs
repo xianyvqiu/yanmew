@@ -8,6 +8,25 @@ fn runtime(url: &str) -> Runtime {
     runtime.embedding = Arc::new(crate::embedding::Engine::new(Err(AppError::storage())));
     runtime
 }
+
+#[test]
+fn user_profile_runtime_context_uses_complete_bound_content_and_stops_after_unbinding() {
+    let runtime = runtime("http://127.0.0.1:1");
+    let content = "我的完整设定\n".repeat(4_000);
+    let id = runtime.read(|s, _| crate::user_profiles::create(&s.connection, "背景", &content)).unwrap();
+    crate::user_profiles::bind_in_runtime(&runtime, 1, 1, 0, Some(id)).unwrap().result.unwrap();
+    let messages = runtime.read(|s, _| {
+        let mut context = super::context::Context::snapshot(s, &runtime, 1, 1, "人设", "输入", None, None)?;
+        Ok(context.request(vec![], &[])?.0.messages)
+    }).unwrap();
+    assert!(messages.iter().any(|m| m.content == format!("绑定的用户设定：\n{}", content.trim())));
+    crate::user_profiles::bind_in_runtime(&runtime, 1, 1, 0, None).unwrap().result.unwrap();
+    let messages = runtime.read(|s, _| {
+        let mut context = super::context::Context::snapshot(s, &runtime, 1, 1, "人设", "输入", None, None)?;
+        Ok(context.request(vec![], &[])?.0.messages)
+    }).unwrap();
+    assert!(!messages.iter().any(|m| m.content.starts_with("绑定的用户设定：")));
+}
 fn tool_response(name: &str, args: Value) -> Response {
     Response::sse(
         &(event(

@@ -223,9 +223,124 @@ pub fn save(conn: &mut Connection, changes: Settings) -> AppResult<Settings> {
     Ok(merged)
 }
 
+/// 内部窗口物理坐标不经过全局设置接口；残缺或无效坐标保留原值并回退默认定位。
+pub fn get_window_position(c: &Connection) -> AppResult<Option<(i32, i32)>> {
+    let (x, y): (Option<String>, Option<String>) = c.query_row(
+        "SELECT (SELECT value FROM settings WHERE key='window_pos_x'),
+                (SELECT value FROM settings WHERE key='window_pos_y')",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let coordinate = |value: Option<String>| {
+        let value = value?;
+        let number = value.parse::<i32>().ok()?;
+        (number.to_string() == value).then_some(number)
+    };
+    Ok(coordinate(x).zip(coordinate(y)))
+}
+
+pub fn save_window_position(c: &mut Connection, position: (i32, i32)) -> AppResult<()> {
+    let tx = c.transaction()?;
+    for (key, value) in [("window_pos_x", position.0), ("window_pos_y", position.1)] {
+        tx.execute(
+            "INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![key, value.to_string()],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn window_position_missing_partial_and_invalid_values_fall_back_without_deletion() {
+        let mut c = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut c).unwrap();
+        assert_eq!(get_window_position(&c).unwrap(), None);
+        for key in ["window_pos_x", "window_pos_y"] {
+            c.execute("DELETE FROM settings WHERE key IN ('window_pos_x','window_pos_y')", []).unwrap();
+            c.execute("INSERT INTO settings(key,value) VALUES (?1,'-20')", [key]).unwrap();
+            assert_eq!(get_window_position(&c).unwrap(), None);
+        }
+        for key in ["window_pos_x", "window_pos_y"] {
+            for invalid in ["", " ", "01", "-01", "-0", "+1", " 1", "1 ", "1.5", "abc", "2147483648", "-2147483649"] {
+                save_window_position(&mut c, (-20, 30)).unwrap();
+                c.execute("UPDATE settings SET value=?1 WHERE key=?2", params![invalid, key]).unwrap();
+                assert_eq!(get_window_position(&c).unwrap(), None, "{key}={invalid:?}");
+                let retained: String = c.query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).unwrap();
+                assert_eq!(retained, invalid);
+                get(&c).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn window_position_signed_boundaries_persist_after_disk_reopen() {
+        let temp_root = std::env::temp_dir().canonicalize().unwrap();
+        let file_name = format!(
+            "yanmew-window-position-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        );
+        let path = temp_root.join(&file_name);
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
+        {
+            let mut c = Connection::open(&path).unwrap();
+            crate::db::initialize(&mut c).unwrap();
+            for position in [(0, 0), (-1920, -1080), (i32::MIN, i32::MAX), (i32::MAX, i32::MIN)] {
+                save_window_position(&mut c, position).unwrap();
+                assert_eq!(get_window_position(&c).unwrap(), Some(position));
+            }
+        }
+        {
+            let c = Connection::open(&path).unwrap();
+            assert_eq!(get_window_position(&c).unwrap(), Some((i32::MAX, i32::MIN)));
+        }
+        let verified_path = path.canonicalize().unwrap();
+        assert_eq!(verified_path.parent(), Some(temp_root.as_path()));
+        assert_eq!(verified_path.file_name(), Some(std::ffi::OsStr::new(&file_name)));
+        std::fs::remove_file(verified_path).unwrap();
+    }
+
+    #[test]
+    fn window_position_second_write_failure_rolls_back_both_coordinates() {
+        let mut c = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut c).unwrap();
+        c.execute_batch("CREATE TRIGGER reject_window_y_insert BEFORE INSERT ON settings WHEN NEW.key='window_pos_y' BEGIN SELECT RAISE(ABORT,'test failure'); END;").unwrap();
+        assert_eq!(save_window_position(&mut c, (-20, 30)).unwrap_err().code, "STORAGE_ERROR");
+        let count: i64 = c.query_row("SELECT COUNT(*) FROM settings WHERE key IN ('window_pos_x','window_pos_y')", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        c.execute_batch("DROP TRIGGER reject_window_y_insert;").unwrap();
+        save_window_position(&mut c, (-20, 30)).unwrap();
+        c.execute_batch("CREATE TRIGGER reject_window_y_update BEFORE UPDATE ON settings WHEN NEW.key='window_pos_y' BEGIN SELECT RAISE(ABORT,'test failure'); END;").unwrap();
+        assert_eq!(save_window_position(&mut c, (10, -40)).unwrap_err().code, "STORAGE_ERROR");
+        assert_eq!(get_window_position(&c).unwrap(), Some((-20, 30)));
+    }
+
+    #[test]
+    fn window_position_is_not_exposed_or_writable_through_global_settings() {
+        let mut c = Connection::open_in_memory().unwrap();
+        crate::db::initialize(&mut c).unwrap();
+        save_window_position(&mut c, (-20, 30)).unwrap();
+        let original = get(&c).unwrap();
+        for key in ["window_pos_x", "window_pos_y"] {
+            assert!(!defaults().contains_key(key));
+            assert!(!original.contains_key(key));
+            let changes = [(key.into(), "100".into()), ("theme_mode".into(), "dark".into())].into_iter().collect();
+            assert_eq!(save(&mut c, changes).unwrap_err().code, "VALIDATION_ERROR");
+            assert_eq!(get(&c).unwrap(), original);
+            assert_eq!(get_window_position(&c).unwrap(), Some((-20, 30)));
+        }
+    }
+
+    #[test]
+    fn window_position_database_read_failure_remains_storage_error() {
+        let c = Connection::open_in_memory().unwrap();
+        assert_eq!(get_window_position(&c).unwrap_err().code, "STORAGE_ERROR");
+    }
+
     #[test]
     fn memory_settings_roundtrip_and_invalid_ranges_are_atomic() {
         let mut connection = Connection::open_in_memory().unwrap();
