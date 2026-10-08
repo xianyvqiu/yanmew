@@ -14,5 +14,5 @@ pub(crate) fn prepare_proactive(runtime: &Runtime, store: &mut crate::runtime::S
     let context = context::Context::proactive(store, runtime, session_id, provider, &prompt, INSTRUCTION)?;
     Ok(PreparedReply { persona_id, session_id, context_revision: store.context_revision, prompt, config,
         messages: vec![Message::new("system", INSTRUCTION)], context, continuation:false, regenerating:false,
-        proactive:true, lease, runtime:runtime.clone(), health, tool_events:None })
+        proactive:true, evolution:None, lease, runtime:runtime.clone(), health, tool_events:None })
 }

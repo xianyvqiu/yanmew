@@ -24,6 +24,7 @@ tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }
 tokenizers = { version = "=0.21.4", default-features = false, features = ["fancy-regex"] }
 sha2 = "0.10"
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-autostart = "=2.5.1"

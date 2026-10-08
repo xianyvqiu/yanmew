@@ -152,6 +152,8 @@ pub fn run() {
             commands::set_active_chat_provider,
             commands::set_memory_provider,
             commands::list_personas,
+            commands::get_chat_background,
+            commands::save_chat_background,
             commands::create_persona,
             commands::generate_expressions,
             commands::cancel_expression_generation,

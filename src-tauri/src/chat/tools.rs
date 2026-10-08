@@ -22,6 +22,7 @@ struct Session {
     persona_id: i64,
     session_id: i64,
     revision: u64,
+    evolution: Option<Arc<Mutex<evolution::Evolution>>>,
     // 跨工具类型检查 ID，防止同一个 ID 被改成另一种有副作用的调用。
     calls: HashMap<String, (String, Value)>,
 }
@@ -43,6 +44,10 @@ impl Session {
     fn execute(&mut self, call: &ToolCall) -> AppResult<Value> {
         self.check_call(call)?;
         match call.name.as_str() {
+            "update_persona_prompt" => {
+                let evolution = self.evolution.as_ref().ok_or_else(|| AppError::new("PERMISSION_DENIED", "本请求未开放人设自调"))?;
+                evolution.lock().map_err(|_| AppError::storage())?.stage(call)
+            }
             "read_notebook" | "update_notebook" => {
                 let result = self.notebook.execute(call)?;
                 if call.name == "update_notebook" && !result.already_applied { self.events.notebook_changed(); }
@@ -60,6 +65,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     emit: &mut impl FnMut(ReplyEventKind) -> AppResult<()>) -> AppResult<Choice> {
     let runtime = prepared.runtime.clone();
     let lease = prepared.lease.clone();
+    let evolution = prepared.evolution.clone();
     let (persona_id, session_id, revision) = (prepared.persona_id, prepared.session_id, prepared.context_revision);
     let events = prepared.tool_events.clone().unwrap_or_else(|| Arc::new(SilentEvents));
     let (mut session, rounds) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
@@ -71,7 +77,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
             notebook: NotebookTools::new(&runtime, &lease, persona_id, session_id, revision)?,
             reminders: ReminderCreation::new(&runtime, &lease, persona_id, session_id, revision)?,
             journals: TravelJournalTools::new(&runtime, &lease, persona_id, session_id, revision)?,
-            events, runtime, lease, persona_id, session_id, revision, calls: HashMap::new(),
+            events, runtime, lease, persona_id, session_id, revision, evolution, calls: HashMap::new(),
         }, rounds))
     }).await.map_err(|_| AppError::storage())??;
     let mut context=prepared.context.clone();
@@ -81,6 +87,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     definitions.extend(crate::travel_journal_tools::definitions());
     definitions.push(crate::reminder_extract::definition());
     definitions.extend(memory_tools::definitions());
+    if prepared.evolution.is_some() { definitions.push(evolution::definition()); }
     if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"))); }
     if prepared.continuation {definitions.clear();}
     let mut content = String::new();

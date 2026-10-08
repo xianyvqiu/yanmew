@@ -16,6 +16,8 @@ pub struct Store {
 /// 数据库锁只包围同步事务；联网调用必须先取配置快照再释放锁。
 #[derive(Clone)]
 pub struct Runtime {
+    /// 受管资源目录沿用平台注入，业务不重新推断可执行文件或工作目录。
+    pub paths: AppResult<AppPaths>,
     /// 仅表示本次全新库初始化成功；窗口层首次展示使用，不写入设置或备份。
     pub initial_session_created: bool,
     pub store: Arc<Mutex<AppResult<Store>>>,
@@ -37,7 +39,7 @@ impl Runtime {
         random: Box<dyn crate::pet::RandomSource + Send>,
     ) -> Self {
         let embedding_paths = paths.as_ref().map_err(Clone::clone).and_then(|p| p.embedding_resources());
-        let opened = paths.and_then(|p| crate::db::open(&p));
+        let opened = paths.as_ref().map_err(Clone::clone).and_then(crate::db::open);
         let initial_session_created = opened.as_ref().is_ok_and(|(_, created)| *created);
         let store = opened.map(|(connection, _)| Store {
             weather: Default::default(),
@@ -46,7 +48,8 @@ impl Runtime {
             context_revision: 0,
             pet: Default::default(),
         });
-        Self {
+        let runtime = Self {
+            paths,
             initial_session_created,
             store: Arc::new(Mutex::new(store)),
             secrets,
@@ -58,7 +61,10 @@ impl Runtime {
             memory: Default::default(),
             embedding: Arc::new(crate::embedding::Engine::new(embedding_paths)),
             memory_index: Default::default(),
-        }
+        };
+        // 只清理本程序生成且数据库确认未引用的背景文件；清理失败不阻塞启动。
+        crate::persona::background::cleanup_unused(&runtime);
+        runtime
     }
 
     /// 调用者持有唯一 store 锁，时钟在取得锁之后采样；不得在锁外计算旧增量。
@@ -197,6 +203,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         .execute("INSERT INTO settings VALUES('current_session_id','1')", [])
         .unwrap();
     Runtime {
+        paths: Err(AppError::storage()),
         initial_session_created: false,
         store: Arc::new(Mutex::new(Ok(Store {
             weather: Default::default(),

@@ -231,12 +231,19 @@ pub async fn run_persisted(
             }
         }
         store.chat_requests.remove(&session_id);
-        Ok((active.round_id, saved))
+        // 聊天事务已成功；候选另行提交，失败不能撤销回复或将回合改成中断。
+        let evolution = if complete {
+            prepared.evolution.as_ref().map(|pending| {
+                pending.lock().map_err(|_| AppError::storage())?.commit(&prepared, store)
+            }).unwrap_or(Ok(None))
+        } else { Ok(None) };
+        Ok((active.round_id, saved, evolution))
     });
+    let tool_events = prepared.tool_events.clone();
     // 完成事件到达后允许立即发送下一轮；互斥一直覆盖到持久化结束。
     drop(prepared);
     match saved {
-        Ok((round_id, saved)) => {
+        Ok((round_id, saved, evolution)) => {
             if saved.round.status == crate::models::ChatRoundStatus::Completed {
                 runtime.memory.wake.notify_one();
             }
@@ -245,6 +252,15 @@ pub async fn run_persisted(
                 event,
                 saved: Some(saved.clone()),
             });
+            if let Some(events) = tool_events {
+                match evolution {
+                    Ok(Some(update)) => events.persona_updated(&update),
+                    Err(error) if !matches!(error.code, "CANCELLED" | "CONTEXT_CHANGED") => {
+                        events.persona_evolution_failed(&AppError::new("PERSONA_EVOLUTION_FAILED", format!("人设自动调整未保存：{}。已保存的聊天保留。", error.message)));
+                    }
+                    _ => {}
+                }
+            }
             Ok(saved)
         }
         Err(error) => {

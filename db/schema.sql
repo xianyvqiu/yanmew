@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS personas (
     self_evolve_enabled INTEGER NOT NULL DEFAULT 1 CHECK (self_evolve_enabled IN (0, 1)),          -- 人设自调开关：1 开启，0 关闭
     last_evolved_at     TEXT,                                -- 最近一次 AI 调整时间 RFC3339，可空
     color               TEXT    NOT NULL DEFAULT '#ffb6c1',  -- 桌宠本体颜色（十六进制），按人设绑定
-    chat_bg_file        TEXT,                                -- 聊天窗背景图相对文件名，可空；图片保存在 data/chat_background/
+    chat_bg_file        TEXT,                                -- 人设级聊天背景相对文件名，可空；受管 jpg/png/webp ≤10MiB，位于 AppPaths 的 chat_background/，新文件落盘后才提交引用
     chat_bg_opacity     INTEGER NOT NULL DEFAULT 85 CHECK (chat_bg_opacity BETWEEN 0 AND 100),         -- 聊天窗背景透明度百分比 0–100
     chat_bg_blur        INTEGER NOT NULL DEFAULT 0 CHECK (chat_bg_blur BETWEEN 0 AND 40),          -- 聊天窗背景模糊像素 0–40
     is_active           INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 1=当前使用人设（全局唯一），0=非当前人设

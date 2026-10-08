@@ -130,7 +130,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
           checked={selfEvolveEnabled}
           onChange={event => setSelfEvolveEnabled(event.target.checked)}
         />
-        <span className="ym-page-note">此偏好会保存，自动调整功能尚未开放</span>
+        <span className="ym-page-note">仅在重要且明确的问题需要修正时小幅调整，日常小事不修改；完整回复成功后保存，初始设定保留。</span>
       </div>
 
       <div className="ym-inline-form">

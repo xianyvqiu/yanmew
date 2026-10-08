@@ -252,6 +252,13 @@ impl crate::events::ReminderEventSink for ChatToolEvents {
 }
 impl crate::events::ChatToolEventSink for ChatToolEvents {
     fn notebook_changed(&self) { let _ = self.0.emit(crate::events::NOTEBOOK_CHANGED, ()); }
+    fn persona_updated(&self, update: &crate::events::PersonaUpdated) {
+        let _ = self.0.emit("configuration_changed", ());
+        let _ = self.0.emit(crate::events::PERSONA_UPDATED, update);
+    }
+    fn persona_evolution_failed(&self, error: &AppError) {
+        let _ = self.0.emit(crate::events::PET_ACTIVITY_ERROR, error);
+    }
 }
 
 #[tauri::command]
@@ -1233,6 +1240,34 @@ pub async fn create_persona(
         });
     }
     Ok(persona)
+}
+
+fn background_access(window: &WebviewWindow, revision: Option<u64>) -> AppResult<Option<u64>> {
+    match window.label() {
+        "settings" => Ok(None),
+        "chat" => revision.map(Some).ok_or_else(|| AppError::new("CONTEXT_CHANGED", "请重新打开当前人设的背景设置")),
+        _ => Err(AppError::new("PERMISSION_DENIED", "仅聊天和设置窗口可访问聊天背景")),
+    }
+}
+#[tauri::command]
+pub async fn get_chat_background(window: WebviewWindow, runtime: State<'_, Runtime>, id: String,
+    context_revision: Option<u64>) -> AppResult<crate::persona::background::View> {
+    let revision = background_access(&window, context_revision)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::persona::background::get(&worker, id, revision))
+        .await.map_err(|_| AppError::storage())?
+}
+#[tauri::command]
+pub async fn save_chat_background(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String,
+    context_revision: Option<u64>, input: crate::persona::background::Input) -> AppResult<crate::persona::background::Background> {
+    let revision = background_access(&window, context_revision)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || crate::persona::background::save(&worker, id, revision, input))
+        .await.map_err(|_| AppError::storage())??;
+    let _ = app.emit("configuration_changed", ());
+    Ok(saved)
 }
 #[tauri::command]
 pub async fn update_persona(

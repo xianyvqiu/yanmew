@@ -1,6 +1,40 @@
 use crate::error::{AppError, AppResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+pub mod background;
+
+/// 聊天开始时固定的自调基准；只用于乐观校验，不保存修改历史。
+pub(crate) struct EvolutionSnapshot {
+    pub id: i64,
+    pub prompt: String,
+    pub initial_prompt: String,
+    pub last_evolved_at: Option<String>,
+}
+
+pub(crate) fn evolution_snapshot(c: &Connection, id: i64) -> AppResult<Option<EvolutionSnapshot>> {
+    Ok(c.query_row(
+        "SELECT prompt,initial_prompt,last_evolved_at FROM personas WHERE id=?1 AND self_evolve_enabled=1",
+        [id], |row| Ok(EvolutionSnapshot {
+            id, prompt: row.get(0)?, initial_prompt: row.get(1)?, last_evolved_at: row.get(2)?,
+        }),
+    ).optional()?)
+}
+
+/// 仅在聊天已成功提交后调用；开关、当前/初始设定或自调时间变化时丢弃旧候选。
+pub(crate) fn apply_evolution(c: &mut Connection, expected: &EvolutionSnapshot,
+    new_prompt: &str, evolved_at: &str) -> AppResult<bool> {
+    if new_prompt.trim().is_empty() {
+        return Err(AppError::validation("new_prompt", "人设设定不能为空"));
+    }
+    if new_prompt.trim() == expected.prompt.trim() { return Ok(false); }
+    let tx = c.transaction()?;
+    let changed = tx.execute(
+        "UPDATE personas SET prompt=?1,last_evolved_at=?2 WHERE id=?3 AND self_evolve_enabled=1 AND prompt=?4 AND initial_prompt=?5 AND last_evolved_at IS ?6",
+        params![new_prompt, evolved_at, expected.id, expected.prompt, expected.initial_prompt, expected.last_evolved_at],
+    )?;
+    tx.commit()?;
+    Ok(changed == 1)
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -94,6 +94,12 @@ export type PetStateNotice = {
   personaId: RecordId; sessionId: RecordId; contextRevision: number; revision: number;
   activity: "hungry" | "bored"; text: string;
 };
+export type PersonaUpdatedNotice = {
+  personaId: RecordId;
+  sessionId: RecordId;
+  contextRevision: number;
+  evolvedAt: string;
+};
 export type ProactiveMessageNotice = {
   personaId: RecordId; sessionId: RecordId; contextRevision: number; message: Message;
 };
@@ -126,6 +132,12 @@ export type Persona = {
   isActive: boolean; isBuiltin: boolean; expressions: Record<string, unknown> | null;
 };
 export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean };
+export type ChatBackgroundRecord = { personaId: RecordId; file: string | null; opacity: number; blur: number };
+export type ChatBackgroundView = { record: ChatBackgroundRecord; imageDataUrl: string | null; imageError: AppError | null };
+export type ChatBackgroundInput = {
+  expected: ChatBackgroundRecord; opacity: number; blur: number;
+  image: { fileName: string; base64: string } | null; reset: boolean;
+};
 export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };

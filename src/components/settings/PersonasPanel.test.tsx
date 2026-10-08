@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   generateExpressions: vi.fn(),
   cancelExpressionGeneration: vi.fn(),
 }));
-vi.mock("../../api", () => ({ configurationApi: api, errorMessage: (error: { message: string }) => error.message }));
+vi.mock("../../api", () => ({ configurationApi: api, backgroundApi: { get: vi.fn(), save: vi.fn() }, errorMessage: (error: { message: string }) => error.message }));
 
 const systemPersona: Persona = {
   id: "system-1",
@@ -80,6 +80,42 @@ async function loadPanel() {
 }
 
 describe("PersonasPanel", () => {
+  it.each(["baseline", "restore"] as const)("%s 完成后保持差异展开并刷新为一致状态", async action => {
+    api.updatePersona.mockImplementation(async (id: string, input: PersonaInput) => {
+      rows = rows.map(persona => persona.id === id ? { ...persona, ...input,
+        initialPrompt: input.saveAsInitial ? input.prompt : persona.initialPrompt } : persona);
+    });
+    await loadPanel();
+    const card = within(screen.getByRole("article", { name: currentPersona.name }));
+    fireEvent.click(card.getByRole("button", { name: "查看与初始设定的差异" }));
+    expect(card.getAllByText("新增").length).toBeGreaterThan(0);
+    fireEvent.click(card.getByRole("button", { name: action === "baseline" ? "保存为初始设定" : "从初始设定恢复" }));
+    const modal = within(screen.getByRole("dialog"));
+    expect(modal.getByText(/当前累计差异会清空/)).toBeTruthy();
+    expect(api.updatePersona).not.toHaveBeenCalled();
+    fireEvent.click(modal.getByRole("button", { name: "确认" }));
+    await waitFor(() => expect(card.getByText("当前人设与初始设定一致")).toBeTruthy());
+    expect(card.getByRole("button", { name: "查看与初始设定的差异" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("配置通知刷新已保存差异，保留用户正在编辑的草稿", async () => {
+    await loadPanel();
+    const card = within(screen.getByRole("article", { name: currentPersona.name }));
+    fireEvent.click(card.getByRole("button", { name: "查看与初始设定的差异" }));
+    fireEvent.click(card.getByRole("button", { name: `编辑 ${currentPersona.name}` }));
+    const draft = screen.getByRole("textbox", { name: "当前设定" }) as HTMLTextAreaElement;
+    fireEvent.change(draft, { target: { value: "未保存的草稿" } });
+    rows = rows.map(persona => persona.id === currentPersona.id ? { ...persona, prompt: "新的已保存设定" } : persona);
+    await act(async () => { api.listenChanges.mock.calls[0][0](); });
+    await waitFor(() => {
+      const currentText = card.getByLabelText("行内差异").cloneNode(true) as HTMLElement;
+      currentText.querySelectorAll("del, .ym-prompt-diff-label").forEach(node => node.remove());
+      expect(currentText.textContent).toBe("新的已保存设定");
+    });
+    expect(draft.value).toBe("未保存的草稿");
+    expect(card.getByLabelText("行内差异").textContent).not.toContain("未保存的草稿");
+  });
+
   it("系统内置人设不显示删除按钮", async () => {
     await loadPanel();
 

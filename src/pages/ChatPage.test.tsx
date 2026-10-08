@@ -13,11 +13,13 @@ const api = vi.hoisted(() => ({
   messages: vi.fn(),
   current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), listen: vi.fn(), submit: vi.fn(), cancel: vi.fn(),
   edit: vi.fn(), deleteTail: vi.fn(), regenerate: vi.fn(), listenMessages: vi.fn(),
+  backgroundGet: vi.fn(), backgroundSave: vi.fn(),
 }));
 
 vi.mock("../api", () => ({
   sessionApi: api,
   chatApi: api,
+  backgroundApi: { get: api.backgroundGet, save: api.backgroundSave },
   errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : "操作失败",
 }));
 
@@ -59,6 +61,8 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  api.backgroundGet.mockReset().mockResolvedValue({ record: { personaId: persona.id, file: null, opacity: 0, blur: 0 }, imageDataUrl: null, imageError: null });
+  api.backgroundSave.mockReset().mockImplementation(async (_id, input) => ({ ...input.expected, opacity: input.opacity, blur: input.blur }));
   api.current.mockReset().mockResolvedValue(null);
   api.lastRound.mockReset().mockResolvedValue(null); api.continue.mockReset();
   api.listen.mockReset().mockResolvedValue(() => {});
@@ -81,6 +85,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("回复进行中可以保存背景，不中断回复或重建聊天页", async () => {
+    const round = completedRound();
+    api.current.mockResolvedValue({ requestId: "1", personaId: persona.id, sessionId: "session-1", contextRevision: 1,
+      roundId: "10", seq: 1, partialContent: "正在回复", expression: null, notice: null, budget: null, regenerating: false,
+      round: { ...round, round: { ...round.round, status: "pending" }, assistantMessage: null } } satisfies ChatRequestSnapshot);
+    const refresh = vi.fn();
+    render(<ChatPage snapshot={snapshot("session-1")} onRefresh={refresh} />);
+    await screen.findByText("正在回复");
+    fireEvent.click(screen.getByRole("button", { name: "背景" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存背景" }).closest("fieldset")?.disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText("背景透明度：0%"), { target: { value: "60" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存背景" }));
+    await screen.findByText("聊天背景已保存");
+    expect(api.backgroundSave).toHaveBeenCalledWith(persona.id, expect.objectContaining({ opacity: 60 }), 1);
+    expect(api.cancel).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(screen.getByText("正在回复")).not.toBeNull();
+  });
   it("回复进行中仍可修改绑定，由后端先中断；失败保留选择并可重试", async () => {
     const current = snapshot("session-1");
     current.userProfiles = [{ id: "7", name: "背景", content: "内容", createdAt: "2026-10-06", updatedAt: "2026-10-06" }];

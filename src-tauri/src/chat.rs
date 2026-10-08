@@ -12,7 +12,7 @@ use crate::{
 };
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 mod coordinator;
 mod tools;
 mod guards;
@@ -20,6 +20,7 @@ mod context;
 mod memory_tools;
 mod regeneration;
 mod proactive;
+mod evolution;
 pub(crate) use proactive::prepare_proactive;
 pub(crate) use regeneration::{regenerate, run_regenerated};
 #[cfg(test)]
@@ -29,6 +30,8 @@ pub use coordinator::*;
 mod coordinator_tests;
 #[cfg(test)]
 mod tool_tests;
+#[cfg(test)]
+mod evolution_tests;
 
 /// 只能由后端读取权威数据后构造；不是 Tauri 命令输入，也不序列化密钥。
 pub struct PreparedReply {
@@ -42,6 +45,7 @@ pub struct PreparedReply {
     continuation: bool,
     regenerating: bool,
     proactive: bool,
+    evolution: Option<Arc<Mutex<evolution::Evolution>>>,
     lease: Arc<RequestLease>,
     runtime: Runtime,
     health: crate::pet::controller::HealthToken,
@@ -86,6 +90,10 @@ fn prepare(
         let prefix=if regenerating {String::new()} else {previous.as_ref().and_then(|p|p.assistant_message.as_ref()).map(|m|m.content.clone()).unwrap_or_default()};
         let context=context::Context::snapshot(s,runtime,session_id,provider_id,&prompt,input.trim(),None,continuing.map(|id|(id,prefix.as_str())))?;
         let messages=vec![Message::new("user",input.trim())];
+        let evolution = if persist && !regenerating && continuing.is_none() {
+            crate::persona::evolution_snapshot(&s.connection,persona_id)?
+                .map(|expected| Arc::new(Mutex::new(evolution::Evolution::new(expected))))
+        } else { None };
         runtime.requests.cancel_key(&format!("proactive:{session_id}"));
         let lease=Arc::new(runtime.requests.start(format!("chat:{session_id}"),persona_id)?);
         let pet=crate::pet_store::read(&s.connection,session_id)?;
@@ -102,7 +110,7 @@ fn prepare(
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
         } else { None };
-        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some()&&!regenerating,regenerating,proactive:false,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some()&&!regenerating,regenerating,proactive:false,evolution,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
@@ -157,6 +165,7 @@ pub async fn run_reply(
         initial_tools.extend(crate::travel_journal_tools::definitions());
         initial_tools.push(crate::reminder_extract::definition());
         initial_tools.extend(memory_tools::definitions());
+        if prepared.evolution.is_some() { initial_tools.push(evolution::definition()); }
         if prepared.regenerating { initial_tools.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"))); }
         if prepared.continuation {initial_tools.clear();}
         prepared.context.clone().request(initial_tools,&[])?;

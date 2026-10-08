@@ -19,12 +19,25 @@ pub const REMINDER_ERROR: &str = "reminder-error";
 pub const NOTEBOOK_CHANGED: &str = "notebook-changed";
 pub const MEMORY_GENERATION_CHANGED: &str = "memory-generation-changed";
 pub const EMBEDDING_CHANGED: &str = "embedding-state-changed";
+pub const PERSONA_UPDATED: &str = "persona-updated";
+
+/// 仅在完整聊天与人设调整分别提交成功后发出，不携带私人人设正文。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonaUpdated {
+    pub persona_id: String,
+    pub session_id: String,
+    pub context_revision: u64,
+    pub evolved_at: String,
+}
 pub trait MemoryEventSink: Send + Sync {
     fn memory_changed(&self);
     fn embedding_changed(&self) {}
 }
 pub trait ChatToolEventSink: ReminderEventSink {
     fn notebook_changed(&self);
+    fn persona_updated(&self, _update: &PersonaUpdated) {}
+    fn persona_evolution_failed(&self, _error: &crate::error::AppError) {}
 }
 pub trait ReminderEventSink: Send + Sync {
     fn reminders_changed(&self);

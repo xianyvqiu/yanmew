@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Persona, PersonaInput } from "../../types";
 import PersonaForm from "./PersonaForm";
+import PersonaPromptDiff from "../PersonaPromptDiff";
+import ChatBackgroundSettings from "../ChatBackgroundSettings";
 import "./PersonasPanel.css";
 
 type Confirmation = { persona: Persona; action: "delete" | "baseline" | "restore" };
@@ -125,14 +127,16 @@ export default function PersonasPanel() {
       {loading && <p role="status">正在读取人设…</p>}
       {error && !confirmation && (!error.field || editing === undefined) && <div className="ym-page-error" role="alert">{error.message}<button className="ym-button" disabled={busy} onClick={() => { setError(null); void refresh().catch(showError); }}>重新读取</button></div>}
       {notice && <p role="status">{notice}</p>}
-      {editing !== undefined && <PersonaForm key={editing?.id ?? "new"} persona={editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
+      {editing !== undefined && <PersonaForm key={editing?.id ?? "new"} persona={editing ? personas.find(persona => persona.id === editing.id) ?? editing : editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
       <div className="ym-persona-grid">{personas.map(persona => <article className="ym-persona-card" key={persona.id} aria-label={persona.name}>
         <div className="ym-page-heading"><h3>{persona.name}</h3><span>{persona.isActive ? "当前使用" : ""}{persona.isBuiltin ? " · 系统默认" : ""}</span></div>
         <p className="ym-persona-color"><span style={{ backgroundColor: persona.color }} aria-hidden="true" />本体颜色 {persona.color}</p>
-        <p className="ym-page-note">自动调整偏好：{persona.selfEvolveEnabled ? "开启" : "关闭"}（自动调整功能尚未开放）</p>
+        <p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}。仅在确有必要时小幅调整，完整回复成功后保存。</p>
         <p className="ym-page-note">最近 AI 调整：{persona.lastEvolvedAt ? new Date(persona.lastEvolvedAt).toLocaleString() : "暂无"}</p>
         <details><summary>当前设定</summary><p className="ym-persona-prompt">{persona.prompt}</p></details>
         <details><summary>初始设定</summary><p className="ym-persona-prompt">{persona.initialPrompt}</p></details>
+        <PersonaPromptDiff initialPrompt={persona.initialPrompt} currentPrompt={persona.prompt} />
+        <ChatBackgroundSettings persona={persona} disabled={disabled || editing !== undefined || Boolean(confirmation)} onSaved={() => { void refresh().catch(showError); }} />
         <details><summary>表情库</summary>{persona.expressions ? <dl className="ym-expression-list">{expressionGroups(persona).map(group => <div key={group.label}><dt>{group.label}</dt><dd>{group.values.join("　") || "暂无"}</dd></div>)}</dl> : <p className="ym-page-note">尚无已保存的表情库。可以使用当前聊天提供商生成。</p>}</details>
         {failures[persona.id] && <p role="alert" className="ym-page-error">表情库生成未完成：{failures[persona.id]}。已有表情库保留。</p>}
         <div className="ym-inline-form">
@@ -150,7 +154,7 @@ export default function PersonasPanel() {
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="persona-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       {confirmation && <><h2 id="persona-confirm-title">{confirmation.action === "delete" ? `删除 ${confirmation.persona.name}` : confirmation.action === "baseline" ? "更新初始设定" : "恢复初始设定"}</h2>
         <p>{confirmation.action === "delete" ? `这会删除该人设及其全部会话、聊天、记忆、记事本、出行、游记、信件、伴手礼、饰品和节日记录。${confirmation.persona.isActive ? "当前使用项会切回系统默认人设。" : ""}全局喵币、账单、提醒、设置和小游戏插件数据保留。`
-          : confirmation.action === "baseline" ? "将当前已保存的设定替换初始设定，之后的差异比较会以新初始设定为准。" : "将当前设定替换为初始设定，聊天和记忆记录保留。"}</p>
+          : confirmation.action === "baseline" ? "将当前已保存的设定替换初始设定，之后的差异比较会以新初始设定为准，当前累计差异会清空。" : "将当前设定替换为初始设定，当前累计差异会清空，聊天和记忆记录保留。"}</p>
         {error && <p className="ym-page-error" role="alert">{error.message}</p>}
         <div className="ym-inline-form"><button className="ym-button" disabled={busy} onClick={() => setConfirmation(null)}>取消</button><button className="ym-button" disabled={busy} onClick={() => { void confirm(); }}>{busy ? "正在处理…" : "确认"}</button></div></>}
     </dialog>

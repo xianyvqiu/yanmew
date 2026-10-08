@@ -4,7 +4,8 @@ import PetConversationBubbles from "./PetConversationBubbles";
 import type { PetActivity, ProactiveMessageNotice } from "../types";
 
 const api = vi.hoisted(() => ({ listen: vi.fn(), stop: vi.fn(), open: vi.fn() }));
-vi.mock("../api", () => ({ petApi: { listenProactiveMessage: api.listen } }));
+vi.mock("../api", () => ({ petApi: { listenProactiveMessage: api.listen },
+  configurationApi: { listenPersonaUpdates: async () => () => {} } }));
 vi.mock("../platform/navigation", () => ({ navigation: { open: api.open } }));
 vi.mock("./PetStateBubble", () => ({ default: () => <div data-testid="ordinary-bubble" /> }));
 let receive: (notice: ProactiveMessageNotice) => void;

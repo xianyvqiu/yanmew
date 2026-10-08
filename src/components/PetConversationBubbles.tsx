@@ -3,6 +3,7 @@ import { petApi } from "../api";
 import { navigation } from "../platform/navigation";
 import type { PetActivity, ProactiveMessageNotice } from "../types";
 import PetStateBubble from "./PetStateBubble";
+import PersonaEvolutionBubble from "./PersonaEvolutionBubble";
 import "./ReminderNotifications.css";
 
 function matches(notice: ProactiveMessageNotice, view: PetActivity | null) {
@@ -52,7 +53,7 @@ export default function PetConversationBubbles({ view, seenMessageIds }: {
       if (activeNotice.current === notice) setError("暂时无法打开聊天，请重试。");
     } finally { openingRef.current = false; setOpening(false); }
   };
-  if (!notice || !matches(notice, view)) return <PetStateBubble view={view} durationMs={8000} />;
+  if (!notice || !matches(notice, view)) return <PersonaEvolutionBubble view={view} fallback={<PetStateBubble view={view} durationMs={8000} />} />;
   return <section className="ym-reminder-notification" data-pet-interactive role="status" aria-label="桌宠主动消息">
     <div className="ym-reminder-notification__body">
       <p className="ym-reminder-notification__message">{notice.message.content}</p>

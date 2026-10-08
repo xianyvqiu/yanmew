@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { chatApi, embeddingApi, memoryManagementApi } from "./api";
+import { backgroundApi, chatApi, embeddingApi, memoryManagementApi } from "./api";
 import type { CurrentContext, MemoryDetail } from "./types";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -7,6 +7,14 @@ const listen = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 beforeEach(() => { invoke.mockReset().mockResolvedValue(null); });
+
+it("背景命令固定人设，聊天入口附带版本，设置入口不传版本", async () => {
+  await backgroundApi.get("1", 3);
+  expect(invoke).toHaveBeenLastCalledWith("get_chat_background", { id: "1", contextRevision: 3 });
+  const input = { expected: { personaId: "1", file: null, opacity: 85, blur: 0 }, opacity: 60, blur: 8, image: null, reset: false };
+  await backgroundApi.save("1", input);
+  expect(invoke).toHaveBeenLastCalledWith("save_chat_background", { id: "1", input, contextRevision: null });
+});
 
 it("继续生成和尾轮恢复传递固定上下文及原回合，不提交新用户输入", async () => {
   const context: CurrentContext = { personaId: "1", sessionId: "2", contextRevision: 3 };

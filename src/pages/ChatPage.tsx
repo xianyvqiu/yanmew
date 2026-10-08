@@ -4,6 +4,7 @@ import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import { useChat } from "../hooks/useChat";
 import type { Message } from "../types";
 import ChatComposer from "../components/ChatComposer";
+import ChatBackgroundSettings from "../components/ChatBackgroundSettings";
 import { navigation } from "../platform/navigation";
 import "./workspace.css";
 
@@ -157,6 +158,8 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
   return <div className="ym-workspace-page ym-chat-page">
     <section className="ym-page-card" aria-label="会话管理">
       <div className="ym-page-heading"><h2>我们的对话</h2><button className="ym-button" disabled={busy || dialogOpen} onClick={() => { void act(() => sessionApi.create(context, newProfile || null), true); }}>新建会话</button></div>
+      <ChatBackgroundSettings persona={persona} contextRevision={context.contextRevision} label="背景"
+        disabled={busy || dialogOpen || editing !== null} onSaved={() => { /* 配置通知会原位刷新，不重建正在回复的聊天页。 */ }} />
       <label className="ym-field">新会话的用户设定<select aria-label="新会话的用户设定" value={newProfile} disabled={busy || dialogOpen} onChange={event => setNewProfile(event.target.value)}>
         <option value="">未绑定</option>{userProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
       </select></label>

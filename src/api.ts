@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ChatBackgroundInput, ChatBackgroundRecord, ChatBackgroundView } from "./types";
+export const backgroundApi = {
+  get: (id: RecordId, contextRevision?: number) => invoke<ChatBackgroundView>("get_chat_background", { id, contextRevision: contextRevision ?? null }),
+  save: (id: RecordId, input: ChatBackgroundInput, contextRevision?: number) => invoke<ChatBackgroundRecord>("save_chat_background", { id, input, contextRevision: contextRevision ?? null }),
+};
 import type { AutostartStatus } from "./types";
 export const autostartApi = {
   get: () => invoke<AutostartStatus>("get_autostart_status"),
@@ -94,6 +99,8 @@ import { listen } from "@tauri-apps/api/event";
 import type { CurrentContext, MessagePage, Persona, PersonaInput, Provider, ProviderInput, RecordId, Session, SessionDeleteResult, Settings, WeatherInput, WeatherSettings } from "./types";
 
 export const configurationApi = {
+  listenPersonaUpdates: (receive: (update: import("./types").PersonaUpdatedNotice) => void) =>
+    listen<import("./types").PersonaUpdatedNotice>("persona-updated", event => receive(event.payload)),
   listenExpressionFailure: (receive: (failure: { personaId: RecordId; error: import("./types").AppError }) => void) =>
     listen<{ personaId: RecordId; error: import("./types").AppError }>("expression_generation_failed", event => receive(event.payload)),
   listenContext: (receive: (context: CurrentContext) => void) => listen<CurrentContext>("window_context_changed", event => receive(event.payload)),
