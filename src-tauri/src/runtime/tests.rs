@@ -278,3 +278,44 @@ fn no_session_never_creates_one_and_away_never_rewards_or_counts() {
         1
     );
 }
+
+#[test]
+fn task_errors_do_not_sleep_but_provider_transport_failures_do() {
+    for code in ["AI_PROTOCOL_ERROR", "AI_TRUNCATED", "VALIDATION_ERROR", "CONTEXT_TOO_LARGE",
+        "CHAT_REPETITION", "CHAT_INVALID_ENCODING", "CHAT_NO_PROGRESS", "CANCELLED", "STORAGE_ERROR"] {
+        let (runtime, _) = setup(0);
+        runtime.read(|store, secrets| {
+            let token = store.pet.health(&store.connection, secrets)?;
+            store.pet.report_ai_failure(&token, &AppError::new(code, "本次任务失败"));
+            Ok(())
+        }).unwrap();
+        assert_ne!(runtime.pet_view().unwrap().activity, Activity::Dormant, "{code}");
+    }
+    for code in ["PROVIDER_UNAVAILABLE", "AI_TIMEOUT", "AI_STREAM_INTERRUPTED"] {
+        let (runtime, clock) = setup(0);
+        runtime.read(|store, secrets| {
+            let token = store.pet.health(&store.connection, secrets)?;
+            store.pet.report_ai_failure(&token, &AppError::new(code, "连接失败"));
+            Ok(())
+        }).unwrap();
+        clock.advance(3600);
+        assert_eq!(runtime.pet_view().unwrap().activity, Activity::Dormant, "{code}");
+    }
+}
+
+#[test]
+fn only_effective_chat_configuration_changes_clear_provider_failure() {
+    let (runtime, _) = setup(0);
+    runtime.read(|store, secrets| {
+        let token = store.pet.health(&store.connection, secrets)?;
+        store.pet.report_ai_failure(&token, &AppError::new("PROVIDER_UNAVAILABLE", "连接失败"));
+        store.connection.execute("UPDATE providers SET name='改名',max_output_tokens=4096 WHERE is_active=1", [])?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().activity, Activity::Dormant);
+    runtime.read(|store, _| {
+        store.connection.execute("UPDATE providers SET model='another-model' WHERE is_active=1", [])?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().error, None);
+}

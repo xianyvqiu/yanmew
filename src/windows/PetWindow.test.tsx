@@ -1,21 +1,33 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PetWindow from "./PetWindow";
 import { newestSnapshot, type PetSnapshot } from "./usePetWindow";
-import type { PetActivity } from "../types";
+import type { MemoryGenerationView, PetActivity, PetStateNotice } from "../types";
 
 const startDragging = vi.fn();
 vi.mock("./usePetAppearance", () => ({ usePetAppearance: () => ({ error: "", ready: true }) }));
-vi.mock("../components/PetReminderNotifications", () => ({ default: () => null }));
+vi.mock("../components/PetReminderNotifications", () => ({ default: ({ hidden, ready, unobscured, stateBubble }: {
+  hidden: boolean; ready: boolean; unobscured: boolean; stateBubble?: ReactNode;
+}) => !hidden && ready && unobscured ? stateBubble ?? null : null }));
 const invoke = vi.fn();
 const stop = vi.fn();
 let receive: (event: { payload: PetSnapshot }) => void;
 let receiveActivity: (event: { payload: PetActivity }) => void;
+let receiveStateBubble: (event: { payload: PetStateNotice }) => void;
+let receiveMemoryChanged: () => void;
 const initialActivity: PetActivity = {personaId:"1",sessionId:"1",contextRevision:0,revision:1,activity:"normal",expression:"(・ω・)",intimacy:998,sleepUntil:null,error:null,canInteract:true,canWander:true};
+const initialMemory: MemoryGenerationView = {
+  sessionId: "1", completedCount: 0, pendingCount: 0, activeRoundId: null, failedRoundId: null,
+  error: null, autoRetryPending: false, longCompletedCount: 0, longPendingCount: 0,
+  longActiveRoundId: null, longFailedRoundId: null, longError: null, longAutoRetryPending: false,
+};
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: async (name: string, callback: unknown) => {
   if (name === "pet-window-state") receive = callback as typeof receive;
   if (name === "pet-activity-changed") receiveActivity = callback as typeof receiveActivity;
+  if (name === "pet-state-bubble") receiveStateBubble = callback as typeof receiveStateBubble;
+  if (name === "memory-generation-changed") receiveMemoryChanged = callback as typeof receiveMemoryChanged;
   return stop;
 } }));
 
@@ -70,6 +82,7 @@ describe("PetWindow", () => {
     startDragging.mockReset().mockResolvedValue(undefined);
     invoke.mockReset().mockImplementation(async (command, args) => {
       if (command === "get_pet_activity") return initialActivity;
+      if (command === "get_memory_generation_status") return initialMemory;
       if (command === "interact_pet") return {...initialActivity,intimacy:999,revision:2,expression:"(^_^)"};
       if (command === "get_pet_window_state") return { hidden: false, revision: 0 };
       if (command === "set_pet_hidden") return { hidden: args.hidden, revision: args.hidden ? 1 : 2 };
@@ -241,6 +254,100 @@ describe("PetWindow", () => {
     expect(invoke.mock.calls.filter(([command]) => command === "update_pet_regions")).toHaveLength(2);
     bounds.mockRestore();
   });
+  it("状态气泡出现和收起时同步原生裁剪区域", async () => {
+    const bubbleRect = { x: 20, y: 55, width: 180, height: 40 };
+    const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const rect = this.classList.contains("pet-state-bubble") ? bubbleRect : { x: 10, y: 20, width: 30, height: 40 };
+      return { ...rect, top: rect.y, left: rect.x, right: rect.x + rect.width, bottom: rect.y + rect.height, toJSON: () => ({}) };
+    });
+    const lastRegions = () => {
+      const calls = invoke.mock.calls.filter(([command]) => command === "update_pet_regions");
+      return calls[calls.length - 1]?.[1]?.rects;
+    };
+    try {
+      await act(async () => { render(<PetWindow />); });
+      await waitFor(() => expect(lastRegions()).toHaveLength(4));
+      await act(async () => {
+        receiveActivity({ payload: { ...initialActivity, revision: 2, activity: "bored" } });
+        receiveStateBubble({ payload: { personaId: "1", sessionId: "1", contextRevision: 0, revision: 2, activity: "bored", text: "好无聊…" } });
+      });
+      expect(screen.getByRole("status").textContent).toContain("好无聊…");
+      await waitFor(() => expect(lastRegions()).toContainEqual(bubbleRect));
+      await act(async () => { receiveActivity({ payload: { ...initialActivity, revision: 3 } }); });
+      expect(screen.queryByRole("status")).toBeNull();
+      await waitFor(() => {
+        expect(lastRegions()).toHaveLength(4);
+        expect(lastRegions()).not.toContainEqual(bubbleRect);
+      });
+    } finally { bounds.mockRestore(); }
+  });
+
+  it("连接错误可刷新，失败保留错误，成功恢复且不重发聊天", async () => {
+    const fallback = invoke.getMockImplementation()!;
+    let recovered = false;
+    let attempts = 0;
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "get_pet_activity") return recovered ? { ...initialActivity, revision: 3 }
+        : { ...initialActivity, activity: "dormant", error: "模型服务无法连接", canWander: false };
+      if (command === "refresh_pet_provider") {
+        attempts++;
+        if (attempts === 1) throw { code: "PROVIDER_UNAVAILABLE", message: "连接依然失败" };
+        recovered = true;
+        return;
+      }
+      return fallback(command, args);
+    });
+    await act(async () => { render(<PetWindow />); });
+    fireEvent.click(await screen.findByRole("button", { name: "查看错误" }));
+    expect(screen.getByRole("alert").textContent).toContain("模型服务无法连接");
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("连接依然失败"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新" }).hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByRole("button", { name: "查看错误" })).toBeNull();
+    expect(invoke.mock.calls.filter(([command]) => command === "refresh_pet_provider")).toHaveLength(2);
+    expect(invoke.mock.calls.some(([command]) => command === "submit_chat")).toBe(false);
+  });
+
+  it("刷新期间配置改变时回读当前状态，不显示旧连接结果", async () => {
+    const fallback = invoke.getMockImplementation()!;
+    let changed = false;
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "get_pet_activity") return changed ? { ...initialActivity, revision: 4 }
+        : { ...initialActivity, activity: "dormant", error: "旧提供商连接失败", canWander: false };
+      if (command === "refresh_pet_provider") {
+        changed = true;
+        throw { code: "CONTEXT_CHANGED", message: "提供商配置或恢复状态已改变，旧连接测试结果已忽略" };
+      }
+      return fallback(command, args);
+    });
+    await act(async () => { render(<PetWindow />); });
+    fireEvent.click(await screen.findByRole("button", { name: "查看错误" }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.queryByRole("button", { name: "查看错误" })).toBeNull();
+  });
+
+  it("后台记忆失败只提示并打开记忆窗，成功事件移除错误徽标", async () => {
+    const fallback = invoke.getMockImplementation()!;
+    let failed = true;
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "get_memory_generation_status") return failed ? { ...initialMemory,
+        error: { code: "PROVIDER_UNAVAILABLE", message: "记忆模型暂不可用" } } : initialMemory;
+      return fallback(command, args);
+    });
+    await act(async () => { render(<PetWindow />); });
+    fireEvent.click(await screen.findByRole("button", { name: "查看错误" }));
+    expect(screen.getByRole("alert").textContent).toContain("短期记忆生成失败：记忆模型暂不可用");
+    expect(screen.queryByRole("button", { name: "刷新" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看记忆" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("focus_or_create_window", { page: "memory" }));
+    expect(invoke.mock.calls.some(([command]) => command === "refresh_pet_provider")).toBe(false);
+    await act(async () => { failed = false; receiveMemoryChanged(); });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "查看错误" })).toBeNull());
+  });
+
   it("聊天与设置入口只导航，不触发桌宠互动或拖动", async () => {
     await act(async () => { render(<PetWindow />); });
     await act(async () => {

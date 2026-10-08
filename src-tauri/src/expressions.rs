@@ -153,13 +153,11 @@ pub async fn generate_persona_expressions(
         .structured(&snapshot.config, &input, &lease.cancel, validate_library)
         .await;
     if let Err(error) = &result {
-        if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {
-            let _ = runtime.read(|s, p| {
-                s.pet.health(&s.connection, p)?;
-                s.pet.complete_health(&snapshot.health, &Err(error.clone()));
-                Ok(())
-            });
-        }
+        let _ = runtime.read(|s, p| {
+            s.pet.health(&s.connection, p)?;
+            s.pet.report_ai_failure(&snapshot.health, error);
+            Ok(())
+        });
     }
     let result = result?;
     tauri::async_runtime::spawn_blocking(move || {

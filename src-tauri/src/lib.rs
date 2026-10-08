@@ -16,6 +16,7 @@ mod embedding_providers;
 pub mod memory_index;
 pub mod memory_search;
 mod jobs;
+mod proactive;
 pub mod memory;
 mod location;
 mod weather;
@@ -71,9 +72,11 @@ pub fn run() {
     tauri::Builder::default()
         .manage(runtime)
         .manage(pet_position::WindowPosition::default())
+        .manage(std::sync::Mutex::new(pet::wander::Controller::default()))
         .manage(desktop_windows::SettingsNavigation::default())
         .manage(std::sync::Mutex::new(commands::PetState::default()))
         .invoke_handler(tauri::generate_handler![
+            platform::windows::wander::update_pet_wander_layout,
             autostart::get_autostart_status,
             autostart::set_autostart,
             commands::list_embedding_providers,
@@ -165,11 +168,13 @@ pub fn run() {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
             pet_region::enforce_frameless(&window).map_err(io::Error::other)?;
             let runtime = app.state::<runtime::Runtime>().inner().clone();
+            let open_initial_chat = runtime.initial_session_created;
             if let Err(error) = app.state::<pet_position::WindowPosition>().restore(&window, &runtime) {
                 pet_position::report(app.handle(), &error);
             }
             tauri::async_runtime::spawn(jobs::run(
                 runtime,
+                std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
@@ -217,6 +222,16 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            if open_initial_chat {
+                let app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = desktop_windows::open(app, desktop_windows::Page::Chat).await {
+                        // 会话已经提交；开窗失败不回滚或重新生成，仍可从聊天入口打开。
+                        eprintln!("打开初始教程失败：{error}");
+                    }
+                });
+            }
 
             Ok(())
         })

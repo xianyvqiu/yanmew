@@ -640,7 +640,9 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
     storage(runtime, move |s, p| {
         s.pet.health(&s.connection, p)?;
         if let Some(token) = token {
-            s.pet.complete_health(&token, &health_result);
+            if !s.pet.complete_health(&token, &health_result) {
+                return Err(AppError::new("CONTEXT_CHANGED", "提供商配置或恢复状态已改变，旧连接测试结果已忽略"));
+            }
         }
         // 只对实际记忆提供商的成功测试解除失败等待，不重复请求不相关模型。
         if health_result.is_ok() {
@@ -757,7 +759,7 @@ pub async fn create_session(
         let session = crate::sessions::create_with_profile(&mut store.connection, persona_id, user_profile_id)?;
         memory_management::discard(&worker);
         if let Some(old_session) = before.session_id {
-            requests.cancel_key(&format!("chat:{old_session}"));
+            requests.cancel_key(&format!("chat:{old_session}")); requests.cancel_key(&format!("proactive:{old_session}"));
         }
         store.context_revision += 1;
         store.pet.reset_context();
@@ -798,7 +800,7 @@ pub async fn set_active_session(
         }
         memory_management::discard(&worker);
         if let Some(old_session) = before.session_id {
-            requests.cancel_key(&format!("chat:{old_session}"));
+            requests.cancel_key(&format!("chat:{old_session}")); requests.cancel_key(&format!("proactive:{old_session}"));
         }
         store.context_revision += 1;
         store.pet.reset_context();
@@ -1514,6 +1516,10 @@ pub async fn update_pet_regions(
     })
     .await
 }
+
+#[cfg(test)]
+#[path = "commands/recovery_tests.rs"]
+mod recovery_tests;
 
 #[cfg(test)]
 mod tests {

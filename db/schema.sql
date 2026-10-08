@@ -188,6 +188,8 @@ CREATE TABLE IF NOT EXISTS session_pet_states (
     last_interacted_at  TEXT, -- 最近实际互动 UTC RFC3339；未知为 NULL，点击不清饥饿
     state_revision      INTEGER NOT NULL DEFAULT 0 CHECK (state_revision >= 0), -- 本状态写入版本，拒绝重复或迟到提交，不影响 memory_revision
     updated_at          TEXT NOT NULL, -- 最近状态提交 UTC RFC3339；初始值取会话创建时刻
+    proactive_next_check_idle_ms INTEGER CHECK (proactive_next_check_idle_ms >= 0), -- 下一次抽签对应的 idle_elapsed_ms；bored 时 NULL 表示本周期已成功发送，其他分支为 NULL
+    last_proactive_sent_at TEXT, -- 最近主动消息成功保存的 UTC RFC3339；用于同会话 30 分钟冷却，互动及删除消息不清除
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     CHECK ((idle_branch = 'sleeping' AND sleep_until IS NOT NULL AND length(sleep_until) > 0)
         OR (idle_branch != 'sleeping' AND sleep_until IS NULL))
@@ -211,7 +213,7 @@ CREATE TABLE IF NOT EXISTS chat_rounds (
     status       TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'interrupted')), -- pending=只有用户消息、等待 AI；completed=AI 正常回复完成；interrupted=回复被中断或只保存部分回复，不生成短期记忆；pending 仅为新回合默认值
     created_at   TEXT    NOT NULL,                    -- 用户消息落库并创建回合的时间 UTC RFC3339
     completed_at TEXT,                                -- 进入 completed/interrupted 的时间；pending 时为 NULL
-    stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('length_limit', 'user_cancelled', 'timeout', 'repetition', 'invalid_encoding', 'tool_limit', 'provider_error', 'context_changed', 'app_shutdown', 'recovered_after_restart', 'unknown')),
+    stop_reason TEXT CHECK (stop_reason IS NULL OR stop_reason IN ('length_limit', 'user_cancelled', 'timeout', 'repetition', 'invalid_encoding', 'tool_limit', 'provider_error', 'context_changed', 'app_shutdown', 'recovered_after_restart', 'unknown')), -- 仅 interrupted 非空：length_limit=输出长度上限；user_cancelled=用户暂停或编辑后不再续写；timeout=首响应/无进展/整轮超时；repetition=持续重复；invalid_encoding=非法编码；tool_limit=工具上限或无进展；provider_error=供应商错误；context_changed=上下文切换；app_shutdown=退出；recovered_after_restart=启动恢复未完成回合；unknown=旧库停止原因未知；pending/completed 为 NULL
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 

@@ -261,7 +261,7 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
       <div className="ym-session-dialog-body" id="message-delete-details">
         <p>此操作不可恢复。</p>
         {messageDeleting?.kind === "complete" ? <p>将删除本轮用户消息、AI 回复、对应短期记忆，并按触发关系回退长期记忆。</p>
-          : messageDeleting?.kind === "proactive" ? <p>只删除底部这一条主动消息，不删除前面的回合，也不修改已有记忆。</p>
+          : messageDeleting?.kind === "proactive" ? <p>只删除底部这一条消息，不删除前面的回合，也不修改已有记忆。</p>
           : <p>将删除本轮用户消息、已有的部分 AI 回复及未完整回合记录。中断回合不生成记忆，此操作不修改已有记忆。</p>}
         {chat.busy && <p>删除前会中断正在进行的回复；迟到的回复不会重新写入。</p>}
         {messageDeleting && messageError && <p role="alert" className="ym-page-error">{messageError}</p>}

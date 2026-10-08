@@ -134,7 +134,7 @@
 <text x="713" y="634" font-size="13" fill="#64748b">关系：R01 / R02 / R03 / R04 / R06 / R08 / R10 / R11</text>
 <text x="713" y="654" font-size="13" fill="#64748b">　　　R15 / R22 / R24 / R27 / R31 / R34 / R37 / L01</text>
 </g>
-<g class="card" id="table-session_pet_states" data-table="session_pet_states"><rect x="1330" y="206" width="580" height="341" rx="10" fill="white" stroke="#6366f1"/>
+<g class="card" id="table-session_pet_states" data-table="session_pet_states"><rect x="1330" y="206" width="580" height="391" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M1330 284 H1910" stroke="#6366f1"/>
 <text x="1348" y="235" font-size="20" font-weight="700" fill="#6366f1">会话桌宠状态 «table»</text>
 <text x="1348" y="263" font-size="20" class="mono" fill="#0f172a">session_pet_states</text>
@@ -147,7 +147,9 @@
 <text x="1348" y="459" font-size="16" class="mono" fill="#334155">last_interacted_at: TEXT?<title>最近实际互动 UTC RFC3339；未知为 NULL，点击不清饥饿</title></text>
 <text x="1348" y="484" font-size="16" class="mono" fill="#334155">state_revision: INTEGER = 0<title>本状态写入版本，拒绝重复或迟到提交，不影响 memory_revision</title></text>
 <text x="1348" y="509" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近状态提交 UTC RFC3339；初始值取会话创建时刻</title></text>
-<text x="1348" y="534" font-size="13" fill="#64748b">关系：R03</text>
+<text x="1348" y="534" font-size="16" class="mono" fill="#334155">proactive_next_check_idle_ms: INTEGER?<title>下一次抽签对应的 idle_elapsed_ms；bored 时 NULL 表示本周期已成功发送，其他分支为 NULL</title></text>
+<text x="1348" y="559" font-size="16" class="mono" fill="#334155">last_proactive_sent_at: TEXT?<title>最近主动消息成功保存的 UTC RFC3339；用于同会话 30 分钟冷却，互动及删除消息不清除</title></text>
+<text x="1348" y="584" font-size="13" fill="#64748b">关系：R03</text>
 </g>
 <g class="card" id="table-chat_rounds" data-table="chat_rounds"><rect x="60" y="1264" width="580" height="266" rx="10" fill="white" stroke="#0284c7"/>
 <path d="M60 1342 H640" stroke="#0284c7"/>
@@ -158,7 +160,7 @@
 <text x="78" y="1417" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;pending&#x27;<title>pending=只有用户消息、等待 AI；completed=AI 正常回复完成；interrupted=回复被中断或只保存部分回复，不生成短期记忆；pending 仅为新回合默认值</title></text>
 <text x="78" y="1442" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>用户消息落库并创建回合的时间 UTC RFC3339</title></text>
 <text x="78" y="1467" font-size="16" class="mono" fill="#334155">completed_at: TEXT?<title>进入 completed/interrupted 的时间；pending 时为 NULL</title></text>
-<text x="78" y="1492" font-size="16" class="mono" fill="#334155">stop_reason: TEXT?<title></title></text>
+<text x="78" y="1492" font-size="16" class="mono" fill="#334155">stop_reason: TEXT?<title>仅 interrupted 非空：length_limit=输出长度上限；user_cancelled=用户暂停或编辑后不再续写；timeout=首响应/无进展/整轮超时；repetition=持续重复；invalid_encoding=非法编码；tool_limit=工具上限或无进展；provider_error=供应商错误；context_changed=上下文切换；app_shutdown=退出；recovered_after_restart=启动恢复未完成回合；unknown=旧库停止原因未知；pending/completed 为 NULL</title></text>
 <text x="78" y="1517" font-size="13" fill="#64748b">关系：R04 / R05 / R07 / R09</text>
 </g>
 <g class="card" id="table-messages" data-table="messages"><rect x="695" y="1264" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>

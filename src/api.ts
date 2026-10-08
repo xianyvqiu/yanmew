@@ -122,6 +122,9 @@ export const configurationApi = {
 };
 
 export const petApi = {
+  updateWanderLayout: (layout: import("./types").PetWanderLayout) => invoke<void>("update_pet_wander_layout", { layout }),
+  listenWander: (receive: (target: import("./types").PetWanderTarget) => void) =>
+    listen<import("./types").PetWanderTarget>("pet-wander-target", event => receive(event.payload)),
   get: () => invoke<PetActivity>("get_pet_activity"),
   interact: (view: PetActivity, action: PetAction) => invoke<PetActivity>("interact_pet", { input: {
     personaId: view.personaId, sessionId: view.sessionId, contextRevision: view.contextRevision, action,
@@ -129,6 +132,10 @@ export const petApi = {
   dragging: (dragging: boolean) => invoke<void>("set_pet_dragging", { dragging }),
   refreshProvider: () => invoke<void>("refresh_pet_provider"),
   listen: (receive: (view: PetActivity) => void) => listen<PetActivity>("pet-activity-changed", event => receive(event.payload)),
+  listenStateBubble: (receive: (notice: import("./types").PetStateNotice) => void) =>
+    listen<import("./types").PetStateNotice>("pet-state-bubble", event => receive(event.payload)),
+  listenProactiveMessage: (receive: (notice: import("./types").ProactiveMessageNotice) => void) =>
+    listen<import("./types").ProactiveMessageNotice>("proactive-message", event => receive(event.payload)),
   listenError: (receive: (error: unknown) => void) => listen("pet-activity-error", event => receive(event.payload)),
 };
 

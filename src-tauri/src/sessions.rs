@@ -7,6 +7,37 @@ use crate::{
 use chrono::{SecondsFormat, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
 
+/// 第一版上手指南唯一内置正文，与前端设计 5.7.3 保持一致。
+pub(crate) const INITIAL_GUIDE: &str = r#"欢迎来到颜喵，我是电子小猫 (・ω・)
+
+我会住在你的桌面上，陪你聊天，也会有自己的小日常。这份指南带你认识颜喵，先完成第一步，就可以开始聊天啦。
+
+1. 先接好聊天模型
+打开「设置 → 提供商」，添加你的服务地址、模型名和 API Key，测试连接成功后选为聊天提供商。记忆整理可单独选择提供商；记忆检索默认使用随包提供的本地模型，也可以配置联网服务。没有配置模型时，你仍然可以阅读指南和调整设置。
+
+2. 开始我们的聊天
+点击桌宠上的「聊天」进入聊天窗，可以新建、切换和整理会话。回复过程中可以暂停；触及输出长度上限时，可以继续生成。历史消息可以编辑，删除从底部开始；最后一轮完整对话也可以重说。
+
+3. 认识我，也告诉我你是谁
+在「设置 → 人设」里创建和切换角色，调整设定、颜色和聊天背景。开启人设自调后，可以查看当前设定相对初始设定的变化，也能恢复初始设定。「用户设定」用来填写希望我了解的资料，再绑定到相应会话。
+
+4. 留住聊天里的事情
+完整对话会逐渐形成短期和长期记忆，记忆和记事本跟随各自的会话。你可以查看、修改记忆，也可以请 AI 重新整理；记事本可以手动编辑。编辑聊天原文不会自动重写已有记忆，需要时请一起调整。
+
+5. 和桌面上的我相处
+点击我可以互动，右键可以摸摸、喂食，拖动我可以调整宠窗位置。聊天和互动会增加当前会话的亲密度，最高 999。我会饿、会睡觉，也可能在无聊时主动找你聊聊。提醒可以在设置里管理，也可以在聊天中请我创建；时间、天气和定位相关选项在「时间与天气」里配置。
+
+6. 喵币、小游戏和小饰品
+「桌宠状态」里可以每日签到、查看亲密度和喵币，遇到节日还会有祝福。「游戏中心与插件管理」提供内置石头剪刀布，也能安装其他小游戏插件。插件获得你的喵币授权后才能增减余额；联网权限也由你决定。亲密度达到档位后，我可能请求制作饰品，经过你确认才会花费喵币；饰品可以佩戴、卸下和管理。
+
+7. 我也会出门旅行
+当前会话在家空闲一段时间后，我可能出门，默认等待范围为 2–4 小时有效在线时间。出门期间可以写信，回信需要等待；回来后可以查看信件、游记和伴手礼。旅行途中切换会话或人设会取消这次旅行和待回信，回来后也不能继续回信。删除一篇游记不会连带删除信件或伴手礼。
+
+8. 把颜喵调成你喜欢的样子
+设置里可以切换亮色、暗色或跟随系统主题，调整桌宠计时、记忆等选项，并使用全量或分类导入导出备份数据。聊天等数据保存在本机；使用联网模型时，本次请求所需的上下文会发送给你选择的服务商。备份不包含 API Key，插件程序和模型资源也需要另外准备。
+
+不用一次记住所有功能，先配置好聊天模型，再和我打个招呼吧！"#;
+
 const DEFAULT_TITLE: &str = "新会话";
 const MAX_TITLE_CHARS: usize = 100;
 const MAX_MESSAGE_PAGE: i64 = 200;
@@ -169,6 +200,19 @@ pub fn create(connection: &mut Connection, persona_id: i64) -> AppResult<Session
 pub fn create_with_profile(connection: &mut Connection, persona_id: i64, user_profile_id: Option<i64>) -> AppResult<Session> {
     let changed_at = now();
     let transaction = connection.transaction()?;
+    let result = create_in_transaction(&transaction, persona_id, user_profile_id, DEFAULT_TITLE, &changed_at)?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+/// 初始化与普通创建共用同一写入路径；调用者负责提交，不能在这里嵌套事务。
+fn create_in_transaction(
+    transaction: &Transaction<'_>,
+    persona_id: i64,
+    user_profile_id: Option<i64>,
+    title: &str,
+    changed_at: &str,
+) -> AppResult<Session> {
     let active = transaction
         .query_row(
             "SELECT is_active FROM personas WHERE id=?1",
@@ -186,13 +230,25 @@ pub fn create_with_profile(connection: &mut Connection, persona_id: i64, user_pr
     if let Some(id) = user_profile_id { crate::user_profiles::get(&transaction, id)?; }
     transaction.execute(
         "INSERT INTO sessions(persona_id,user_profile_id,title,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)",
-        params![persona_id, user_profile_id, DEFAULT_TITLE, changed_at],
+        params![persona_id, user_profile_id, title, changed_at],
     )?;
     let session_id = transaction.last_insert_rowid();
-    set_current_in_transaction(&transaction, persona_id, session_id, &changed_at)?;
-    let result = get(&transaction, persona_id, session_id)?;
-    transaction.commit()?;
-    Ok(result)
+    set_current_in_transaction(transaction, persona_id, session_id, changed_at)?;
+    get(transaction, persona_id, session_id)
+}
+
+/// 只由全新数据库初始化调用；不经过回复完成或主动消息结算，不生成回合与奖励。
+pub(crate) fn create_initial_in_transaction(transaction: &Transaction<'_>) -> AppResult<()> {
+    let persona_id: i64 = transaction.query_row(
+        "SELECT id FROM personas WHERE is_builtin=1", [], |row| row.get(0),
+    )?;
+    let created_at = now();
+    let session = create_in_transaction(transaction, persona_id, None, "初次见面", &created_at)?;
+    transaction.execute(
+        "INSERT INTO messages(session_id,round_id,role,content,created_at) VALUES(?1,NULL,'assistant',?2,?3)",
+        params![crate::error::parse_id(&session.id)?, INITIAL_GUIDE, created_at],
+    )?;
+    Ok(())
 }
 
 pub fn select(connection: &mut Connection, persona_id: i64, session_id: i64) -> AppResult<bool> {
@@ -614,12 +670,20 @@ pub fn append_proactive_message(
     content: &str,
     expression: Option<&str>,
 ) -> AppResult<Message> {
+    let transaction = connection.transaction()?;
+    let result = append_proactive_in_transaction(&transaction, persona_id, session_id, content, expression, &now())?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+pub(crate) fn append_proactive_in_transaction(
+    transaction: &rusqlite::Transaction<'_>, persona_id: i64, session_id: i64,
+    content: &str, expression: Option<&str>, created_at: &str,
+) -> AppResult<Message> {
     let content = content.trim();
     if content.is_empty() {
         return Err(AppError::validation("content", "主动消息不能为空"));
     }
-    let created_at = now();
-    let transaction = connection.transaction()?;
     require_session(&transaction, persona_id, session_id)?;
     transaction.execute(
         "INSERT INTO messages(session_id,round_id,role,content,expression,created_at)
@@ -636,7 +700,6 @@ pub fn append_proactive_message(
         [id],
         message_from_row,
     )?;
-    transaction.commit()?;
     Ok(result)
 }
 
@@ -668,8 +731,7 @@ mod tests {
     use super::*;
 
     fn database() -> Connection {
-        let mut connection = Connection::open_in_memory().unwrap();
-        crate::db::initialize(&mut connection).unwrap();
+        let connection = crate::db::test_database();
         connection
     }
 

@@ -20,10 +20,24 @@ impl crate::events::ReminderEventSink for PetEvents {
     }
 }
 impl PetEventSink for PetEvents {
+    fn wander(&self, view: &View) { crate::platform::windows::wander::tick(&self.0, view); }
+    fn state_bubble(&self, bubble: &crate::events::PetStateBubble) {
+        let _ = self.0.emit(crate::events::PET_STATE_BUBBLE, bubble);
+    }
     fn changed(&self, view: &View) {
         let _ = self.0.emit(PET_ACTIVITY_CHANGED, view);
     }
     fn failed(&self, error: &AppError) {
         let _ = self.0.emit(PET_ACTIVITY_ERROR, error);
+    }
+}
+impl crate::events::ChatToolEventSink for PetEvents {
+    fn notebook_changed(&self) { let _ = self.0.emit(crate::events::NOTEBOOK_CHANGED, ()); }
+}
+impl crate::events::ProactiveEventSink for PetEvents {
+    fn proactive_failed(&self, error: &AppError) { let _ = self.0.emit(PET_ACTIVITY_ERROR, error); }
+    fn proactive_message(&self, value: &crate::events::ProactiveMessage) {
+        let _ = self.0.emit("chat-messages-changed", serde_json::json!({"sessionId": value.session_id}));
+        let _ = self.0.emit("proactive-message", value);
     }
 }

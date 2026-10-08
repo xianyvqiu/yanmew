@@ -82,6 +82,21 @@ export type PetActivity = {
   canInteract: boolean; canWander: boolean;
 };
 export type PetAction = "click" | "stroke" | "feed";
+export type PetWanderPoint = { x: number; y: number };
+export type PetWanderLayout = {
+  personaId: RecordId; sessionId: RecordId; contextRevision: number; layoutRevision: number;
+  area: PetWanderPoint & { width: number; height: number };
+  body: PetWanderPoint & { width: number; height: number };
+  offset: PetWanderPoint; paused: boolean;
+};
+export type PetWanderTarget = Pick<PetWanderLayout, "personaId" | "sessionId" | "contextRevision" | "layoutRevision" | "offset">;
+export type PetStateNotice = {
+  personaId: RecordId; sessionId: RecordId; contextRevision: number; revision: number;
+  activity: "hungry" | "bored"; text: string;
+};
+export type ProactiveMessageNotice = {
+  personaId: RecordId; sessionId: RecordId; contextRevision: number; message: Message;
+};
 export type AppError = { code: string; message: string; field?: string };
 export type SecretUpdate = { action: "keep" } | { action: "clear" } | { action: "set"; value: string };
 export type WeatherSettings = { apiHost: string | null; hasApiKey: boolean };

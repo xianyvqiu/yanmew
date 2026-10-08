@@ -19,6 +19,8 @@ mod guards;
 mod context;
 mod memory_tools;
 mod regeneration;
+mod proactive;
+pub(crate) use proactive::prepare_proactive;
 pub(crate) use regeneration::{regenerate, run_regenerated};
 #[cfg(test)]
 mod context_tests;
@@ -39,6 +41,7 @@ pub struct PreparedReply {
     context: context::Context,
     continuation: bool,
     regenerating: bool,
+    proactive: bool,
     lease: Arc<RequestLease>,
     runtime: Runtime,
     health: crate::pet::controller::HealthToken,
@@ -83,6 +86,7 @@ fn prepare(
         let prefix=if regenerating {String::new()} else {previous.as_ref().and_then(|p|p.assistant_message.as_ref()).map(|m|m.content.clone()).unwrap_or_default()};
         let context=context::Context::snapshot(s,runtime,session_id,provider_id,&prompt,input.trim(),None,continuing.map(|id|(id,prefix.as_str())))?;
         let messages=vec![Message::new("user",input.trim())];
+        runtime.requests.cancel_key(&format!("proactive:{session_id}"));
         let lease=Arc::new(runtime.requests.start(format!("chat:{session_id}"),persona_id)?);
         let pet=crate::pet_store::read(&s.connection,session_id)?;
         crate::pet::interact(&mut s.connection,s.context_revision,crate::pet_store::PetWriteScope{persona_id,session_id,context_revision,state_revision:pet.state_revision},crate::pet_store::Interaction::Wake,runtime.clock.sample()?.utc)?;
@@ -98,7 +102,7 @@ fn prepare(
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
         } else { None };
-        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some()&&!regenerating,regenerating,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
+        Ok((PreparedReply{persona_id,session_id,context_revision,prompt,config,messages,context,continuation:continuing.is_some()&&!regenerating,regenerating,proactive:false,lease,runtime:runtime.clone(),health,tool_events:None}, snapshot))
     })
 }
 #[derive(Serialize, Debug)]
@@ -157,11 +161,14 @@ pub async fn run_reply(
         if prepared.continuation {initial_tools.clear();}
         prepared.context.clone().request(initial_tools,&[])?;
         if !prepared.continuation {
-        let expression_request=GenerateRequest{messages:vec![Message::new("system","只返回 JSON：{\"expression\":\"颜文字\"}。生成符合当前人设和对话的单行颜文字，不解释；最多 14 个半角宽度，非 ASCII 字符按 2 计算。"),Message::new("user",format!("人设：{}\n用户消息：{}",prepared.prompt,prepared.messages.last().map(|m|m.content.as_str()).unwrap_or("")))],max_tokens:256,tools:vec![],json:true};
+        let expression_request=GenerateRequest{messages:vec![Message::new("system","只返回 JSON：{\"expression\":\"颜文字\"}。生成符合当前人设和对话的单行颜文字，不解释；最多 14 个半角宽度，非 ASCII 字符按 2 计算。"),Message::new("user",format!("人设：{}\n{}：{}",prepared.prompt,if prepared.proactive {"主动发言要求"} else {"用户消息"},prepared.messages.last().map(|m|m.content.as_str()).unwrap_or("")))],max_tokens:256,tools:vec![],json:true};
         let expression:Expression=client.structured(&prepared.config,&expression_request,&prepared.lease.cancel,|v:&Expression|validate_expression(&v.expression)).await?;
         prepared.lease.cancel.check()?;
         prepared.runtime.read(|s,_| {
-            if s.context_revision==prepared.context_revision {s.pet.chat_expression=Some(expression.expression.clone());}
+            if s.context_revision==prepared.context_revision {
+                if prepared.proactive { s.pet.proactive_expression=Some(expression.expression.clone()); }
+                else { s.pet.chat_expression=Some(expression.expression.clone()); }
+            }
             Ok(())
         })?;
         emit(ReplyEventKind::Expression{expression:expression.expression})?;
@@ -178,13 +185,11 @@ pub async fn run_reply(
         if guards::stop_reason(error.code).is_some() {
             prepared.lease.cancel.cancel();
         }
-        if error.code.starts_with("AI_") || error.code == "PROVIDER_UNAVAILABLE" {
-            let _ = prepared.runtime.read(|s, p| {
-                s.pet.health(&s.connection, p)?;
-                s.pet.complete_health(&prepared.health, &Err(error.clone()));
-                Ok(())
-            });
-        }
+        let _ = prepared.runtime.read(|s, p| {
+            s.pet.health(&s.connection, p)?;
+            s.pet.report_ai_failure(&prepared.health, error);
+            Ok(())
+        });
     }
     match result {
         Ok(choice) => {

@@ -191,9 +191,9 @@ impl ReminderCreation {
     }
 
     fn require_context(&self, store: &Store) -> AppResult<()> {
-        self.request.require_scope(
+        self.request.require_conversation_scope(
             &self.runtime.requests,
-            &format!("chat:{}", self.session_id),
+            self.session_id,
             self.persona_id,
         )?;
         self.runtime.jobs_cancel.check()?;

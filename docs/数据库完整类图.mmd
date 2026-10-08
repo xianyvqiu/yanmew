@@ -74,6 +74,8 @@ class session_pet_states {
   TEXT last_interacted_at
   INTEGER state_revision
   TEXT updated_at
+  INTEGER proactive_next_check_idle_ms
+  TEXT last_proactive_sent_at
 }
 class chat_rounds {
   <<table>>

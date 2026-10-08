@@ -181,8 +181,7 @@ mod tests {
     use super::*;
     #[test]
     fn deleting_persona_cleans_memory_sources_and_preserves_wallet() {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::db::initialize(&mut c).unwrap();
+        let mut c = crate::db::test_database();
         c.execute_batch("INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(2,'测试','设定','设定');
           INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(2,2,'会话','a','a');
           INSERT INTO chat_rounds(id,session_id,status,created_at) VALUES(1,2,'completed','a'),(2,2,'completed','b');
@@ -214,8 +213,7 @@ mod tests {
     }
     #[test]
     fn switch_cancel_and_delete_current_persona() {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::db::initialize(&mut c).unwrap();
+        let mut c = crate::db::test_database();
         assert!(delete(&mut c, 1).is_err());
         let p = save(
             &mut c,

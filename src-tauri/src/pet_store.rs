@@ -46,6 +46,8 @@ pub struct PetSnapshot {
     pub last_interacted_at: Option<String>,
     pub state_revision: i64,
     pub updated_at: String,
+    pub proactive_next_check_idle_ms: Option<i64>,
+    pub last_proactive_sent_at: Option<String>,
 }
 
 /// 后端在取得当前上下文后创建，不能由前端自行指定 persona/session 归属。
@@ -65,7 +67,7 @@ pub fn read(connection: &Connection, session_id: i64) -> AppResult<PetSnapshot> 
     let stored = connection
         .query_row(
             "SELECT session_id,hunger_elapsed_ms,idle_elapsed_ms,idle_branch,sleep_until,
-                last_fed_at,last_interacted_at,state_revision,updated_at
+                last_fed_at,last_interacted_at,state_revision,updated_at,proactive_next_check_idle_ms,last_proactive_sent_at
          FROM session_pet_states WHERE session_id=?1",
             [session_id],
             |row| {
@@ -79,6 +81,8 @@ pub fn read(connection: &Connection, session_id: i64) -> AppResult<PetSnapshot> 
                     row.get(6)?,
                     row.get(7)?,
                     row.get(8)?,
+                    row.get(9)?,
+                    row.get(10)?,
                 ))
             },
         )
@@ -94,6 +98,8 @@ pub fn read(connection: &Connection, session_id: i64) -> AppResult<PetSnapshot> 
         last_interacted_at: stored.6,
         state_revision: stored.7,
         updated_at: stored.8,
+        proactive_next_check_idle_ms: stored.9,
+        last_proactive_sent_at: stored.10,
     })
 }
 
@@ -143,7 +149,7 @@ fn save(connection: &Connection, snapshot: &mut PetSnapshot, now: DateTime<Utc>)
     let changed = connection.execute(
         "UPDATE session_pet_states SET hunger_elapsed_ms=?1,idle_elapsed_ms=?2,
          idle_branch=?3,sleep_until=?4,last_fed_at=?5,last_interacted_at=?6,
-         state_revision=?7,updated_at=?8 WHERE session_id=?9 AND state_revision=?10",
+         state_revision=?7,updated_at=?8,proactive_next_check_idle_ms=?11,last_proactive_sent_at=?12 WHERE session_id=?9 AND state_revision=?10",
         params![
             snapshot.hunger_elapsed_ms,
             snapshot.idle_elapsed_ms,
@@ -154,7 +160,9 @@ fn save(connection: &Connection, snapshot: &mut PetSnapshot, now: DateTime<Utc>)
             next_revision,
             updated_at,
             snapshot.session_id,
-            snapshot.state_revision
+            snapshot.state_revision,
+            snapshot.proactive_next_check_idle_ms,
+            snapshot.last_proactive_sent_at
         ],
     )?;
     if changed != 1 {
@@ -269,6 +277,7 @@ pub fn interact_in_transaction(
     let mut snapshot = validate_scope(transaction, actual_context_revision, scope)?;
     require_at_home(transaction, scope.session_id)?;
     snapshot.idle_elapsed_ms = 0;
+    snapshot.proactive_next_check_idle_ms = None;
     snapshot.idle_branch = IdleBranch::None;
     snapshot.sleep_until = None;
     snapshot.last_interacted_at = Some(time_text(now));
@@ -328,6 +337,9 @@ pub fn choose_idle_branch_in_transaction(
         ));
     }
     snapshot.idle_branch = branch;
+    snapshot.proactive_next_check_idle_ms = if branch == IdleBranch::Bored {
+        Some(snapshot.idle_elapsed_ms.checked_add(crate::proactive::CHECK_INTERVAL_MS).ok_or_else(AppError::storage)?)
+    } else { None };
     snapshot.sleep_until = sleep_until.map(time_text);
     save(transaction, &mut snapshot, now)?;
     Ok(snapshot)
@@ -358,6 +370,7 @@ pub fn restore_sleep_in_transaction(
             snapshot.sleep_until = None;
             snapshot.idle_branch = IdleBranch::None;
             snapshot.idle_elapsed_ms = 0;
+            snapshot.proactive_next_check_idle_ms = None;
             save(transaction, &mut snapshot, now)?;
         }
     }

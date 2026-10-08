@@ -71,6 +71,13 @@ pub struct RequestLease {
     owner: RequestManager,
 }
 impl RequestLease {
+    /// 会话工具仅接受当前会话的普通或主动请求，不扩大到其他生成任务。
+    pub(crate) fn require_conversation_scope(&self, manager: &RequestManager, session_id: i64, persona_id: i64) -> AppResult<()> {
+        let key = if self.key == format!("proactive:{session_id}") {
+            format!("proactive:{session_id}")
+        } else { format!("chat:{session_id}") };
+        self.require_scope(manager, &key, persona_id)
+    }
     /// 副作用工具必须属于这一个仍活动的请求，不能借用其他会话或生成任务的租约。
     pub(crate) fn require_scope(
         &self,

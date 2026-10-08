@@ -94,6 +94,7 @@ fn interrupt(
     sessions: &[i64],
 ) -> AppResult<()> {
     for session in sessions {
+        runtime.requests.cancel_key(&format!("proactive:{session}"));
         if let Some(active) = store.chat_requests.get(session).cloned() {
             let persona = crate::error::parse_id(&active.persona_id)?;
             let round = crate::error::parse_id(&active.round_id)?;
@@ -202,8 +203,7 @@ mod runtime_tests;
 mod tests {
     use super::*;
     fn database() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        crate::db::initialize(&mut c).unwrap();
+        let c = crate::db::test_database();
         c
     }
     #[test]

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import useReminderNotifications, { noticeKey } from "../hooks/useReminderNotifications";
 import { navigation } from "../platform/navigation";
 import ReminderBubble from "./ReminderBubble";
 import MissedReminderSummaryDialog from "./MissedReminderSummaryDialog";
 
-export default function PetReminderNotifications({ hidden, ready, unobscured }: { hidden: boolean; ready: boolean; unobscured: boolean }) {
+export default function PetReminderNotifications({ hidden, ready, unobscured, stateBubble }: {
+  hidden: boolean; ready: boolean; unobscured: boolean; stateBubble?: ReactNode;
+}) {
   const notifications = useReminderNotifications();
   const { notice, pendingIds, shown, busy, error } = notifications;
   const awakened = useRef(new Set<string>());
@@ -55,6 +57,8 @@ export default function PetReminderNotifications({ hidden, ready, unobscured }: 
   };
   if (!visible) return null;
   return <div className="pet-reminder-slot">
+    {/* 提醒优先；提示组件被卸载后丢弃内容，不在提醒收起后重放。 */}
+    {!notice && !error && stateBubble}
     {notice?.kind === "due" && <ReminderBubble occurrence={notice.item} busy={busy || openingPage} error={error}
       onComplete={() => { void notifications.complete(key); }} onDismiss={() => { void notifications.dismiss(key); }} onOpenReminders={() => { void open(); }} />}
     {notice?.kind === "missed" && <MissedReminderSummaryDialog occurrences={notice.items} busy={busy || openingPage} error={error}

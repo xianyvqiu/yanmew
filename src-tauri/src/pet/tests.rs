@@ -8,8 +8,7 @@ fn now() -> DateTime<Utc> {
 }
 
 fn database() -> Connection {
-    let mut connection = Connection::open_in_memory().unwrap();
-    crate::db::initialize(&mut connection).unwrap();
+    let connection = crate::db::test_database();
     for id in [1, 2] {
         connection.execute(
             "INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(?1,1,'测试','a','a')", [id],

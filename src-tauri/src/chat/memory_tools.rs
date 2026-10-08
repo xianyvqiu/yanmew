@@ -47,7 +47,7 @@ pub(super) async fn execute(
     call: &ToolCall,
 ) -> AppResult<Value> {
     let check = |store: &crate::runtime::Store| {
-        lease.require_scope(&runtime.requests, &format!("chat:{session}"), persona)?;
+        lease.require_conversation_scope(&runtime.requests, session, persona)?;
         runtime.jobs_cancel.check()?;
         coordinator::require_context(store, persona, session, revision)
     };

@@ -7,6 +7,7 @@ pub async fn run(
     sink: Arc<dyn PetEventSink>,
     reminders: Arc<dyn crate::events::ReminderEventSink>,
     memory_events: Arc<dyn crate::events::MemoryEventSink>,
+    proactive_events: Arc<dyn crate::events::ProactiveEventSink>,
 ) {
     let mut revision = None;
     let mut last_error = None;
@@ -14,6 +15,7 @@ pub async fn run(
     let mut reminder_error = None;
     let mut memory = crate::memory::Worker::default();
     let mut memory_index = crate::memory_index::Worker::default();
+    let mut state_bubbles = crate::pet::state_bubbles::Tracker::default();
     loop {
         if runtime.jobs_cancel.check().is_err() {
             break;
@@ -59,8 +61,12 @@ pub async fn run(
         }
         match result {
             Ok(view) => {
+                sink.wander(&view);
                 if revision != Some(view.revision) || last_error.is_some() {
                     sink.changed(&view);
+                }
+                if let Some(bubble) = state_bubbles.observe(&view) {
+                    sink.state_bubble(&bubble);
                 }
                 revision = Some(view.revision);
                 last_error = None;
@@ -78,6 +84,8 @@ pub async fn run(
             }
         }
         memory_index.tick(&runtime, memory_events.clone());
+        // 只等待本地资格与事务；AI 推理在独立任务中执行。
+        crate::proactive::tick(&runtime, proactive_events.clone()).await;
         if runtime
             .jobs_cancel
             .wait(Duration::from_secs(2), async {

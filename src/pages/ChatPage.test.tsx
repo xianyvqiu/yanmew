@@ -198,6 +198,22 @@ describe("ChatPage", () => {
     expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
   });
 
+  it("初始教程按一条真实消息展示，沿用底部删除且不显示回合操作", async () => {
+    const current = snapshot("session-1");
+    current.sessions = [{ ...firstSession, title: "初次见面" }];
+    const guide = { ...message("1", "session-1", "欢迎来到颜喵，我是电子小猫 (・ω・)\n\n先配置好聊天模型，再和我打个招呼吧！"), role: "assistant" as const };
+    api.messages.mockResolvedValue({ items: [guide], nextAfterId: null });
+    render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
+    await screen.findByText(/欢迎来到颜喵，我是电子小猫/);
+    expect(screen.queryByRole("button", { name: "重说" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const modal = within(screen.getByRole("dialog", { name: "删除消息？" }));
+    expect(modal.getByText(/只删除底部这一条消息.*不修改已有记忆/)).toBeTruthy();
+    fireEvent.click(modal.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(api.deleteTail).toHaveBeenCalledWith(current.context, guide));
+  });
+
   it("底部主动消息只允许删除单条，不能越过它删除或重说旧回合", async () => {
     const round = completedRound();
     const proactive = { ...message("22", "session-1", "主动问候"), role: "assistant" as const };
@@ -209,7 +225,7 @@ describe("ChatPage", () => {
     expect(screen.queryByRole("button", { name: "重说" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     const modal = within(screen.getByRole("dialog", { name: "删除消息？" }));
-    expect(modal.getByText(/只删除底部这一条主动消息.*不修改已有记忆/)).toBeTruthy();
+    expect(modal.getByText(/只删除底部这一条消息.*不修改已有记忆/)).toBeTruthy();
     fireEvent.click(modal.getByRole("button", { name: "取消" }));
     expect(api.deleteTail).not.toHaveBeenCalled();
   });

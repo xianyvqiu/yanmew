@@ -10,6 +10,8 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::time::Duration;
 pub(crate) mod controller;
+pub(crate) mod state_bubbles;
+pub(crate) mod wander;
 
 /// 会话亲密度固定上限；互动和后续聊天完成奖励共用，不作为用户设置项。
 pub const MAX_INTIMACY: i64 = 999;

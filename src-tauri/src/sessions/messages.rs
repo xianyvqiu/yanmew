@@ -57,6 +57,7 @@ pub(crate) fn edit(
         tx.execute("UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",params![now(),session])?;
         let saved=read(&tx,session,message)?;
         tx.commit()?;
+        runtime.requests.cancel_key(&format!("proactive:{session}"));
         runtime.requests.cancel_key(&format!("session-title:{session}"));
         Ok(saved)
     })?;
@@ -115,6 +116,7 @@ pub(crate) fn delete_tail(
             params![stamp, session],
         )?;
         tx.commit()?;
+        runtime.requests.cancel_key(&format!("proactive:{session}"));
         if let Some(id) = round {
             if store
                 .chat_requests

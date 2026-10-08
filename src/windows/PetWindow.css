@@ -3,7 +3,7 @@
   background-color: rgba(0, 0, 0, 0) !important; user-select: none;
 }
 .pet-face {
-  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 32px; left: 50%; transform: translate(calc(-50% + var(--ym-wander-x, 0px)), var(--ym-wander-y, 0px));
   max-width: calc(100% - 32px); padding: 12px;
   cursor: grab; touch-action: none; white-space: nowrap;
   color: var(--ym-pet-color, var(--ym-accent-strong));
@@ -50,5 +50,17 @@
 .pet-face[data-away="true"] { font-size: 20px; white-space: normal; overflow-wrap: anywhere; text-align: center; }
 .pet-reminder-slot { position: absolute; top: 44px; bottom: 92px; left: 12px; right: 12px; z-index: 2; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
 .pet-reminder-slot > * { pointer-events: auto; }
+.pet-reminder-slot { transform: translate(var(--ym-wander-x, 0px), var(--ym-wander-y, 0px)); }
 .pet-reminder-slot .ym-reminder-notification { min-height: 0; flex: 1; }
 .pet-reminder-retry { flex: 0 0 auto; max-width: 100%; font-size: var(--ym-font-caption); padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; }
+/* 普通状态提示只使用主题表面；不影响透明窗口和提醒的独立外观。 */
+.pet-state-bubble {
+  max-width: 100%; padding: 12px 16px; border: 1px solid var(--ym-border-strong);
+  border-radius: var(--ym-radius-lg); background: var(--ym-surface); color: var(--ym-text);
+  box-shadow: var(--ym-shadow-sm); font-size: var(--ym-font-body); line-height: 1.55;
+  pointer-events: none; animation: ym-appear var(--ym-duration-slow) var(--ym-ease-standard);
+}
+.pet-state-bubble[data-activity="hungry"] { border-color: var(--ym-warning); }
+.pet-state-bubble[data-activity="bored"] { border-color: var(--ym-accent); }
+.pet-state-bubble p { margin: 0; overflow-wrap: anywhere; }
+.pet-reminder-slot > .pet-state-bubble { pointer-events: none; }

@@ -6,7 +6,8 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 4;
+const VERSION: i64 = 5;
+const PROACTIVE_MIGRATION: &str = include_str!("../../db/migrations/005_proactive_messages.sql");
 const PET_STATE_MIGRATION: &str = include_str!("../../db/migrations/002_session_pet_states.sql");
 const INTIMACY_MIGRATION: &str = include_str!("../../db/migrations/003_intimacy_limit.sql");
 const CHAT_BUDGET_MIGRATION: &str = include_str!("../../db/migrations/004_chat_budget.sql");
@@ -44,14 +45,15 @@ fn backup_before_migration(connection: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-pub fn open(paths: &AppPaths) -> AppResult<Connection> {
+pub fn open(paths: &AppPaths) -> AppResult<(Connection, bool)> {
     std::fs::create_dir_all(&paths.data_root).map_err(|_| AppError::storage())?;
     let mut conn = Connection::open(paths.data_root.join("yanwenzi.db"))?;
-    initialize(&mut conn)?;
-    Ok(conn)
+    let created_initial_session = initialize(&mut conn)?;
+    Ok((conn, created_initial_session))
 }
 
-pub fn initialize(conn: &mut Connection) -> AppResult<()> {
+/// 返回本次是否原子创建了初始教程；仅用于本次启动导航，不持久化已读标记。
+pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     conn.pragma_update(None, "foreign_keys", true)?;
     if conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, i64>(0))? != 1 {
@@ -91,6 +93,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
+        4 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -98,6 +101,10 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
                 "数据库版本不受当前应用支持，请使用匹配的应用版本；原数据未修改",
             ))
         }
+    }
+    if (1..5).contains(&version) {
+        tx.execute_batch(PROACTIVE_MIGRATION)?;
+        tx.pragma_update(None, "user_version", VERSION)?;
     }
     for (key, value) in config::defaults() {
         tx.execute(
@@ -110,6 +117,10 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
         [chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)],
     )?;
     seed_default_persona(&tx)?;
+    let created_initial_session = version == 0;
+    if created_initial_session {
+        crate::sessions::create_initial_in_transaction(&tx)?;
+    }
     tx.execute("INSERT INTO embedding_providers(name,kind,model,is_builtin) SELECT '内置中文 Embedding','local','BAAI/bge-small-zh-v1.5',1 WHERE NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_builtin=1)",[])?;
     tx.execute("UPDATE embedding_providers SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_active=1)",[])?;
     // current_session_id 无外键；启动时只保留归属当前人设的有效会话。
@@ -135,7 +146,17 @@ pub fn initialize(conn: &mut Connection) -> AppResult<()> {
     )?;
     config::get(&tx)?;
     tx.commit()?;
-    Ok(())
+    Ok(created_initial_session)
+}
+
+/// 既有业务测试从已初始化的空会话库开始；新库教程单独通过真实 initialize 验证。
+#[cfg(test)]
+pub(crate) fn test_database() -> Connection {
+    let mut connection = Connection::open_in_memory().unwrap();
+    connection.execute_batch(SCHEMA).unwrap();
+    connection.pragma_update(None, "user_version", VERSION).unwrap();
+    assert!(!initialize(&mut connection).unwrap());
+    connection
 }
 
 /// 种子在初始化事务内维护；保留用户修改过的名称、正文和初始设定。
@@ -161,6 +182,10 @@ fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
     tx.execute("UPDATE personas SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM personas WHERE is_active=1)",[])?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "db/onboarding_tests.rs"]
+mod onboarding_tests;
 
 #[cfg(test)]
 mod tests {
@@ -205,7 +230,9 @@ mod tests {
         let connection = memory();
         connection
             .execute_batch(
-                "DROP TRIGGER chat_rounds_stop_reason_insert;
+                "ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
+             ALTER TABLE session_pet_states DROP COLUMN last_proactive_sent_at;
+             DROP TRIGGER chat_rounds_stop_reason_insert;
              DROP TRIGGER chat_rounds_stop_reason_update;
              ALTER TABLE chat_rounds DROP COLUMN stop_reason;
              ALTER TABLE providers DROP COLUMN context_window_override;
@@ -257,6 +284,29 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(normalized(connection), normalized(&expected));
+    }
+
+    #[test]
+    fn version_four_migration_preserves_idle_and_success_across_restart() {
+        let mut connection = memory();
+        connection.execute_batch("ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
+            ALTER TABLE session_pet_states DROP COLUMN last_proactive_sent_at;
+            PRAGMA user_version=4;
+            INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'保留会话','a','a');
+            UPDATE session_pet_states SET idle_branch='bored',idle_elapsed_ms=3000000 WHERE session_id=1;").unwrap();
+        initialize(&mut connection).unwrap();
+        assert_current_schema(&connection);
+        let scheduled: (i64, Option<i64>, Option<String>) = connection.query_row(
+            "SELECT idle_elapsed_ms,proactive_next_check_idle_ms,last_proactive_sent_at FROM session_pet_states WHERE session_id=1",
+            [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+        assert_eq!(scheduled, (3000000, Some(3300000), None));
+        connection.execute("UPDATE session_pet_states SET proactive_next_check_idle_ms=NULL,last_proactive_sent_at='2026-10-06T10:00:00Z' WHERE session_id=1", []).unwrap();
+        initialize(&mut connection).unwrap();
+        let saved: (Option<i64>, String) = connection.query_row(
+            "SELECT proactive_next_check_idle_ms,last_proactive_sent_at FROM session_pet_states WHERE session_id=1",
+            [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+        assert_eq!(saved, (None, "2026-10-06T10:00:00Z".into()));
+        assert_eq!(connection.pragma_query_value(None, "user_version", |r| r.get::<_,i64>(0)).unwrap(), VERSION);
     }
 
     #[test]
@@ -592,11 +642,11 @@ mod tests {
             data_root: root.clone(),
         };
         {
-            let c = open(&paths).unwrap();
+            let (c, _) = open(&paths).unwrap();
             c.execute("UPDATE user_state SET coins=17", []).unwrap();
         }
         {
-            let c = open(&paths).unwrap();
+            let (c, _) = open(&paths).unwrap();
             assert_eq!(
                 c.query_row("SELECT coins FROM user_state", [], |r| r.get::<_, i64>(0))
                     .unwrap(),
@@ -647,9 +697,7 @@ mod tests {
         );
     }
     pub fn memory() -> Connection {
-        let mut c = Connection::open_in_memory().unwrap();
-        initialize(&mut c).unwrap();
-        c
+        test_database()
     }
     #[test]
     fn seeds_are_idempotent_and_foreign_keys_enforced() {

@@ -88,6 +88,7 @@ pub struct Controller {
     pub stopping: bool,
     transient: Option<(Duration, Activity, String)>,
     pub chat_expression: Option<String>,
+    pub proactive_expression: Option<String>,
     provider: Option<ProviderStamp>,
     provider_initialized: bool,
     health_revision: u64,
@@ -138,19 +139,30 @@ impl Controller {
         })
     }
 
-    pub(crate) fn complete_health(&mut self, token: &HealthToken, result: &AppResult<()>) {
+    pub(crate) fn complete_health(&mut self, token: &HealthToken, result: &AppResult<()>) -> bool {
         if self.provider != token.stamp || self.health_revision != token.revision {
-            return;
+            return false;
         }
         if result
             .as_ref()
             .err()
             .is_some_and(|e| e.code == "CANCELLED" || e.code == "CONTEXT_CHANGED")
         {
-            return;
+            return false;
         }
         self.provider_error = result.as_ref().err().cloned();
         self.health_revision += 1;
+        true
+    }
+
+    /// 只有主流程连接/传输失败才使桌宠休眠；内容校验、截断和本地守卫留在本次任务。
+    pub(crate) fn report_ai_failure(&mut self, token: &HealthToken, error: &AppError) {
+        if matches!(
+            error.code,
+            "PROVIDER_UNAVAILABLE" | "AI_TIMEOUT" | "AI_STREAM_INTERRUPTED"
+        ) {
+            self.complete_health(token, &Err(error.clone()));
+        }
     }
     pub fn require_ai(&self) -> AppResult<()> {
         if let Some(error) = &self.provider_error {
@@ -163,6 +175,7 @@ impl Controller {
         self.anchor = None;
         self.transient = None;
         self.chat_expression = None;
+        self.proactive_expression = None;
         self.expression_key = None;
     }
 
@@ -303,6 +316,8 @@ impl Controller {
         }
         let expression = if away {
             format!("{name}出门啦")
+        } else if idle_allowed && self.proactive_expression.is_some() {
+            self.proactive_expression.clone().unwrap_or_else(|| self.expression.clone())
         } else if activity == Activity::Speaking {
             self.chat_expression
                 .clone()

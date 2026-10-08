@@ -31,6 +31,15 @@ impl Context {
         current_id: Option<i64>,
         continuation: Option<(i64, &str)>,
     ) -> AppResult<Self> {
+        Self::snapshot_mode(store, runtime, session, provider, prompt, input, current_id, continuation, false)
+    }
+
+    pub(super) fn proactive(store: &crate::runtime::Store, runtime: &Runtime, session: i64, provider: i64, prompt: &str, instruction: &str) -> AppResult<Self> {
+        Self::snapshot_mode(store, runtime, session, provider, prompt, instruction, None, None, true)
+    }
+
+    fn snapshot_mode(store: &crate::runtime::Store, runtime: &Runtime, session: i64, provider: i64, prompt: &str, input: &str,
+        current_id: Option<i64>, continuation: Option<(i64, &str)>, proactive: bool) -> AppResult<Self> {
         let c = &store.connection;
         let settings = crate::config::get(c)?;
         let count: usize = settings["recent_message_count"]
@@ -44,7 +53,7 @@ impl Context {
             .query_map(
                 params![
                     session,
-                    count.saturating_sub(1),
+                    if proactive { count } else { count.saturating_sub(1) },
                     current_id,
                     continuation.map(|v| v.0)
                 ],
@@ -170,13 +179,13 @@ impl Context {
         // 检索线索有界，不改变发送给聊天模型的完整输入；偏重当前输入，附上最近话题。
         result.query = format!(
             "{} {}",
-            input.chars().take(160).collect::<String>(),
+            if proactive { String::new() } else { input.chars().take(160).collect::<String>() },
             topic.chars().take(80).collect::<String>()
         );
         for (_, role, content, time) in raw {
             result.push(&role, content, Some((1, time)));
         }
-        result.push("user", input, None);
+        result.push(if proactive { "system" } else { "user" }, input, None);
         if let Some((_, prefix)) = continuation {
             if !prefix.is_empty() {
             result.push("assistant", prefix, None);

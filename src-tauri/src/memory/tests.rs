@@ -279,6 +279,7 @@ fn failed_attempts_are_bounded_and_explicit_retry_reopens_missing_work() {
                 now,
             )
             .unwrap();
+        assert_ne!(runtime.pet_view().unwrap().activity, crate::pet::controller::Activity::Dormant);
         let queue = runtime.memory.queue.lock().unwrap();
         let failure = &queue.failures[&TaskKey::from(key)];
         assert_eq!(failure.attempts, attempt);

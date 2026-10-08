@@ -2,15 +2,26 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReminderOccurrence } from "../types";
 import PetReminderNotifications from "./PetReminderNotifications";
+import PetStateBubble from "./PetStateBubble";
+import type { PetActivity, PetStateNotice } from "../types";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), hook: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn(), hook: vi.fn(), listenStateBubble: vi.fn(), stopStateBubble: vi.fn() }));
+vi.mock("../api", () => ({ petApi: { listenStateBubble: mocks.listenStateBubble } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../platform/navigation", () => ({ navigation: { open: mocks.open } }));
 vi.mock("../hooks/useReminderNotifications", () => ({ default: mocks.hook, noticeKey: (value: { item: ReminderOccurrence } | null) => value?.item.id ?? "" }));
 const occurrence: ReminderOccurrence = { id: "1", reminderId: "2", name: "喝水", content: "一杯水", scheduledAt: "2032-01-01T01:00:00Z", status: "pending", deliveryState: "queued", createdAt: "2032-01-01T01:00:00Z", completedAt: null };
 let frame = 0;
 let frames: Map<number, FrameRequestCallback>;
-let value: { notice: { kind: "due"; item: ReminderOccurrence }; pendingIds: string[]; error: string; busy: boolean; shown: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; dismiss: ReturnType<typeof vi.fn>; complete: ReturnType<typeof vi.fn>; reportError: ReturnType<typeof vi.fn> };
+let value: { notice: { kind: "due"; item: ReminderOccurrence } | null; pendingIds: string[]; error: string; busy: boolean; shown: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; dismiss: ReturnType<typeof vi.fn>; complete: ReturnType<typeof vi.fn>; reportError: ReturnType<typeof vi.fn> };
+let receiveStateBubble: (notice: PetStateNotice) => void;
+const hungry: PetActivity = {
+  personaId: "1", sessionId: "1", contextRevision: 0, revision: 2, activity: "hungry",
+  expression: "(・ω・)", intimacy: 1, sleepUntil: null, error: null, canInteract: true, canWander: true,
+};
+const hungryNotice: PetStateNotice = {
+  personaId: "1", sessionId: "1", contextRevision: 0, revision: 2, activity: "hungry", text: "好饿…",
+};
 beforeEach(() => {
   vi.clearAllMocks(); frame = 0; frames = new Map();
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.set(++frame, callback); return frame; });
@@ -19,6 +30,7 @@ beforeEach(() => {
   value = { notice: { kind: "due", item: occurrence }, pendingIds: ["1"], error: "", busy: false,
     shown: vi.fn(async () => {}), refresh: vi.fn(async () => {}), dismiss: vi.fn(async () => true), complete: vi.fn(async () => true), reportError: vi.fn() };
   mocks.hook.mockImplementation(() => value);
+  mocks.listenStateBubble.mockImplementation(async callback => { receiveStateBubble = callback; return mocks.stopStateBubble; });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function paint() {
@@ -56,4 +68,46 @@ it("查看提醒导航失败保留气泡，成功后才收起", async () => {
   fireEvent.click(screen.getByRole("button", { name: "查看提醒" }));
   await waitFor(() => expect(value.dismiss).toHaveBeenCalledTimes(1));
   expect(mocks.open).toHaveBeenLastCalledWith("reminders");
+});
+
+it("提醒到来撤下普通状态提示，收起提醒后不补弹旧提示", async () => {
+  value.notice = null; value.pendingIds = [];
+  const bubble = <PetStateBubble view={hungry} durationMs={8000} />;
+  const view = render(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  await act(async () => {});
+  act(() => receiveStateBubble(hungryNotice));
+  expect(screen.getByRole("status").textContent).toContain("好饿…");
+  value.notice = { kind: "due", item: occurrence }; value.pendingIds = ["1"];
+  view.rerender(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  expect(screen.getByRole("region", { name: "到点提醒" })).toBeTruthy();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(mocks.stopStateBubble).toHaveBeenCalledOnce();
+  // 被卸载的旧订阅即使晚到，也不能复活被略过的普通提示。
+  const oldReceive = receiveStateBubble;
+  value.notice = null; value.pendingIds = [];
+  view.rerender(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  await act(async () => { oldReceive(hungryNotice); });
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("隐藏和拖动撤下普通提示，恢复时不补弹也不自动唤醒宠窗", async () => {
+  value.notice = null; value.pendingIds = [];
+  const bubble = <PetStateBubble view={hungry} durationMs={8000} />;
+  const view = render(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  await act(async () => {});
+  act(() => receiveStateBubble(hungryNotice));
+  const oldReceive = receiveStateBubble;
+  view.rerender(<PetReminderNotifications ready hidden unobscured stateBubble={bubble} />);
+  expect(screen.queryByRole("status")).toBeNull();
+  view.rerender(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  await act(async () => { oldReceive(hungryNotice); });
+  expect(screen.queryByRole("status")).toBeNull();
+  act(() => receiveStateBubble(hungryNotice));
+  expect(screen.getByRole("status")).toBeTruthy();
+  view.rerender(<PetReminderNotifications ready hidden={false} unobscured stateBubble={false} />);
+  expect(screen.queryByRole("status")).toBeNull();
+  view.rerender(<PetReminderNotifications ready hidden={false} unobscured stateBubble={bubble} />);
+  await act(async () => {});
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(mocks.invoke).not.toHaveBeenCalled();
 });

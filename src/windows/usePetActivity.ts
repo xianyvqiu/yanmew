@@ -42,7 +42,13 @@ export function usePetActivity() {
     if (locked.current) return;
     locked.current = true; setPending(true);
     try { await petApi.refreshProvider(); accept(await petApi.get()); }
-    catch (cause) { if (alive.current) setError(errorMessage(cause)); }
+    catch (cause) {
+      if (alive.current && (cause as { code?: string })?.code === "CONTEXT_CHANGED") {
+        // 配置已更新时只读取新状态，不能把旧测试失败显示成新提供商故障。
+        try { accept(await petApi.get()); }
+        catch (readError) { if (alive.current) setError(errorMessage(readError)); }
+      } else if (alive.current) setError(errorMessage(cause));
+    }
     finally { locked.current = false; if (alive.current) setPending(false); }
   };
   return { view, error, pending, interact, refresh };

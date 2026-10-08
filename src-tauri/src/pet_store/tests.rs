@@ -7,8 +7,7 @@ fn now() -> DateTime<Utc> {
 }
 
 fn database() -> Connection {
-    let mut connection = Connection::open_in_memory().unwrap();
-    crate::db::initialize(&mut connection).unwrap();
+    let connection = crate::db::test_database();
     seed_sessions(&connection);
     connection
 }
@@ -340,7 +339,9 @@ fn disk_reopen_keeps_elapsed_branch_and_sleep_deadline() {
     };
     let sleeping;
     {
-        let mut connection = crate::db::open(&paths).unwrap();
+        let (mut connection, _) = crate::db::open(&paths).unwrap();
+        // 本例验证自建会话状态，移除新库的教程会话再准备固定 ID。
+        connection.execute_batch("DELETE FROM settings WHERE key='current_session_id'; DELETE FROM sessions;").unwrap();
         seed_sessions(&connection);
         let initial = read(&connection, 1).unwrap();
         let updated = checkpoint(
@@ -363,7 +364,7 @@ fn disk_reopen_keeps_elapsed_branch_and_sleep_deadline() {
         .unwrap();
     }
     {
-        let mut connection = crate::db::open(&paths).unwrap();
+        let (mut connection, _) = crate::db::open(&paths).unwrap();
         assert_eq!(read(&connection, 1).unwrap(), sleeping);
         let awake = restore_sleep(&mut connection, 1, now() + chrono::Duration::days(7)).unwrap();
         assert_eq!(awake.hunger_elapsed_ms, sleeping.hunger_elapsed_ms);

@@ -16,6 +16,8 @@ pub struct Store {
 /// 数据库锁只包围同步事务；联网调用必须先取配置快照再释放锁。
 #[derive(Clone)]
 pub struct Runtime {
+    /// 仅表示本次全新库初始化成功；窗口层首次展示使用，不写入设置或备份。
+    pub initial_session_created: bool,
     pub store: Arc<Mutex<AppResult<Store>>>,
     pub secrets: Arc<dyn SecretProtector>,
     pub ai: AppResult<crate::ai::client::AiClient>,
@@ -35,16 +37,17 @@ impl Runtime {
         random: Box<dyn crate::pet::RandomSource + Send>,
     ) -> Self {
         let embedding_paths = paths.as_ref().map_err(Clone::clone).and_then(|p| p.embedding_resources());
-        let store = paths
-            .and_then(|p| crate::db::open(&p))
-            .map(|connection| Store {
-                weather: Default::default(),
-                chat_requests: Default::default(),
-                connection,
-                context_revision: 0,
-                pet: Default::default(),
-            });
+        let opened = paths.and_then(|p| crate::db::open(&p));
+        let initial_session_created = opened.as_ref().is_ok_and(|(_, created)| *created);
+        let store = opened.map(|(connection, _)| Store {
+            weather: Default::default(),
+            chat_requests: Default::default(),
+            connection,
+            context_revision: 0,
+            pet: Default::default(),
+        });
         Self {
+            initial_session_created,
             store: Arc::new(Mutex::new(store)),
             secrets,
             ai: crate::ai::client::AiClient::new(Default::default()),
@@ -67,6 +70,9 @@ impl Runtime {
         store.pet.health(&store.connection, secrets)?;
         let sample = self.clock.sample()?;
         let context = crate::persona::context(&store.connection, store.context_revision)?;
+        if let Some(id) = &context.session_id {
+            if !self.requests.is_active(&format!("proactive:{id}"))? { store.pet.proactive_expression = None; }
+        }
         let busy = context
             .session_id
             .as_ref()
@@ -74,13 +80,17 @@ impl Runtime {
             .transpose()?
             .unwrap_or(false);
         let mut random = self.random.lock().map_err(|_| AppError::storage())?;
-        store.pet.settle(
+        let view = store.pet.settle(
             &mut store.connection,
             store.context_revision,
             sample,
             busy,
             random.as_mut(),
-        )
+        )?;
+        if !view.can_wander {
+            if let Some(id) = &view.session_id { self.requests.cancel_key(&format!("proactive:{id}")); }
+        }
+        Ok(view)
     }
     pub fn pet_view(&self) -> AppResult<crate::pet::controller::View> {
         self.read(|store, secrets| self.settle_pet(store, secrets))
@@ -91,6 +101,7 @@ impl Runtime {
     ) -> AppResult<crate::pet::controller::View> {
         self.read(|store, secrets| {
             self.settle_pet(store, secrets)?;
+            let proactive_key = format!("proactive:{}", input.session_id);
             let sample = self.clock.sample()?;
             {
                 let mut random = self.random.lock().map_err(|_| AppError::storage())?;
@@ -102,6 +113,7 @@ impl Runtime {
                     random.as_mut(),
                 )?;
             }
+            self.requests.cancel_key(&proactive_key);
             self.settle_pet(store, secrets)
         })
     }
@@ -173,8 +185,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
             Ok(value.into())
         }
     }
-    let mut connection = rusqlite::Connection::open_in_memory().unwrap();
-    crate::db::initialize(&mut connection).unwrap();
+    let connection = crate::db::test_database();
     connection
         .execute(
             "INSERT INTO providers(name,base_url,model,is_active) VALUES('test',?1,'fake-model',1)",
@@ -186,6 +197,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         .execute("INSERT INTO settings VALUES('current_session_id','1')", [])
         .unwrap();
     Runtime {
+        initial_session_created: false,
         store: Arc::new(Mutex::new(Ok(Store {
             weather: Default::default(),
                 chat_requests: Default::default(),

@@ -28,7 +28,7 @@ struct Session {
 impl Session {
     fn check_call(&mut self, call: &ToolCall) -> AppResult<()> {
         self.runtime.read(|store, _| {
-            self.lease.require_scope(&self.runtime.requests, &format!("chat:{}", self.session_id), self.persona_id)?;
+            self.lease.require_conversation_scope(&self.runtime.requests, self.session_id, self.persona_id)?;
             self.runtime.jobs_cancel.check()?;
             coordinator::require_context(store, self.persona_id, self.session_id, self.revision)
         })?;
@@ -94,7 +94,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
             history.push(Message::new("system", "本次工具轮数已达上限。不要再调用工具，只依据已经取得的结果回复；未完成的操作必须如实说明。"));
         }
         let mut choices = loop {
-            prepared.lease.require_scope(&prepared.runtime.requests,&format!("chat:{}",prepared.session_id),prepared.persona_id)?;
+            prepared.lease.require_conversation_scope(&prepared.runtime.requests,prepared.session_id,prepared.persona_id)?;
             prepared.runtime.read(|store,_|coordinator::require_context(store,prepared.persona_id,prepared.session_id,prepared.context_revision))?;
             let (request,budget)=context.request(if round<rounds {definitions.clone()} else {vec![]},&history)?;
             emit(ReplyEventKind::ContextNotice {message:if budget.reduced {context::NOTICE.into()} else {String::new()},budget})?;
