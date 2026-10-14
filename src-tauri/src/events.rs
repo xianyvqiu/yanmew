@@ -17,9 +17,16 @@ pub struct PetStateBubble {
 pub const REMINDERS_CHANGED: &str = "reminders-changed";
 pub const REMINDER_ERROR: &str = "reminder-error";
 pub const NOTEBOOK_CHANGED: &str = "notebook-changed";
+pub const FESTIVALS_CHANGED: &str = "festivals-changed";
 pub const MEMORY_GENERATION_CHANGED: &str = "memory-generation-changed";
 pub const EMBEDDING_CHANGED: &str = "embedding-state-changed";
 pub const PERSONA_UPDATED: &str = "persona-updated";
+/// 只在钱包事务提交成功后通知；接收端重新读取，不凭事件直接加减余额。
+pub const WALLET_CHANGED: &str = "wallet_changed";
+/// 饰品事务提交后仅通知归属，窗口重新查询，不携带图片或私有正文。
+pub const ACCESSORIES_CHANGED: &str = "accessories-changed";
+pub const ACCESSORY_CRAFT_PREVIEW_CHANGED: &str = "accessory-craft-preview-changed";
+pub const IMAGE_GENERATION_CONFIG_CHANGED: &str = "image-generation-config-changed";
 
 /// 仅在完整聊天与人设调整分别提交成功后发出，不携带私人人设正文。
 #[derive(Clone, Debug, serde::Serialize)]
@@ -35,6 +42,8 @@ pub trait MemoryEventSink: Send + Sync {
     fn embedding_changed(&self) {}
 }
 pub trait ChatToolEventSink: ReminderEventSink {
+    fn festivals_changed(&self, _session_id: &str) {}
+    fn accessory_preview_changed(&self, _session: &str, _preview: &str) {}
     fn notebook_changed(&self);
     fn persona_updated(&self, _update: &PersonaUpdated) {}
     fn persona_evolution_failed(&self, _error: &crate::error::AppError) {}
@@ -62,3 +71,11 @@ pub trait ProactiveEventSink: ChatToolEventSink {
     fn proactive_message(&self, message: &ProactiveMessage);
     fn proactive_failed(&self, error: &crate::error::AppError);
 }
+
+/// 事件仅提示对应会话的信件/任务状态变化；页面重新查询，不携带信件正文。
+pub const LETTERS_CHANGED:&str="letters-changed";
+pub trait LetterEventSink:Send+Sync {fn letters_changed(&self,session_id:&str);}
+
+/// 固定行程生成的状态提示；到期/出发继续复用pet-activity-changed。
+pub const TRAVEL_CHANGED: &str = "travel-changed";
+pub trait TravelEventSink: Send + Sync { fn travel_changed(&self, session_id: &str); fn accessories_changed(&self, _session_id:&str) {} }

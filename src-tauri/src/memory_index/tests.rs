@@ -105,3 +105,41 @@ fn unusable_vectors_are_not_considered_ready_and_current_session_is_first() {
     assert_eq!(view(&runtime).unwrap().ready, 0);
     assert_eq!(next(&runtime).unwrap().unwrap().item.id, id);
 }
+#[test]
+fn pending_cache_commit_leaves_index_reset_available_to_database_owner() {
+    use std::{sync::mpsc, time::{Duration, Instant}};
+    let runtime = crate::runtime::test_runtime("http://127.0.0.1:1/v1");
+    online(&runtime, "http://127.0.0.1:1/v1");
+    let id = seed(&runtime, 1, "记忆", "用户准备去杭州。");
+    let task = next(&runtime).unwrap().unwrap();
+    let generated = vector(&runtime, &task.stamp);
+    // 模拟编辑器持有store。后台提交应只等待store，不能提前占住索引锁。
+    let database_owner = runtime.store.lock().unwrap();
+    let worker = runtime.clone();
+    let (started, ready) = mpsc::channel();
+    let committing = std::thread::spawn(move || {
+        started.send(()).unwrap();
+        commit(&worker, &task, generated)
+    });
+    ready.recv_timeout(Duration::from_secs(2)).unwrap();
+    let deadline = Instant::now() + Duration::from_millis(100);
+    let mut index_available = true;
+    while Instant::now() < deadline {
+        match runtime.memory_index.inner.try_lock() {
+            Ok(state) => drop(state),
+            Err(_) => { index_available = false; break; }
+        }
+        std::thread::yield_now();
+    }
+    if index_available { runtime.memory_index.reset().unwrap(); }
+    // 先释放store再汇总结果；旧实现也能退出，不让回归失败挂住整个测试进程。
+    drop(database_owner);
+    let result = committing.join().unwrap().unwrap();
+    assert!(index_available, "等待数据库的向量提交不应持有索引状态锁");
+    assert!(!result, "编辑器已重置代次，旧向量不能再保存");
+    runtime.read(|s, _| {
+        let count: i64 = s.connection.query_row("SELECT count(*) FROM long_memory_embeddings WHERE long_memory_id=?1", [id], |r| r.get(0))?;
+        assert_eq!(count, 0);
+        Ok(())
+    }).unwrap();
+}

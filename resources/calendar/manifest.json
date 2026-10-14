@@ -1,0 +1,57 @@
+{
+  "resource_version": "yanmew-calendar-v1",
+  "generated_at": "2026-10-13T08:15:07.167227+00:00",
+  "source": {
+    "project": "6tail/lunar-python",
+    "version": "1.4.8",
+    "revision": "448f397c1695cadab3899bf460e0042cab7f0e66",
+    "url": "https://codeload.github.com/6tail/lunar-python/zip/448f397c1695cadab3899bf460e0042cab7f0e66",
+    "sha256": "1c571579e6c286329eb6eb042d6a0f7142556679f585daac3b2e02fca0a1a53b",
+    "license": "MIT"
+  },
+  "solar_range": [
+    "1950-01-01",
+    "2100-12-31"
+  ],
+  "calendar_basis": "中国农历日期；生成器按东八区编算，不按用户时区换算节气时刻",
+  "month_count": 1869,
+  "day_count": 55152,
+  "month_record": "8字节，小端：i32公历起日偏移、u16农历年、u8月份(高位为闰月)、u8月长",
+  "solar_terms": [
+    "小寒",
+    "大寒",
+    "立春",
+    "雨水",
+    "惊蛰",
+    "春分",
+    "清明",
+    "谷雨",
+    "立夏",
+    "小满",
+    "芒种",
+    "夏至",
+    "小暑",
+    "大暑",
+    "立秋",
+    "处暑",
+    "白露",
+    "秋分",
+    "寒露",
+    "霜降",
+    "立冬",
+    "小雪",
+    "大雪",
+    "冬至"
+  ],
+  "term_record": "1950至2100，每年24个小端u16，表示从公历1月1日起的零基日期偏移",
+  "files": {
+    "months.bin": {
+      "bytes": 14952,
+      "sha256": "2d5ceec2cc880bd42facfddbd897b065cd8b230860a330f48471863bd19429ef"
+    },
+    "solar-terms.bin": {
+      "bytes": 7248,
+      "sha256": "6568afad148a9585473c348237d8749a0886d1378bf971cf16f0fc62ac0ab9cd"
+    }
+  }
+}

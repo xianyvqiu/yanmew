@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, memoryGenerationApi } from "../../api";
 import type { CurrentContext, MemoryGenerationView } from "../../types";
 
-/** 当前会话短期生成和长期整合状态；正文管理由后续页面接入。 */
+/** 当前会话短期生成和长期整合状态，正文管理复用记忆列表。 */
 export default function MemoryGenerationPanel({ context }: { context: CurrentContext }) {
   const [view, setView] = useState<MemoryGenerationView | null>(null);
   const [error, setError] = useState("");
@@ -45,7 +45,7 @@ export default function MemoryGenerationPanel({ context }: { context: CurrentCon
   if (!context.sessionId) return null;
   return <section className="ym-page-card" aria-label="记忆生成与整合状态">
     <h2>短期记忆生成</h2>
-    <p className="ym-page-note">完整对话结束后自动生成；中断回合和主动消息不生成。混合检索将在后续接入。</p>
+    <p className="ym-page-note">完整对话结束后自动生成；中断回合和主动消息不生成。聊天会按需检索当前会话的长期记忆。</p>
     {view ? <p role="status">已生成 {view.completedCount} 条，待生成 {view.pendingCount} 轮。
       {view.activeRoundId && "正在生成…"}</p> : !error && <p role="status">正在读取生成状态…</p>}
     {view?.error && <div role="alert" className="ym-page-error">短期记忆生成失败：{view.error.message}

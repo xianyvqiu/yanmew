@@ -6,7 +6,8 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 5;
+const VERSION: i64 = 6;
+const ACCESSORY_IMAGES_MIGRATION: &str = include_str!("../../db/migrations/006_accessory_images.sql");
 const PROACTIVE_MIGRATION: &str = include_str!("../../db/migrations/005_proactive_messages.sql");
 const PET_STATE_MIGRATION: &str = include_str!("../../db/migrations/002_session_pet_states.sql");
 const INTIMACY_MIGRATION: &str = include_str!("../../db/migrations/003_intimacy_limit.sql");
@@ -93,7 +94,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 => {}
+        4 | 5 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -104,6 +105,10 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
     }
     if (1..5).contains(&version) {
         tx.execute_batch(PROACTIVE_MIGRATION)?;
+        tx.pragma_update(None, "user_version", VERSION)?;
+    }
+    if (1..6).contains(&version) {
+        tx.execute_batch(ACCESSORY_IMAGES_MIGRATION)?;
         tx.pragma_update(None, "user_version", VERSION)?;
     }
     for (key, value) in config::defaults() {
@@ -121,8 +126,8 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
     if created_initial_session {
         crate::sessions::create_initial_in_transaction(&tx)?;
     }
-    tx.execute("INSERT INTO embedding_providers(name,kind,model,is_builtin) SELECT '内置中文 Embedding','local','BAAI/bge-small-zh-v1.5',1 WHERE NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_builtin=1)",[])?;
-    tx.execute("UPDATE embedding_providers SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_active=1)",[])?;
+    ensure_builtin_embedding(&tx)?;
+    crate::festivals::ensure_in_transaction(&tx, chrono::Local::now().date_naive())?;
     // current_session_id 无外键；启动时只保留归属当前人设的有效会话。
     let current: Option<String> = tx
         .query_row(
@@ -230,7 +235,8 @@ mod tests {
         let connection = memory();
         connection
             .execute_batch(
-                "ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
+                "ALTER TABLE accessories DROP COLUMN image_file;
+             ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
              ALTER TABLE session_pet_states DROP COLUMN last_proactive_sent_at;
              DROP TRIGGER chat_rounds_stop_reason_insert;
              DROP TRIGGER chat_rounds_stop_reason_update;
@@ -289,7 +295,8 @@ mod tests {
     #[test]
     fn version_four_migration_preserves_idle_and_success_across_restart() {
         let mut connection = memory();
-        connection.execute_batch("ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
+        connection.execute_batch("ALTER TABLE accessories DROP COLUMN image_file;
+            ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
             ALTER TABLE session_pet_states DROP COLUMN last_proactive_sent_at;
             PRAGMA user_version=4;
             INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'保留会话','a','a');
@@ -520,6 +527,35 @@ mod tests {
         assert!(state.last_fed_at.is_none());
         initialize(&mut connection).unwrap();
         assert_eq!(crate::pet_store::read(&connection, 1).unwrap(), state);
+    }
+
+    #[test]
+    fn version_five_accessory_migration_preserves_data_and_rolls_back_failures() {
+        for fail in [false,true] {
+            let mut connection = memory();
+            connection.execute_batch("ALTER TABLE accessories DROP COLUMN image_file; PRAGMA user_version=5;
+                INSERT INTO sessions(id,persona_id,title,craft_tier_1_used,created_at,updated_at) VALUES(1,1,'保留',1,'a','a');
+                INSERT INTO accessories(id,session_id,name,display_text,description,cost,source,is_worn,created_at) VALUES(1,1,'星星','★','简介',20,'crafted',1,'a');
+                UPDATE user_state SET coins=37;").unwrap();
+            if fail { connection.execute("UPDATE settings SET value='bad' WHERE key='hungry_minutes'",[]).unwrap(); }
+            let before = objects(&connection);
+            let result = initialize(&mut connection);
+            if fail {
+                assert!(result.is_err());
+                assert_eq!(objects(&connection),before);
+                assert_eq!(connection.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),5);
+            } else {
+                result.unwrap();
+                assert_current_schema(&connection);
+                let item = crate::accessories::get(&connection,1,1).unwrap();
+                assert!(item.image_file.is_none());assert!(item.is_worn);
+                assert_eq!(item.display_text,"★");assert_eq!(item.cost,"20");
+                assert_eq!(crate::currency::get_balance(&connection).unwrap(),37);
+                assert_eq!(connection.query_row("SELECT craft_tier_1_used FROM sessions WHERE id=1",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+                initialize(&mut connection).unwrap();
+                assert_eq!(crate::accessories::get(&connection,1,1).unwrap(),item);
+            }
+        }
     }
 
     #[test]
@@ -761,4 +797,11 @@ mod tests {
         config::save(&mut c, [("memory_merge_count".into(), "10".into())].into()).unwrap();
         assert_eq!(config::get(&c).unwrap()["memory_merge_count"], "10");
     }
+}
+
+/// 启动和逻辑恢复复用同一内置Embedding补齐规则。
+pub(crate) fn ensure_builtin_embedding(connection:&Connection)->AppResult<()> {
+    connection.execute("INSERT INTO embedding_providers(name,kind,model,is_builtin) SELECT '内置中文 Embedding','local','BAAI/bge-small-zh-v1.5',1 WHERE NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_builtin=1)",[])?;
+    connection.execute("UPDATE embedding_providers SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_active=1)",[])?;
+    Ok(())
 }

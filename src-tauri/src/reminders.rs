@@ -1,5 +1,6 @@
 //! 全局提醒业务；展示确认与用户完成状态独立保存。
 mod rules;
+pub(crate) mod polish;
 pub mod schedule;
 use crate::{
     error::{AppError, AppResult},

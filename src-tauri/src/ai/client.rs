@@ -47,6 +47,8 @@ fn transport(error: reqwest::Error) -> AppError {
     }
 }
 impl AiClient {
+    /// 搜索 API 复用已有连接池；公开网页读取另行校验并固定 DNS 地址。
+    pub(crate) fn search_http(&self) -> &reqwest::Client { &self.http }
     pub(crate) fn total_timeout(&self) -> Duration {
         self.timeouts.total
     }

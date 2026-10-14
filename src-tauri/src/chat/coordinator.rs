@@ -15,6 +15,7 @@ pub struct RequestSnapshot {
     pub expression: Option<String>,
     pub notice: Option<String>,
     pub budget: Option<crate::chat_capacity::Budget>,
+    pub web_activity: Option<String>,
     pub round: RoundSnapshot,
     /// 重说只产生预览；终态提交前原回合保持 completed。
     pub regenerating: bool,
@@ -158,6 +159,7 @@ pub async fn run_persisted(
             }
             active.seq = event.seq;
             match &event.kind {
+                ReplyEventKind::WebActivity {phase} => active.web_activity=phase.clone(),
                 ReplyEventKind::Text { text } => active.partial_content.push_str(text),
                 ReplyEventKind::Expression { expression } => {
                     active.expression = Some(expression.clone())

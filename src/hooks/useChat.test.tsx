@@ -1,7 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useChat } from "./useChat";
-import type { ChatContextBudget, ChatReplyEvent, ChatRequestSnapshot, CurrentContext, RoundSnapshot } from "../types";
+import type { ChatContextBudget, ChatReplyEvent, ChatRequestSnapshot, CurrentContext, MessagePage, RoundSnapshot } from "../types";
 
 const api = vi.hoisted(() => ({ listen: vi.fn(), listenMessages: vi.fn().mockResolvedValue(()=>{}),edit:vi.fn(),deleteTail:vi.fn(),regenerate:vi.fn(),current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), submit: vi.fn(), cancel: vi.fn(), messages: vi.fn() }));
 vi.mock("../api", () => ({ chatApi: api, sessionApi: api, errorMessage: (error: Error) => error.message }));
@@ -31,6 +31,61 @@ beforeEach(() => {
   api.messages.mockResolvedValue({ items: [], nextAfterId: null });
 });
 afterEach(cleanup);
+
+it("完成后的旧历史查询不能覆盖随后编辑的较早消息", async () => {
+  const earlier = { ...round.userMessage, id: "1", roundId: null, content: "较早的旧正文" };
+  api.current.mockResolvedValueOnce(receipt);
+  api.messages.mockResolvedValue({ items: [earlier, round.userMessage], nextAfterId: null });
+  const hook = renderHook(() => useChat(context));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  const pending = deferred<MessagePage>();
+  api.messages.mockReturnValueOnce(pending.promise);
+  api.lastRound.mockResolvedValue(saved);
+  act(() => receive(event({ type: "finished", finish: "stop" }, 1, saved)));
+  await waitFor(() => expect(hook.result.current.busy).toBe(false));
+  const updated = { ...earlier, content: "刚保存的新正文" };
+  api.edit.mockResolvedValue(updated);
+  await act(async () => { expect(await hook.result.current.editMessage(earlier, updated.content)).toBe(true); });
+  expect(hook.result.current.messages.find(message => message.id === "1")?.content).toBe(updated.content);
+  await act(async () => { pending.resolve({ items: [earlier, saved.userMessage, saved.assistantMessage!], nextAfterId: null }); });
+  expect(hook.result.current.messages.find(message => message.id === "1")?.content).toBe(updated.content);
+});
+
+it("终态后的旧尾轮查询不能覆盖新编辑的尾轮正文", async () => {
+  api.current.mockResolvedValueOnce(receipt);
+  api.messages.mockResolvedValue({ items: [saved.userMessage, saved.assistantMessage!], nextAfterId: null });
+  const hook = renderHook(() => useChat(context));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  const pending = deferred<RoundSnapshot>();
+  api.lastRound.mockReturnValueOnce(pending.promise);
+  act(() => receive(event({ type: "finished", finish: "stop" }, 1, saved)));
+  await waitFor(() => expect(api.lastRound).toHaveBeenCalledTimes(1));
+  const changed = { ...saved, assistantMessage: { ...saved.assistantMessage!, content: "尾轮新正文" } };
+  api.edit.mockResolvedValue(changed.assistantMessage);
+  api.lastRound.mockResolvedValue(changed);
+  await act(async () => { expect(await hook.result.current.editMessage(saved.assistantMessage!, changed.assistantMessage.content)).toBe(true); });
+  await act(async () => { pending.resolve(saved); });
+  expect(hook.result.current.messages.find(message => message.id === "21")?.content).toBe("尾轮新正文");
+  expect(hook.result.current.lastRound).toEqual(changed);
+});
+
+it("删除尾轮后迟到的旧历史查询不会重新显示已删除消息", async () => {
+  api.current.mockResolvedValueOnce(receipt);
+  api.messages.mockResolvedValue({ items: [saved.userMessage, saved.assistantMessage!], nextAfterId: null });
+  const hook = renderHook(() => useChat(context));
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  const pending = deferred<MessagePage>();
+  api.messages.mockReturnValueOnce(pending.promise);
+  act(() => receive(event({ type: "finished", finish: "stop" }, 1, saved)));
+  api.deleteTail.mockImplementation(async () => {
+    api.messages.mockResolvedValue({ items: [], nextAfterId: null }); api.lastRound.mockResolvedValue(null);
+  });
+  await act(async () => { expect(await hook.result.current.deleteTail(saved.assistantMessage!)).toBe(true); });
+  expect(hook.result.current.messages).toEqual([]);
+  await act(async () => { pending.resolve({ items: [saved.userMessage, saved.assistantMessage!], nextAfterId: null }); });
+  expect(hook.result.current.messages).toEqual([]);
+  expect(hook.result.current.lastRound).toBeNull();
+});
 
 it("回执前的事件完整重放，重复事件与旧上下文不污染正文", async () => {
   const pending = deferred<ChatRequestSnapshot>(); api.submit.mockReturnValue(pending.promise);
@@ -287,4 +342,17 @@ it("编辑失败不改原消息，成功保留原ID并刷新尾轮",async()=>{
   api.edit.mockResolvedValue(changed.userMessage);api.lastRound.mockResolvedValue(changed);
   await act(async()=>{expect(await hook.result.current.editMessage(saved.userMessage,"编辑后的原文")).toBe(true);});
   expect(hook.result.current.messages[0]).toEqual(changed.userMessage);
+});
+it("搜索状态跟随序号并能从活动快照恢复，不误判回复结束", async () => {
+  api.current.mockResolvedValue({ ...receipt, seq: 2, webActivity: "searching" });
+  const hook = renderHook(() => useChat(context));
+  await waitFor(() => expect(hook.result.current.active?.webActivity).toBe("searching"));
+  act(() => receive({ ...context, sessionId: "1", requestId: "5", roundId: "10", seq: 3, saved: null, type: "web_activity", phase: "reading" }));
+  expect(hook.result.current.active?.webActivity).toBe("reading");
+  act(() => receive({ ...context, sessionId: "1", requestId: "5", roundId: "10", seq: 2, saved: null, type: "web_activity", phase: "searching" }));
+  expect(hook.result.current.active?.webActivity).toBe("reading");
+  act(() => receive({ ...context, sessionId: "1", requestId: "5", roundId: "10", seq: 4, saved: null, type: "web_activity", phase: null }));
+  expect(hook.result.current.active?.requestId).toBe("5"); expect(hook.result.current.active?.webActivity).toBeNull();
+  act(() => receive(event({ type: "text", text: "已经找到资料" }, 5)));
+  expect(hook.result.current.active?.partialContent).toBe("已经找到资料");
 });

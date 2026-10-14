@@ -3,6 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AutostartStatus } from "../../types";
 import AutostartPanel from "./AutostartPanel";
 import GeneralPanel from "./GeneralPanel";
+vi.mock("./BackupPanel", () => ({ default: () => null }));
+
+vi.mock("./AppInfoPanel", () => ({ default: () => null }));
 
 const api = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), getSettings: vi.fn(), saveSettings: vi.fn() }));
 vi.mock("../../api", () => ({

@@ -251,7 +251,7 @@ fn provider_error_survives_ticks_context_switch_and_stale_success() {
 fn no_session_never_creates_one_and_away_never_rewards_or_counts() {
     let (runtime, clock) = setup(0);
     runtime.pet_view().unwrap();
-    runtime.read(|s,_|{s.connection.execute("INSERT INTO travels(session_id,status,started_at,planned_return_at,midway_letter_at,created_at) VALUES(1,'away','a','b','c','a')",[])?;Ok(())}).unwrap();
+    runtime.read(|s,_|{s.connection.execute("INSERT INTO travels(session_id,status,started_at,planned_return_at,midway_letter_at,created_at) VALUES(1,'away','2026-09-20T00:00:00Z','2026-09-20T01:00:00Z','2026-09-20T00:30:00Z','2026-09-20T00:00:00Z')",[])?;Ok(())}).unwrap();
     assert_eq!(runtime.pet_view().unwrap().activity, Activity::Away);
     clock.advance(60);
     assert!(!runtime.pet_view().unwrap().can_interact);
@@ -318,4 +318,59 @@ fn only_effective_chat_configuration_changes_clear_provider_failure() {
         Ok(())
     }).unwrap();
     assert_eq!(runtime.pet_view().unwrap().error, None);
+}
+
+fn travel_wait(runtime: &Runtime) -> Option<i64> {
+    runtime.read(|s, _| Ok(s.connection.query_row("SELECT travel_trigger_remaining_seconds FROM sessions WHERE id=1", [], |r| r.get(0))?)).unwrap()
+}
+#[test]
+fn travel_wait_pauses_for_hidden_chat_and_sleep() {
+    let (runtime, clock) = setup(0);
+    runtime.pet_view().unwrap();
+    let initial = travel_wait(&runtime).unwrap();
+    clock.advance(10); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-10));
+    runtime.pet_visibility(Some(true), None).unwrap();
+    clock.advance(3600); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-10));
+    runtime.pet_visibility(Some(false), None).unwrap();
+    let request = runtime.requests.start("chat:1".into(), 1).unwrap();
+    runtime.pet_view().unwrap(); clock.advance(3600); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-10));
+    drop(request); runtime.pet_view().unwrap();
+    clock.advance(5); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-15));
+    let (runtime, clock) = setup(1);
+    runtime.pet_view().unwrap(); let initial=travel_wait(&runtime).unwrap();
+    clock.advance(2700); assert_eq!(runtime.pet_view().unwrap().activity, Activity::Sleeping);
+    assert_eq!(travel_wait(&runtime), Some(initial-2700));
+    clock.advance(60); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-2700));
+    clock.offline(7200); runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime), Some(initial-2700));
+}
+#[test]
+fn frequent_queries_keep_fractional_travel_time_and_restart_does_not_backfill() {
+    let (runtime, clock)=setup(0);
+    runtime.pet_view().unwrap();let initial=travel_wait(&runtime).unwrap();
+    for _ in 0..4 {
+        {let mut sample=clock.0.lock().unwrap(); sample.running+=Duration::from_millis(250); sample.utc+=chrono::Duration::milliseconds(250);}
+        runtime.pet_view().unwrap();
+    }
+    assert_eq!(travel_wait(&runtime),Some(initial-1));
+    runtime.read(|s,_|{s.pet.reset_context();Ok(())}).unwrap();
+    clock.offline(86400);runtime.pet_view().unwrap();
+    assert_eq!(travel_wait(&runtime),Some(initial-1));
+}
+#[test]
+fn travel_departure_blocks_chat_and_interaction_without_reward() {
+    let (runtime, clock)=setup(0);
+    runtime.read(|s,_|{s.connection.execute("UPDATE sessions SET travel_trigger_remaining_seconds=5 WHERE id=1",[])?;Ok(())}).unwrap();
+    runtime.pet_view().unwrap();clock.advance(5);
+    let away=runtime.pet_view().unwrap();assert_eq!(away.activity,Activity::Away);
+    assert!(!away.can_interact);assert!(!away.can_wander);assert_eq!(travel_wait(&runtime),None);
+    assert_eq!(runtime.pet_interact(input(Action::Feed)).unwrap_err().code,"PET_AWAY");
+    assert_eq!(runtime.pet_view().unwrap().intimacy,Some(0));
+    clock.offline(7200); assert_ne!(runtime.pet_view().unwrap().activity,Activity::Away);
+    assert!(travel_wait(&runtime).unwrap()>=7200);
 }

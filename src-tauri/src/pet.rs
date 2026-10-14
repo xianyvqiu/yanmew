@@ -55,6 +55,8 @@ pub struct AdvanceResult {
     pub hungry: bool,
     /// 仅成功提交本次状态变化时返回事件，重复 tick 不会重复发进入事件。
     pub transition: Transition,
+    /// 计时器事务已提交出发；调用者此后显示出门状态，不再处理在家分支。
+    pub away: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -123,6 +125,21 @@ pub fn advance(
     tick: Tick,
     random: &mut dyn RandomSource,
 ) -> AppResult<AdvanceResult> {
+    advance_impl(connection, context_revision, scope, tick, random, None)
+}
+
+/// 自动调度共用原桌宠事务，旅行空闲秒数只能由控制器测量。
+pub(crate) fn advance_with_travel(
+    connection: &mut Connection, context_revision: u64, scope: PetWriteScope,
+    tick: Tick, random: &mut dyn RandomSource, travel_seconds: u64,
+) -> AppResult<AdvanceResult> {
+    advance_impl(connection, context_revision, scope, tick, random, Some(travel_seconds))
+}
+
+fn advance_impl(
+    connection: &mut Connection, context_revision: u64, scope: PetWriteScope,
+    tick: Tick, random: &mut dyn RandomSource, travel_seconds: Option<u64>,
+) -> AppResult<AdvanceResult> {
     if tick.idle_elapsed > tick.effective_elapsed
         || (!tick.allow_idle_transition && !tick.idle_elapsed.is_zero())
     {
@@ -155,7 +172,11 @@ pub fn advance(
     } else {
         Transition::None
     };
-    if !woke && tick.allow_idle_transition && snapshot.idle_branch == IdleBranch::None {
+    let away = if let Some(seconds) = travel_seconds {
+        crate::travel::advance_in_transaction(&transaction, scope.session_id,
+            if was_sleeping { 0 } else { seconds }, tick.now, random)?
+    } else { false };
+    if !away && !woke && tick.allow_idle_transition && snapshot.idle_branch == IdleBranch::None {
         let earliest = thresholds.bored_ms.min(thresholds.sleep_idle_ms);
         if snapshot.idle_elapsed_ms >= earliest {
             // 不同阈值即使在同一 tick 都已到达，仍选择较早的阈值，不重新随机。
@@ -199,6 +220,7 @@ pub fn advance(
         snapshot,
         hungry,
         transition,
+        away,
     })
 }
 

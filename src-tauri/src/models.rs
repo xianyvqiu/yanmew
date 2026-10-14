@@ -1,5 +1,112 @@
 use serde::Serialize;
 
+/// 会话级饰品；图片为可选受管资源，视觉字符兜底始终保留。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Accessory {
+    pub id: String,
+    pub session_id: String,
+    pub name: String,
+    pub display_text: String,
+    pub image_file: Option<String>,
+    pub description: String,
+    pub cost: String,
+    pub source: AccessorySource,
+    pub travel_id: Option<String>,
+    pub is_worn: bool,
+    pub created_at: String,
+}
+
+/// 与 accessories.source 的两项枚举保持一致。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessorySource { Crafted, Travel }
+impl AccessorySource {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value { "crafted" => Some(Self::Crafted), "travel" => Some(Self::Travel), _ => None }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessoryDeleteResult { pub deleted_id: String }
+
+/// 卖出成功后的权威钱包快照，不让页面自行累加十币。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessorySellResult { pub deleted_id: String, pub wallet: Wallet }
+
+/// 全局唯一钱包；64 位余额使用十进制字符串，避免前端精度丢失。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Wallet {
+    pub coins: String,
+    pub updated_at: String,
+}
+
+/// 全局本地日签到快照；奖励范围和亲密度档位来自已有全局设置。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignInStatus {
+    pub wallet: Wallet,
+    pub local_date: String,
+    pub signed_in: bool,
+    pub reward_min: String,
+    pub reward_max: String,
+    pub intimacy_thresholds: [i64; 4],
+    /// 当天母表与当前会话固定日期；多个命中仍只发一份签到奖励。
+    pub festivals: Vec<crate::festivals::session::Today>,
+}
+
+/// granted_coins=None 表示本日已经领取；Some("0") 仍是一次成功签到。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailySignInResult {
+    pub status: SignInStatus,
+    pub granted_coins: Option<String>,
+}
+
+/// 运行程序的信息，不保存到用户数据库或备份。
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub name: String,
+    pub version: String,
+}
+
+/// 当前会话亲密度，只读查询不结算计时、不发放奖励。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionIntimacy {
+    pub persona_id: String,
+    pub session_id: String,
+    pub context_revision: u64,
+    pub intimacy: i64,
+    pub maximum: i64,
+}
+
+/// 与 currency_ledger.reason 的五项枚举一致；不接受任意账单原因。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CurrencyReason {
+    DailySignIn,
+    SignInFestival,
+    PluginGame,
+    AccessoryCraft,
+    AccessorySell,
+}
+impl CurrencyReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DailySignIn => "daily_sign_in",
+            Self::SignInFestival => "sign_in_festival",
+            Self::PluginGame => "plugin_game",
+            Self::AccessoryCraft => "accessory_craft",
+            Self::AccessorySell => "accessory_sell",
+        }
+    }
+}
+
 /// 删除事务提交后的权威当前选择；没有剩余会话时为 None。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -318,3 +425,61 @@ pub struct RoundSnapshot {
     pub user_message: Message,
     pub assistant_message: Option<Message>,
 }
+
+/// 信件角色，与聊天消息role分开。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="snake_case")]
+pub enum LetterSender { User, Ai }
+impl LetterSender { pub fn parse(v:&str)->Option<Self>{match v {"user"=>Some(Self::User),"ai"=>Some(Self::Ai),_=>None}} }
+/// None仅属于AI信，其他状态属于用户信的自动回信任务。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="snake_case")]
+pub enum LetterReplyState { None, Pending, Completed, Cancelled }
+impl LetterReplyState { pub fn parse(v:&str)->Option<Self>{match v {"none"=>Some(Self::None),"pending"=>Some(Self::Pending),"completed"=>Some(Self::Completed),"cancelled"=>Some(Self::Cancelled),_=>None}} }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="snake_case")]
+pub enum LetterKind { User, Midway, Return, Reply }
+impl LetterKind { pub fn parse(v:&str)->Option<Self>{match v {"user"=>Some(Self::User),"midway"=>Some(Self::Midway),"return"=>Some(Self::Return),"reply"=>Some(Self::Reply),_=>None}} }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct Letter {
+    pub id:String,
+    pub session_id:String,
+    pub travel_id:Option<String>,
+    pub sender:LetterSender,
+    pub content:String,
+    pub reply_to_id:Option<String>,
+    pub has_been_replied:bool,
+    pub reply_due_at:Option<String>,
+    pub reply_state:LetterReplyState,
+    pub letter_kind:LetterKind,
+    pub is_favorite:bool,
+    pub is_read:bool,
+    pub created_at:String,
+}
+
+/// 普通文字伴手礼属于会话，删除展示项不清除旅行的实际礼物快照。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct Souvenir {
+    pub id:String,pub session_id:String,pub travel_id:Option<String>,pub content:String,pub note:String,
+    pub is_favorite:bool,pub created_at:String,
+}
+
+/// 游记列表不携带全文，详情按当前会话和ID单独读取。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct TravelJournalSummary {
+    pub id:String,pub session_id:String,pub travel_id:String,pub title:String,pub created_at:String,pub updated_at:String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct TravelJournal {
+    pub id:String,pub session_id:String,pub travel_id:String,pub title:String,pub content:String,pub created_at:String,pub updated_at:String,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct TravelJournalExpected {pub title:String,pub content:String,pub updated_at:String}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all="camelCase")]
+pub struct TravelJournalDeleted {pub deleted_id:String,pub session_id:String,pub travel_id:String}

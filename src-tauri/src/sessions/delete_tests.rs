@@ -81,7 +81,7 @@ fn global_data(connection: &Connection) {
          INSERT INTO reminder_occurrences(reminder_id,scheduled_at,delivery_state,created_at)
          VALUES(1,'2026-10-06T09:00:00.000Z','queued','2026-10-06T09:00:00.000Z');
          INSERT INTO festival_catalog(id,code,name,year,calendar_type,solar_month,solar_day,blessing)
-         VALUES(1,'test_festival','共同节日',2026,'solar',10,6,'节日快乐');"
+         VALUES(1000,'test_festival','共同节日',2026,'solar',10,6,'节日快乐');"
     ).unwrap();
 }
 
@@ -176,7 +176,7 @@ fn session_tree(connection: &Connection, session_id: i64, title: &str) {
     connection.execute(
         "INSERT INTO session_festivals(session_id,festival_id,kind,name,year,calendar_type,
            solar_month,solar_day,blessing,source,created_at,updated_at)
-         VALUES(?1,1,'festival','共同节日',2026,'solar',10,6,'节日快乐','user',?2,?2)",
+         VALUES(?1,1000,'festival','共同节日',2026,'solar',10,6,'节日快乐','user',?2,?2)",
         params![session_id, AT],
     ).unwrap();
 }

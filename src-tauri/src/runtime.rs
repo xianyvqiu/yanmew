@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 mod tests;
 
 pub struct Store {
+    pub(crate) accessory_crafts: crate::accessories::craft::State,
     pub chat_requests: std::collections::HashMap<i64, crate::chat::RequestSnapshot>,
     pub weather: crate::weather::Cache,
     pub connection: rusqlite::Connection,
@@ -18,6 +19,8 @@ pub struct Store {
 pub struct Runtime {
     /// 受管资源目录沿用平台注入，业务不重新推断可执行文件或工作目录。
     pub paths: AppResult<AppPaths>,
+    pub(crate) backups: Arc<crate::import_export::restore::State>,
+    pub(crate) reminder_polish: Arc<crate::reminders::polish::Service>,
     /// 仅表示本次全新库初始化成功；窗口层首次展示使用，不写入设置或备份。
     pub initial_session_created: bool,
     pub store: Arc<Mutex<AppResult<Store>>>,
@@ -28,6 +31,10 @@ pub struct Runtime {
     pub random: Arc<Mutex<Box<dyn crate::pet::RandomSource + Send>>>,
     pub jobs_cancel: crate::state::Cancellation,
     pub memory: Arc<crate::memory::GenerationState>,
+    pub(crate) travel_facts: Arc<crate::travel::facts::Worker>,
+    pub(crate) travel_journals: Arc<crate::travel_journals::generation::Worker>,
+    pub(crate) travel_gifts: Arc<crate::souvenirs::generation::Worker>,
+    pub letters: Arc<crate::letters::GenerationState>,
     pub embedding: Arc<crate::embedding::Engine>,
     pub memory_index: Arc<crate::memory_index::State>,
 }
@@ -42,15 +49,23 @@ impl Runtime {
         let opened = paths.as_ref().map_err(Clone::clone).and_then(crate::db::open);
         let initial_session_created = opened.as_ref().is_ok_and(|(_, created)| *created);
         let store = opened.map(|(connection, _)| Store {
+            accessory_crafts: Default::default(),
             weather: Default::default(),
             chat_requests: Default::default(),
             connection,
             context_revision: 0,
             pet: Default::default(),
         });
+        let travel_gifts=Arc::new(crate::souvenirs::generation::Worker::default());
+        if let (Ok(store),Ok(sample))=(&store,clock.sample()) {
+            // 分类失败时默认不生图，避免恢复任务在状态不明时再次付费。
+            let _=travel_gifts.initialize(&store.connection,sample.utc);
+        }
         let runtime = Self {
             paths,
             initial_session_created,
+            backups: Default::default(),
+            reminder_polish: Default::default(),
             store: Arc::new(Mutex::new(store)),
             secrets,
             ai: crate::ai::client::AiClient::new(Default::default()),
@@ -59,11 +74,16 @@ impl Runtime {
             random: Arc::new(Mutex::new(random)),
             jobs_cancel: Default::default(),
             memory: Default::default(),
+            letters: Default::default(),
+            travel_gifts,
+            travel_journals: Default::default(),
+        travel_facts: Default::default(),
             embedding: Arc::new(crate::embedding::Engine::new(embedding_paths)),
             memory_index: Default::default(),
         };
         // 只清理本程序生成且数据库确认未引用的背景文件；清理失败不阻塞启动。
         crate::persona::background::cleanup_unused(&runtime);
+        crate::accessories::images::cleanup_startup(&runtime);
         runtime
     }
 
@@ -145,12 +165,15 @@ impl Runtime {
         self.requests.shutdown();
         crate::chat::interrupt_active(self)?;
         self.read(|store, secrets| {
+            store.accessory_crafts.discard();
             if !store.pet.stopping {
                 self.settle_pet(store, secrets)?;
                 store.pet.stopping = true;
             }
             Ok(())
-        })
+        })?;
+        crate::accessories::images::cleanup_unused(self,&[]);
+        Ok(())
     }
     pub fn read<T>(
         &self,
@@ -205,7 +228,10 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
     Runtime {
         paths: Err(AppError::storage()),
         initial_session_created: false,
+        backups: Default::default(),
+        reminder_polish: Default::default(),
         store: Arc::new(Mutex::new(Ok(Store {
+            accessory_crafts: Default::default(),
             weather: Default::default(),
                 chat_requests: Default::default(),
             connection,
@@ -219,6 +245,10 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         random: Arc::new(Mutex::new(Box::new(TestRandom))),
         jobs_cancel: Default::default(),
         memory: Default::default(),
+        letters: Default::default(),
+        travel_gifts: Default::default(),
+        travel_journals: Default::default(),
+        travel_facts: Default::default(),
         embedding: Arc::new(crate::embedding::Engine::new(Ok(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/models/bge-small-zh-v1.5")))),
         memory_index: Default::default(),
     }

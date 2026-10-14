@@ -1,5 +1,32 @@
 /** SQLite ID 通过字符串传递，避免 JavaScript 大整数精度损失。 */
 export type RecordId = string;
+export type PluginJson = null | boolean | number | string | PluginJson[] | { [key: string]: PluginJson };
+export type GamePermissionChoice = { permission: "wallet.modify" | "network.fetch"; scope: string; decision: "pending" | "allowed" | "denied" };
+export type GamePermission = GamePermissionChoice & { pluginVersion: string; decidedAt: string | null };
+export type GamePlugin = {
+  pluginId: string; name: string; description: string; author: string; installedVersion: string; apiVersion: string;
+  storageVersion: number; packagePath: string | null; packageSha256: string; repository: string | null; homepage: string | null;
+  releasePage: string | null; networkOrigins: string[]; isBundled: boolean; packageStatus: "available" | "missing_package";
+  isEnabled: boolean; installedAt: string; updatedAt: string;
+};
+export type PluginSetting = { key: string; title: string; description: string; type: "boolean" | "integer" | "number" | "string" | "enum"; default: PluginJson; required: boolean; minimum: number | null; maximum: number | null; options: {value: PluginJson; label: string}[] };
+export type GameManifest = { id: string; name: string; description: string; author: string; version: string; api_version: "1.0.0"; entry: string; storage_version: number; permissions: string[]; network_origins: string[]; settings_schema: PluginSetting[]; repository: string | null; homepage: string | null; release_page: string | null; migration: string | null };
+export type PluginUsage = { storage_version: number; settings: Record<string, PluginJson>; data: Record<string, PluginJson> };
+export type GamePluginDetail = { plugin: GamePlugin; manifest: GameManifest | null; permissions: GamePermission[]; usage: PluginUsage };
+export type GameInstallPreview = { token: string; manifest: GameManifest; installed: GamePlugin | null; permissions: GamePermission[]; migrationRequired: boolean };
+/** 一次打开到关闭的运行；长期游戏进度由 PluginUsage.data 独立保存。 */
+export type GameRun = { id: string; pluginId: string; pluginName: string; pluginVersion: string; walletPermissionGranted: boolean; status: "running" | "completed" | "cancelled" | "error"; outcome: string | null; details: PluginJson; coinDelta: string; startedAt: string; endedAt: string | null };
+export type GamePluginLedger = { id: string; gameRunId: string; pluginId: string; pluginName: string; pluginVersion: string; delta: string; reason: string; requestId: string; createdAt: string };
+/** 全局喵币为 SQLite 64 位整数；前端按十进制字符串展示，不参与记账。 */
+export type Wallet = { coins: string; updatedAt: string };
+/** 日期与是否领取由后端按电脑当前时区判断，页面计时器只能刷新查询。 */
+export type SignInStatus = {
+  wallet: Wallet; localDate: string; signedIn: boolean; rewardMin: string; rewardMax: string;
+  intimacyThresholds: [number, number, number, number];
+  festivals: { id: RecordId; scope: "catalog" | "session"; name: string; blessing: string; isMemorial: boolean }[];
+};
+export type DailySignInResult = { status: SignInStatus; grantedCoins: string | null };
+export type SessionIntimacy = { personaId: RecordId; sessionId: RecordId; contextRevision: number; intimacy: number; maximum: number };
 /** 记忆记录属于会话；以下契约由后续记忆仓储和管理页面使用。 */
 export type MemoryIntegrationState = "pending" | "integrated";
 export type MemoryKind = "short" | "long";
@@ -51,6 +78,7 @@ export type ChatContextBudget = {
 };
 /** partialContent 包含续写时已保存的前缀及未保存增量；round 中的消息是数据库记录。 */
 export type ChatRequestSnapshot = {
+  webActivity?: "searching" | "reading" | null;
   regenerating?: boolean;
   requestId: string; personaId: RecordId; sessionId: RecordId; contextRevision: number;
   roundId: RecordId; seq: number; partialContent: string; expression: string | null; round: RoundSnapshot;
@@ -63,6 +91,7 @@ export type ChatReplyEvent = {
   | { type: "expression"; expression: string }
   | { type: "text"; text: string }
   | { type: "context_notice"; message: string; budget: ChatContextBudget }
+  | { type: "web_activity"; phase: "searching" | "reading" | null }
   | { type: "finished"; finish: "stop" | "length" | "content_filter" | "tool_calls" }
   | { type: "cancelled" }
   | { type: "failed"; code: string; message: string }
@@ -212,3 +241,95 @@ export type EmbeddingStatus = {
 export type AutostartStatus = {
   supported: boolean; enabled: boolean; needsRepair: boolean; blockedBySystem: boolean;
 };
+export type WebSearchKind = "tavily" | "bocha" | "custom";
+export type WebSearchProvider = { id: string; name: string; kind: WebSearchKind; baseUrl: string; hasApiKey: boolean; isActive: boolean };
+export type WebSearchSettings = { enabled: boolean; providers: WebSearchProvider[] };
+export type WebSearchProviderInput = { name: string; kind: WebSearchKind; baseUrl: string; apiKey: { action: "keep" | "clear" } | { action: "set"; value: string } };
+
+export type LetterKind = "user" | "midway" | "return" | "reply";
+export interface Letter {
+  id: RecordId; sessionId: RecordId; travelId: RecordId | null;
+  sender: "user" | "ai"; content: string; replyToId: RecordId | null;
+  hasBeenReplied: boolean; replyDueAt: string | null;
+  replyState: "none" | "pending" | "completed" | "cancelled";
+  letterKind: LetterKind; isFavorite: boolean; isRead: boolean; createdAt: string;
+}
+export interface SendLetterInput { travelId: RecordId; content: string; replyToId: RecordId | null }
+export interface LetterTask { travelId: RecordId; letterId: RecordId | null; kind: LetterKind }
+export interface LetterGenerationStatus {
+  notice: string | null;
+  active: LetterTask | null;
+  failures: { task: LetterTask; error: AppError; retryAfterSeconds: number }[];
+}
+
+export type TravelTaskState = "pending" | "done" | "cancelled";
+export type Travel = {
+  id: RecordId; sessionId: RecordId; status: "away" | "returned" | "cancelled";
+  startedAt: string; plannedReturnAt: string; actualReturnAt: string | null; cancelledAt: string | null;
+  midwayLetterAt: string; destination: string | null; factsState: "pending" | "ready" | "cancelled";
+  midwayLetterState: TravelTaskState; returnLetterState: TravelTaskState; giftState: TravelTaskState;
+  journalState: TravelTaskState; giftKind: "text" | "accessory" | null;
+};
+export type TravelGenerationStatus = { active: RecordId | null; failures: {travelId: RecordId; error: AppError; retryAfterSeconds: number}[] };
+export type LetterTarget = CurrentContext & { travelId: RecordId; replyToId: RecordId | null };
+
+/** 会话级饰品；显示字段始终为图标字符、Emoji、颜文字或符号组合。 */
+export type Accessory = {
+  id: RecordId; sessionId: RecordId; name: string; displayText: string; imageFile: string | null;
+  description: string; cost: string; source: "crafted" | "travel"; travelId: RecordId | null;
+  isWorn: boolean; createdAt: string;
+};
+export type AccessoryImage = { dataUrl: string | null; notice: string | null };
+export type AccessoryDeleteResult = { deletedId: RecordId };
+export type AccessorySellResult = AccessoryDeleteResult & { wallet: Wallet };
+
+/** 生图专用配置；只有hasApiKey，不能取得已保存的密钥。 */
+export type ImageGenerationProvider = { id: RecordId; name: string; protocol: "openai-compatible"; baseUrl: string; model: string; hasApiKey: boolean };
+export type ImageGenerationConfig = { version: 1; revision: number; nextId: RecordId; enabled: boolean; activeId: RecordId | null; providers: ImageGenerationProvider[] };
+export type ImageGenerationProviderInput = { name: string; protocol: "openai-compatible"; baseUrl: string; model: string; apiKey: ProviderInput["apiKey"] };
+export type AccessoryCraftPreview = {
+  previewId: string; context: { personaId: RecordId; sessionId: RecordId; contextRevision: number }; tier: number; cost: string;
+  name: string; displayText: string; description: string; status: "preparing" | "ready"; appearance: "image" | "text";
+  imageDataUrl: string | null; notice: string | null;
+};
+
+/** 普通文字伴手礼，旅行饰品在Accessory表和管理页中展示。 */
+export type Souvenir = { id:RecordId;sessionId:RecordId;travelId:RecordId|null;content:string;note:string;isFavorite:boolean;createdAt:string };
+export type GiftGenerationStatus = { active:RecordId|null;pendingCount:number;failures:TravelGenerationStatus["failures"];notice:string|null };
+
+export type TravelJournalSummary = { id:RecordId;sessionId:RecordId;travelId:RecordId;title:string;createdAt:string;updatedAt:string };
+export type TravelJournal = TravelJournalSummary & {content:string};
+export type TravelJournalExpected = Pick<TravelJournal,"title"|"content"|"updatedAt">;
+export type TravelJournalDeleted = {deletedId:RecordId;sessionId:RecordId;travelId:RecordId};
+export type JournalGenerationStatus = {active:RecordId|null;pendingCount:number;failures:TravelGenerationStatus["failures"];notice:string|null};
+/** ZIP逻辑备份协议；manifest/data保留协议字段命名，不直接作为业务写入DTO。 */
+export type BackupKind = "full" | "session" | "user_profile" | "persona_profile" | "persona_full" | "plugin_data";
+export type BackupRequest = { kind: BackupKind; ids: string[]; includeSessions: boolean };
+export type BackupWarning = { code: string; table: string; record_id: string; message: string };
+export type BackupManifest = {
+  format_version: number; schema_version: number; app_version: string; package_type: BackupKind;
+  exported_at: string; selection: BackupRequest; record_counts: Record<string, number>;
+  data_size: number; data_sha256: string; files: { path: string; size: number; sha256: string }[];
+  warnings: BackupWarning[];
+};
+/** 系统窗口已保存正式文件；仅返回摘要，不传输ZIP内容。 */
+export type BackupArchive = { filename: string; size: number; sha256: string; manifest: BackupManifest };
+
+export type BackupExportOption = {id:string;name:string};
+export type BackupExportOptions = {personas:BackupExportOption[];sessions:BackupExportOption[];userProfiles:BackupExportOption[];plugins:BackupExportOption[]};
+
+/** 导入预览只包含对象摘要；备份文件与完整历史由后端逐条读取。 */
+export type BackupImportCandidate = { id: string; name: string; stamp: string; different: boolean };
+export type BackupImportNode = { sourceId: string; name: string; isBuiltin: boolean; candidates: BackupImportCandidate[]; suggestedTargetId: string | null; requiresChoice: boolean };
+export type BackupImportPreview = { previewId: string; kind: BackupKind; exportedAt: string; counts: Record<string, number>; warnings: string[]; personas: BackupImportNode[]; profiles: BackupImportNode[]; plugins: string[] };
+export type BackupImportBinding = { sourceId: string; targetId: string | null };
+export type BackupImportConfirm = { previewId: string; personas: BackupImportBinding[]; profiles: BackupImportBinding[]; confirmGlobalRestore: boolean };
+export type BackupImported = { sessions: number; personasCreated: number; personasReused: number; warnings: string[] };
+
+/** 会话自己的年度月日；新增不复制或关联母表。 */
+export type SessionFestivalInput = { kind: "festival" | "birthday" | "anniversary" | "custom"; name: string; calendarType: "solar" | "lunar"; month: number; day: number; isLeapMonth: boolean; blessing: string; note: string | null };
+export type FestivalCatalogRecord = { id: RecordId; code: string; name: string; year: number; calendarType: "solar" | "lunar" | "solar_term"; solarMonth: number | null; solarDay: number | null; lunarMonth: number | null; lunarDay: number | null; isLeapMonth: boolean; solarTerm: string | null; blessing: string; isMemorial: boolean; note: string | null };
+export type SessionFestivalRecord = { id: RecordId; sessionId: RecordId; festivalId: RecordId | null; kind: SessionFestivalInput["kind"]; name: string; year: number; calendarType: "solar" | "lunar"; solarMonth: number | null; solarDay: number | null; lunarMonth: number | null; lunarDay: number | null; isLeapMonth: boolean; blessing: string; note: string | null; source: "ai" | "user"; createdAt: string; updatedAt: string; isMemorial: boolean; revisionToken: string; occurrences: string[] };
+
+/** 只用于宠窗显示；原提醒详情与状态不被润色覆盖。 */
+export type ReminderPresentation = { occurrenceId: RecordId; personaId: RecordId; contextRevision: number; text: string | null };

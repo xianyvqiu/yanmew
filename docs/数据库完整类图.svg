@@ -95,7 +95,7 @@
 <text x="78" y="409" font-size="16" class="mono" fill="#334155">self_evolve_enabled: INTEGER = 1<title>人设自调开关：1 开启，0 关闭</title></text>
 <text x="78" y="434" font-size="16" class="mono" fill="#334155">last_evolved_at: TEXT?<title>最近一次 AI 调整时间 RFC3339，可空</title></text>
 <text x="78" y="459" font-size="16" class="mono" fill="#334155">color: TEXT = &#x27;#ffb6c1&#x27;<title>桌宠本体颜色（十六进制），按人设绑定</title></text>
-<text x="78" y="484" font-size="16" class="mono" fill="#334155">chat_bg_file: TEXT?<title>聊天窗背景图相对文件名，可空；图片保存在 data/chat_background/</title></text>
+<text x="78" y="484" font-size="16" class="mono" fill="#334155">chat_bg_file: TEXT?<title>人设级聊天背景相对文件名，可空；受管 jpg/png/webp ≤10MiB，位于 AppPaths 的 chat_background/，新文件落盘后才提交引用</title></text>
 <text x="78" y="509" font-size="16" class="mono" fill="#334155">chat_bg_opacity: INTEGER = 85<title>聊天窗背景透明度百分比 0–100</title></text>
 <text x="78" y="534" font-size="16" class="mono" fill="#334155">chat_bg_blur: INTEGER = 0<title>聊天窗背景模糊像素 0–40</title></text>
 <text x="78" y="559" font-size="16" class="mono" fill="#334155">is_active: INTEGER = 0<title>1=当前使用人设（全局唯一），0=非当前人设</title></text>
@@ -181,7 +181,7 @@
 <text x="1348" y="796" font-size="20" font-weight="700" fill="#6366f1">全局设置 «table»</text>
 <text x="1348" y="824" font-size="20" class="mono" fill="#0f172a">settings</text>
 <text x="1348" y="870" font-size="16" class="mono" fill="#334155">PK key: TEXT<title>全局设置键；只允许本文件上方及《数据库与持久化设计》2.7 节登记的 V1 键名</title></text>
-<text x="1348" y="895" font-size="16" class="mono" fill="#334155">value: TEXT<title>设置值；按键解析为规范整数、固定枚举、HTTPS URL 或 DPAPI Base64 密文</title></text>
+<text x="1348" y="895" font-size="16" class="mono" fill="#334155">value: TEXT<title>设置值；按登记键解析为整数、枚举、HTTPS URL、专用版本化 JSON 或 DPAPI Base64 密文</title></text>
 <text x="1348" y="920" font-size="13" fill="#64748b">关系：L01</text>
 </g>
 <g class="card" id="table-short_memories" data-table="short_memories"><rect x="1330" y="1264" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
@@ -350,16 +350,16 @@
 <path d="M60 4079 H640" stroke="#d97706"/>
 <text x="78" y="4030" font-size="20" font-weight="700" fill="#d97706">历史游戏局 «table»</text>
 <text x="78" y="4058" font-size="20" class="mono" fill="#0f172a">game_runs</text>
-<text x="78" y="4104" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>游戏局自增主键</title></text>
-<text x="78" y="4129" font-size="16" class="mono" fill="#334155">plugin_id: TEXT<title>开局时插件 ID 快照，卸载后仍保留</title></text>
-<text x="78" y="4154" font-size="16" class="mono" fill="#334155">plugin_name: TEXT<title>开局时插件显示名称快照</title></text>
-<text x="78" y="4179" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>开局时插件版本快照</title></text>
-<text x="78" y="4204" font-size="16" class="mono" fill="#334155">wallet_permission_granted: INTEGER<title>1=开局时已获 wallet.modify 授权，0=本局纯玩；中途授权不改变本局</title></text>
-<text x="78" y="4229" font-size="16" class="mono" fill="#334155">status: TEXT<title>running=进行中；completed=正常结算；cancelled=用户取消；error=异常结束</title></text>
-<text x="78" y="4254" font-size="16" class="mono" fill="#334155">outcome: TEXT?<title>插件给出的本局结果标识；未结束或无结果时可为 NULL</title></text>
-<text x="78" y="4279" font-size="16" class="mono" fill="#334155">details_json: TEXT?<title>插件提供的本局明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实</title></text>
-<text x="78" y="4304" font-size="16" class="mono" fill="#334155">coin_delta: INTEGER = 0<title>本局累计实际喵币变化；纯玩或平局为 0</title></text>
-<text x="78" y="4329" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>开局时间 UTC RFC3339</title></text>
+<text x="78" y="4104" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>运行记录自增主键</title></text>
+<text x="78" y="4129" font-size="16" class="mono" fill="#334155">plugin_id: TEXT<title>打开时插件 ID 快照，卸载后仍保留</title></text>
+<text x="78" y="4154" font-size="16" class="mono" fill="#334155">plugin_name: TEXT<title>打开时插件显示名称快照</title></text>
+<text x="78" y="4179" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>打开时插件版本快照</title></text>
+<text x="78" y="4204" font-size="16" class="mono" fill="#334155">wallet_permission_granted: INTEGER<title>1=打开时已获 wallet.modify 授权，0=本次运行纯玩；中途授权不改变本次运行</title></text>
+<text x="78" y="4229" font-size="16" class="mono" fill="#334155">status: TEXT<title>running=进行中；completed=正常结束运行；cancelled=用户取消；error=异常结束</title></text>
+<text x="78" y="4254" font-size="16" class="mono" fill="#334155">outcome: TEXT?<title>插件给出的本次运行结果标识；未结束或无结果时可为 NULL</title></text>
+<text x="78" y="4279" font-size="16" class="mono" fill="#334155">details_json: TEXT?<title>插件提供的本次运行明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实</title></text>
+<text x="78" y="4304" font-size="16" class="mono" fill="#334155">coin_delta: INTEGER = 0<title>本次运行累计实际喵币变化；未授权运行为 0</title></text>
+<text x="78" y="4329" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>打开时间 UTC RFC3339</title></text>
 <text x="78" y="4354" font-size="16" class="mono" fill="#334155">ended_at: TEXT?<title>结束时间；running 时为 NULL</title></text>
 <text x="78" y="4379" font-size="13" fill="#64748b">关系：R20 / R21 / L02</text>
 </g>
@@ -371,7 +371,7 @@
 <text x="713" y="4129" font-size="16" class="mono" fill="#334155">delta: INTEGER<title>本次余额变化量；正数增加、负数扣除、插件平局可为 0</title></text>
 <text x="713" y="4154" font-size="16" class="mono" fill="#334155">reason: TEXT<title>daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品</title></text>
 <text x="713" y="4179" font-size="16" class="mono" fill="#334155">ref_id: INTEGER?<title>制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL</title></text>
-<text x="713" y="4204" font-size="16" class="mono" fill="#334155">FK game_run_id: INTEGER?<title>插件游戏流水所属游戏局 -&gt; game_runs.id；非插件流水为 NULL</title></text>
+<text x="713" y="4204" font-size="16" class="mono" fill="#334155">FK game_run_id: INTEGER?<title>插件游戏流水所属运行记录 -&gt; game_runs.id；非插件流水为 NULL</title></text>
 <text x="713" y="4229" font-size="16" class="mono" fill="#334155">FK plugin_id: TEXT?<title>插件游戏时保存插件 ID 快照；非插件流水为 NULL</title></text>
 <text x="713" y="4254" font-size="16" class="mono" fill="#334155">FK plugin_version: TEXT?<title>插件游戏时保存插件版本快照；非插件流水为 NULL</title></text>
 <text x="713" y="4279" font-size="16" class="mono" fill="#334155">plugin_display_reason: TEXT?<title>插件展示给用户的本次变动原因；插件流水必填</title></text>
@@ -419,21 +419,22 @@
 <text x="713" y="2380" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改后的最近更新时间 UTC RFC3339</title></text>
 <text x="713" y="2405" font-size="13" fill="#64748b">关系：R23 / R24 / R25</text>
 </g>
-<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2127" width="580" height="366" rx="10" fill="white" stroke="#0d9488"/>
+<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2127" width="580" height="391" rx="10" fill="white" stroke="#0d9488"/>
 <path d="M1965 2205 H2545" stroke="#0d9488"/>
 <text x="1983" y="2156" font-size="20" font-weight="700" fill="#0d9488">饰品 «table»</text>
 <text x="1983" y="2184" font-size="20" class="mono" fill="#0f172a">accessories</text>
 <text x="1983" y="2230" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
 <text x="1983" y="2255" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
 <text x="1983" y="2280" font-size="16" class="mono" fill="#334155">name: TEXT<title>饰品名称</title></text>
-<text x="1983" y="2305" font-size="16" class="mono" fill="#334155">display_text: TEXT<title>头顶显示的文字/emoji/颜文字</title></text>
+<text x="1983" y="2305" font-size="16" class="mono" fill="#334155">display_text: TEXT<title>头顶视觉兜底：图标字符/Emoji/颜文字/符号组合，不是名称或简介</title></text>
 <text x="1983" y="2330" font-size="16" class="mono" fill="#334155">description: TEXT<title>AI 按人设口吻写的简介</title></text>
 <text x="1983" y="2355" font-size="16" class="mono" fill="#334155">cost: INTEGER = 0<title>制作费用；旅行带回为 0</title></text>
 <text x="1983" y="2380" font-size="16" class="mono" fill="#334155">source: TEXT<title>crafted=使用喵币制作，travel=旅行带回</title></text>
 <text x="1983" y="2405" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>旅行带回时为 travels.id，制作为 NULL</title></text>
 <text x="1983" y="2430" font-size="16" class="mono" fill="#334155">is_worn: INTEGER = 0<title>是否佩戴：1 佩戴，0 未佩戴</title></text>
 <text x="1983" y="2455" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="1983" y="2480" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
+<text x="1983" y="2480" font-size="16" class="mono" fill="#334155">image_file: TEXT?<title>可选透明饰品PNG受管相对路径；NULL显示display_text，不存远程URL或绝对路径</title></text>
+<text x="1983" y="2505" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
 </g>
 <g class="card" id="table-letters" data-table="letters"><rect x="1330" y="2127" width="580" height="441" rx="10" fill="white" stroke="#0d9488"/>
 <path d="M1330 2205 H1910" stroke="#0d9488"/>

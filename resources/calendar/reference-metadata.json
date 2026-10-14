@@ -1,0 +1,31 @@
+{
+  "verified_at": "2026-10-13T08:17:27.284564+00:00",
+  "purpose": "仅供独立日期核对；不包含官方年度文本或衍生查表数据",
+  "sources": [
+    {
+      "year": 1950,
+      "url": "https://www.hko.gov.hk/en/gts/time/calendar/text/files/T1950e.txt",
+      "sha256": "33021defc45aa39ec9be03e3558c00b7b74959550181600790c6c9cfc7643cfe"
+    },
+    {
+      "year": 2023,
+      "url": "https://www.hko.gov.hk/en/gts/time/calendar/text/files/T2023e.txt",
+      "sha256": "f3bbdef5c9b0c0158ca8328004e347da714494572effc23fea97af48052402e5"
+    },
+    {
+      "year": 2024,
+      "url": "https://www.hko.gov.hk/en/gts/time/calendar/text/files/T2024e.txt",
+      "sha256": "81f8fba2c809d5dcea5c63699e843b82e29318553cb5de7bbf053aa66d068fdc"
+    },
+    {
+      "year": 2033,
+      "url": "https://www.hko.gov.hk/en/gts/time/calendar/text/files/T2033e.txt",
+      "sha256": "f7937894bf740a8b3fa1b348ba718b2cd7d017ae743018a01c138e1c765c4fee"
+    },
+    {
+      "year": 2100,
+      "url": "https://www.hko.gov.hk/en/gts/time/calendar/text/files/T2100e.txt",
+      "sha256": "c75561b0e594e3aff40842fae5258e82524d1494c9bd59f69309fce2a7053336"
+    }
+  ]
+}

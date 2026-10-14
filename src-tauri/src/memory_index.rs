@@ -152,24 +152,16 @@ fn next(runtime: &Runtime) -> AppResult<Option<Task>> {
 }
 fn commit(runtime: &Runtime, task: &Task, vector: Vector) -> AppResult<bool> {
     runtime.jobs_cancel.check()?;
-    let state = runtime
-        .memory_index
-        .inner
-        .lock()
-        .map_err(|_| AppError::storage())?;
-    if state.epoch != task.epoch {
-        return Ok(false);
-    }
-    if vector.model_key
-        != format!(
-            "{}:{}",
-            embedding::identity(&runtime.embedding, &task.stamp)?,
-            vector.values.len()
-        )
-    {
-        return Ok(false);
-    }
     runtime.read(|store, _| {
+        // 与长期记忆编辑保持同一锁顺序：先store、再索引状态，避免交叉等待。
+        runtime.jobs_cancel.check()?;
+        let state = runtime.memory_index.inner.lock().map_err(|_| AppError::storage())?;
+        if state.epoch != task.epoch {
+            return Ok(false);
+        }
+        if vector.model_key != format!("{}:{}", embedding::identity(&runtime.embedding, &task.stamp)?, vector.values.len()) {
+            return Ok(false);
+        }
         if embedding_providers::stamp(&store.connection,None)? != task.stamp { return Ok(false); }
         let row: Option<(i64,String,String)> = store.connection.query_row("SELECT session_id,title,content FROM long_memories WHERE id=?1",[task.item.id],|r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
         if !row.is_some_and(|(session,title,content)| session == task.item.session && embedding::content_hash(&title,&content) == task.item.hash) { return Ok(false); }

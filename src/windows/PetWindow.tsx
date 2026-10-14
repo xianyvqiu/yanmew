@@ -1,13 +1,17 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { configurationApi, errorMessage, petApi } from "../api";
+import { configurationApi, errorMessage, petApi, travelApi } from "../api";
 import { usePetWindow } from "./usePetWindow";
 import { usePetAppearance } from "./usePetAppearance";
 import { usePetActivity } from "./usePetActivity";
 import { usePetMemoryErrors } from "./usePetMemoryErrors";
 import { usePetWander } from "./usePetWander";
 import { navigation, type ApplicationPage } from "../platform/navigation";
+import AccessoryLayer from "../components/AccessoryLayer";
+import { AccessoryCraftPresentation } from "../components/AccessoryCraftCard";
+import { useAccessoryCraft } from "../hooks/useAccessoryCraft";
 import PetReminderNotifications from "../components/PetReminderNotifications";
+import PetTravelBubble from "../components/PetTravelBubble";
 import PetConversationBubbles from "../components/PetConversationBubbles";
 import "./PetWindow.css";
 
@@ -17,6 +21,7 @@ type PointerStart = { pointerId: number; x: number; y: number };
 export default function PetWindow() {
   const root = useRef<HTMLDivElement>(null);
   const face = useRef<HTMLDivElement>(null);
+  const seenTravelIds = useRef(new Set<string>());
   const seenProactiveMessages = useRef(new Set<string>());
   const { state, error, pending, toggleHidden, retry, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
@@ -26,6 +31,8 @@ export default function PetWindow() {
   const [startupError, setStartupError] = useState("");
   const appearance = usePetAppearance();
   const activity = usePetActivity();
+  const accessoryContext = { personaId: activity.view?.personaId ?? "", sessionId: activity.view?.sessionId ?? null, contextRevision: activity.view?.contextRevision ?? -1 };
+  const craft = useAccessoryCraft(accessoryContext);
   const memoryErrors = usePetMemoryErrors(activity.view);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
@@ -33,10 +40,21 @@ export default function PetWindow() {
   const reportedErrors = [mainError ? `连接错误：${mainError}` : "", ...memoryErrors].filter(Boolean);
   const visibleError = error || startupError || appearance.error || activity.error || (showErrors ? reportedErrors.join("\n") : "");
   const wanderStyle = usePetWander(root, face, activity.view, appearance.ready && !state.hidden && !pending
-    && !dragging && !pressed && !menuOpen && !visibleError);
+    && !dragging && !pressed && !menuOpen && !visibleError && !craft.preview);
   const openPage = async (page: ApplicationPage) => {
     try { await navigation.open(page); }
     catch (cause) { fail(errorMessage(cause)); }
+  };
+
+  const openLetter = async () => {
+    const view = activity.view;
+    if (!view?.sessionId) return;
+    const context = { personaId:view.personaId,sessionId:view.sessionId,contextRevision:view.contextRevision };
+    try {
+      const trip = await travelApi.current(context);
+      if (!trip) throw new Error("这次旅行已经结束，请刷新后再打开聊天。");
+      await navigation.openLetter(context,trip.id);
+    } catch (cause) { fail(errorMessage(cause)); }
   };
 
   useEffect(() => {
@@ -114,7 +132,7 @@ export default function PetWindow() {
         data-variant="danger" aria-label="查看错误" aria-expanded={showErrors}
         onClick={() => { setShowErrors(value => !value); setMenuOpen(false); }}>!</button>}
       {!state.hidden && <>
-        <button className="ym-button pet-open-chat" data-pet-interactive onClick={() => { void openPage("chat"); }}>聊天</button>
+        <button className="ym-button pet-open-chat" data-pet-interactive onClick={() => { void (activity.view?.activity === "away" ? openLetter() : openPage("chat")); }}>{activity.view?.activity === "away" ? "写信" : "聊天"}</button>
         <button className="ym-button pet-open-settings" data-pet-interactive onClick={() => { void openPage("settings"); }}>设置</button>
       </>}
       {visibleError && !state.hidden && <div className="pet-error" data-pet-interactive role="alert" tabIndex={0}>
@@ -129,17 +147,20 @@ export default function PetWindow() {
           onClick={() => { setMenuOpen(false); void activity.interact("feed"); }}>喂食</button>
         <button className="ym-button" disabled={activity.pending || !activity.view?.canInteract}
           onClick={() => { setMenuOpen(false); void activity.interact("stroke"); }}>摸摸</button>
+        <button className="ym-button" onClick={() => { setMenuOpen(false); void openPage("accessories"); }}>饰品</button>
       </div>}
       {!state.hidden && <div ref={face} data-pet-interactive aria-label="颜文字桌宠" role="img" className="pet-face"
         data-away={activity.view?.activity === "away"}
         onContextMenu={event => { event.preventDefault(); setMenuOpen(value => !value); setShowErrors(false); }}
         onLostPointerCapture={resetPointer} onPointerCancel={resetPointer}
         onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={releasePointer}>
+        {activity.view?.sessionId && activity.view.activity !== "away" && <AccessoryLayer key={`${accessoryContext.personaId}:${accessoryContext.sessionId}:${accessoryContext.contextRevision}`} context={accessoryContext} face={face} canvas={root} />}
         <span className="pet-expression">{activity.view?.expression || "(・ω・)"}</span>
       </div>}
       <PetReminderNotifications hidden={state.hidden} ready={appearance.ready && state.revision >= 0 && !pending}
+        context={activity.view ? { personaId: activity.view.personaId, contextRevision: activity.view.contextRevision } : undefined}
         unobscured={!visibleError && !menuOpen}
-        stateBubble={!dragging && <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />} />
+        stateBubble={!dragging && (craft.preview || craft.error ? <AccessoryCraftPresentation context={accessoryContext} craft={craft} pet /> : activity.view?.activity === "away" ? <PetTravelBubble view={activity.view} seenTravelIds={seenTravelIds.current} /> : <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />)} />
     </div>
   );
 }

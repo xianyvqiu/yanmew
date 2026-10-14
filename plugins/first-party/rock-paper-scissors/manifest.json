@@ -1,0 +1,19 @@
+{
+  "id": "com.yanmew.game.rock-paper-scissors",
+  "name": "剪刀石头布",
+  "description": "每日最多20局，胜利+5、失败-4、平局0。",
+  "author": "颜喵",
+  "version": "1.0.0",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": [
+    "wallet.modify"
+  ],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": "https://github.com/xianyvqiu/yanmew",
+  "homepage": null,
+  "release_page": "https://github.com/xianyvqiu/yanmew/releases",
+  "migration": null
+}

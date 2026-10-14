@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ProvidersPanel from "./ProvidersPanel";
+vi.mock("./ImageGenerationProvidersPanel", () => ({ default: () => null }));
+vi.mock("./WebSearchProvidersPanel", () => ({ default: () => null }));
 import type { Provider } from "../../types";
 // 子面板使用独立测试验证；本文件保持聊天/记忆配置的既有验收范围。
 vi.mock("./EmbeddingProvidersPanel", () => ({ default: () => null }));

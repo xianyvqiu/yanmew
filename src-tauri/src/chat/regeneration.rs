@@ -64,6 +64,7 @@ pub(crate) async fn run_regenerated(
                     ReplyEventKind::Text{text}=>active.partial_content.push_str(text),
                     ReplyEventKind::Expression{expression}=>active.expression=Some(expression.clone()),
                     ReplyEventKind::ContextNotice{message,budget}=>{active.notice=Some(message.clone());active.budget=Some(budget.clone());},
+                    ReplyEventKind::WebActivity{phase}=>active.web_activity=phase.clone(),
                     _=>{}
                 }
                 Ok(())

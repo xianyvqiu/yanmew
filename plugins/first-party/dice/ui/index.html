@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>掷骰子比大小 · 纸贴纸街机</title>
+<style>
+/* ============================================================
+   插件独立主题变量（不读宿主）
+   ============================================================ */
+:root {
+  --rps-paper: #FFFDF7;
+  --rps-ink: #1F1B16;
+  --rps-ink-dim: #8A8175;
+  --rps-line: rgba(31, 27, 22, .055);
+  --rps-border: rgba(31, 27, 22, .12);
+  --rps-border-strong: rgba(31, 27, 22, .22);
+
+  --rps-win: #4CAF7D;
+  --rps-lose: #E5484D;
+  --rps-draw: #8A8175;
+  --rps-lucky: #E8A600;
+  --rps-lucky-light: #F5B700;
+  --rps-lucky-deep: #C98A00;
+
+  --rps-ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --rps-ease-out: cubic-bezier(.22, 1, .36, 1);
+  --rps-ease-soft: cubic-bezier(.4, 0, .2, 1);
+  --rps-font-mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--rps-ink);
+  background:
+    radial-gradient(ellipse at 20% 15%, #38404d 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 85%, #2c3b48 0%, transparent 55%),
+    #14171d;
+  display: grid;
+  place-items: center;
+  padding: 30px 20px;
+  min-height: 100vh;
+  overflow: auto;
+}
+
+/* ============================================================
+   插件窗口：初始尺寸由插件决定，可缩放
+   ============================================================ */
+.plugin-window {
+  position: relative;
+  width: 340px;
+  height: 540px;
+  min-width: 300px;
+  min-height: 500px;
+  max-width: 620px;
+  max-height: 760px;
+  resize: both;
+  overflow: hidden;
+  border-radius: 20px;
+  background-color: var(--rps-paper);
+  background-image:
+    linear-gradient(var(--rps-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rps-line) 1px, transparent 1px);
+  background-size: 20px 20px;
+  box-shadow:
+    0 30px 70px -20px rgba(0, 0, 0, .65),
+    0 8px 24px -8px rgba(0, 0, 0, .35),
+    inset 0 0 0 1px rgba(255, 255, 255, .5);
+  container-type: inline-size;
+  container-name: rps;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ============================================================
+   顶栏
+   ============================================================ */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.sticker {
+  background: #FFFFFF;
+  border: 1px solid var(--rps-border);
+  border-radius: 12px;
+  box-shadow: 0 3px 10px -4px rgba(31, 27, 22, .14);
+  padding: 6px 11px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1;
+  flex: none;
+}
+
+.wallet .balance {
+  font-family: var(--rps-font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--rps-ink);
+  transition: color .35s var(--rps-ease-out);
+  display: inline-block;
+}
+.wallet .balance.up { color: var(--rps-win); }
+.wallet .balance.down { color: var(--rps-lose); }
+.wallet .label { font-size: 10px; color: var(--rps-ink-dim); }
+
+.quota .used {
+  font-family: var(--rps-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+.quota .total {
+  font-family: var(--rps-font-mono);
+  font-size: 11px;
+  color: var(--rps-ink-dim);
+}
+
+.head-spacer { flex: 1; }
+
+.perm-btn {
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--rps-border);
+  background: #FFFFFF;
+  color: var(--rps-ink-dim);
+  cursor: pointer;
+  box-shadow: 0 3px 10px -4px rgba(31, 27, 22, .14);
+  transition: all .3s var(--rps-ease-out);
+  white-space: nowrap;
+  flex: none;
+}
+.perm-btn:hover {
+  color: var(--rps-ink);
+  border-color: var(--rps-border-strong);
+  transform: translateY(-1.5px);
+}
+.perm-btn.off {
+  color: var(--rps-lose);
+  border-color: color-mix(in srgb, var(--rps-lose) 40%, transparent);
+}
+
+.playmode {
+  display: none;
+  font-size: 10.5px;
+  color: var(--rps-ink-dim);
+  text-align: center;
+  padding: 5px 10px;
+  border: 1px dashed var(--rps-border-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .55);
+  flex: none;
+}
+.playmode.show { display: block; }
+
+/* ============================================================
+   对战场
+   ============================================================ */
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 14px;
+  background: rgba(255, 255, 255, .55);
+  border: 1px solid var(--rps-border);
+  border-radius: 18px;
+  box-shadow: 0 3px 10px -4px rgba(31, 27, 22, .12);
+  flex: none;
+}
+
+.side {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.side-label {
+  font-size: 10px;
+  letter-spacing: .8px;
+  color: var(--rps-ink-dim);
+  text-transform: uppercase;
+}
+
+/* 骰子 */
+.die {
+  --die-size: 92px;
+  width: var(--die-size);
+  height: var(--die-size);
+  padding: 14%;
+  gap: 8%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  background: #FFFFFF;
+  border: 2px solid var(--rps-border);
+  border-radius: 18%;
+  box-shadow:
+    inset 0 -3px 0 rgba(31, 27, 22, .04),
+    0 3px 10px -4px rgba(31, 27, 22, .16);
+  transition: border-color .3s var(--rps-ease-out),
+              box-shadow .3s var(--rps-ease-out);
+  position: relative;
+  will-change: transform;
+  flex: none;
+}
+
+.die .dot {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--rps-ink);
+  place-self: center;
+  transition: background .3s var(--rps-ease-out);
+}
+
+/* 骰子滚动 */
+.die.rolling {
+  animation: dieShake .18s linear infinite;
+  border-color: var(--rps-border-strong);
+}
+@keyframes dieShake {
+  0%   { transform: rotate(0deg)    translate(0, 0); }
+  25%  { transform: rotate(-9deg)   translate(-2px, -2px); }
+  50%  { transform: rotate(7deg)    translate(2px, 2px); }
+  75%  { transform: rotate(-4deg)   translate(-1px, 1px); }
+  100% { transform: rotate(0deg)    translate(0, 0); }
+}
+
+.die.pop { animation: diePop .55s var(--rps-ease-spring); }
+@keyframes diePop {
+  0%   { transform: scale(.55) rotate(-10deg); opacity: .4; }
+  60%  { transform: scale(1.14) rotate(3deg);  opacity: 1; }
+  100% { transform: scale(1) rotate(0);        opacity: 1; }
+}
+
+/* 幸运 6 */
+.die.lucky {
+  border-color: var(--rps-lucky-deep);
+  animation: luckyGlow 1.4s var(--rps-ease-soft) infinite;
+}
+.die.lucky .dot {
+  background: var(--rps-lucky-deep);
+}
+@keyframes luckyGlow {
+  0%, 100% {
+    box-shadow:
+      inset 0 -3px 0 rgba(31, 27, 22, .04),
+      0 0 0 3px rgba(245, 183, 0, .28),
+      0 0 18px rgba(245, 183, 0, .55),
+      0 3px 10px -4px rgba(31, 27, 22, .2);
+  }
+  50% {
+    box-shadow:
+      inset 0 -3px 0 rgba(31, 27, 22, .04),
+      0 0 0 5px rgba(245, 183, 0, .18),
+      0 0 30px rgba(245, 183, 0, .8),
+      0 3px 10px -4px rgba(31, 27, 22, .2);
+  }
+}
+
+.vs {
+  flex: none;
+  font-family: var(--rps-font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rps-ink-dim);
+  letter-spacing: 1px;
+}
+
+/* ============================================================
+   结果印章
+   ============================================================ */
+.result-area {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  position: relative;
+}
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 18px;
+  border: 2px solid currentColor;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  position: relative;
+  transform: rotate(-4deg);
+  background: rgba(255, 255, 255, .55);
+  opacity: 0;
+}
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  opacity: .35;
+}
+.stamp.show { animation: stampIn .5s var(--rps-ease-spring) forwards; }
+@keyframes stampIn {
+  0%   { opacity: 0; transform: scale(1.6) rotate(-16deg); }
+  60%  { opacity: 1; transform: scale(.94) rotate(-2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-4deg); }
+}
+.stamp.win  { color: var(--rps-win); }
+.stamp.lose { color: var(--rps-lose); }
+.stamp.draw { color: var(--rps-draw); }
+.stamp .delta {
+  font-family: var(--rps-font-mono);
+  font-size: 12px;
+  opacity: .85;
+}
+
+/* 幸运 6 贴纸 */
+.lucky-tag {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%) rotate(8deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 10px;
+  border: 2px solid var(--rps-lucky-deep);
+  background: linear-gradient(180deg, #FFF7DC, #FFE9A8);
+  color: var(--rps-lucky-deep);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 0 14px rgba(245, 183, 0, .55);
+}
+.lucky-tag.show { animation: luckyTagIn .55s var(--rps-ease-spring) forwards; }
+@keyframes luckyTagIn {
+  0%   { opacity: 0; transform: translateY(-50%) rotate(30deg) scale(2); }
+  60%  { opacity: 1; transform: translateY(-50%) rotate(2deg) scale(.94); }
+  100% { opacity: 1; transform: translateY(-50%) rotate(8deg) scale(1); }
+}
+
+/* ============================================================
+   掷骰按钮
+   ============================================================ */
+.roll-btn {
+  width: 100%;
+  height: 58px;
+  flex: none;
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
+  background: #2A2621;
+  color: #FFFFFF;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 5px 0 #0F0D0B, 0 6px 16px -6px rgba(0, 0, 0, .4);
+  transform: translateY(0);
+  transition: transform .2s var(--rps-ease-out),
+              box-shadow .2s var(--rps-ease-out),
+              opacity .2s var(--rps-ease-out);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.roll-btn .dice-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.roll-btn .sub {
+  font-family: var(--rps-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .7;
+}
+.roll-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 0 #0F0D0B, 0 10px 22px -6px rgba(0, 0, 0, .5);
+}
+.roll-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #0F0D0B, 0 2px 6px -2px rgba(0, 0, 0, .3);
+}
+.roll-btn:focus-visible {
+  outline: 2px solid var(--rps-lucky-light);
+  outline-offset: 3px;
+}
+.roll-btn:disabled {
+  cursor: not-allowed;
+  opacity: .35;
+  transform: translateY(3px);
+  box-shadow: 0 2px 0 #0F0D0B;
+}
+
+/* ============================================================
+   底部
+   ============================================================ */
+.foot {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--rps-ink-dim);
+  letter-spacing: .3px;
+  line-height: 1.6;
+  flex: none;
+}
+.foot .rule {
+  font-family: var(--rps-font-mono);
+  font-size: 10px;
+}
+.foot .lucky-rule {
+  color: var(--rps-lucky-deep);
+  font-weight: 700;
+}
+
+/* ============================================================
+   金币精灵
+   ============================================================ */
+.coin-sprite {
+  position: fixed;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #FFE9A8 0%, #F5B700 55%, #C98A00 100%);
+  box-shadow:
+    inset 0 -2px 3px rgba(140, 90, 0, .3),
+    inset 0 1px 2px rgba(255, 255, 255, .7),
+    0 0 8px rgba(245, 183, 0, .55);
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+}
+.coin-sprite::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(160, 100, 0, .3);
+}
+.coin-sprite.lose {
+  background: radial-gradient(circle at 35% 30%, #FFC5C5 0%, #E5484D 55%, #8A2023 100%);
+  box-shadow:
+    inset 0 -2px 3px rgba(80, 0, 0, .35),
+    inset 0 1px 2px rgba(255, 255, 255, .6),
+    0 0 8px rgba(229, 72, 77, .5);
+}
+.coin-sprite.lose::after {
+  border-color: rgba(140, 30, 30, .35);
+}
+.coin-sprite.lucky {
+  box-shadow:
+    inset 0 -2px 3px rgba(140, 90, 0, .3),
+    inset 0 1px 2px rgba(255, 255, 255, .8),
+    0 0 16px rgba(245, 183, 0, .95);
+}
+
+/* 飘字 */
+.float-text {
+  position: fixed;
+  font-family: var(--rps-font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 9998;
+  transform: translate(-50%, -50%);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .85);
+}
+.float-text.gain  { color: var(--rps-win); }
+.float-text.lose  { color: var(--rps-lose); }
+.float-text.lucky { color: var(--rps-lucky-deep); font-size: 17px; }
+
+/* ============================================================
+   容器查询：随窗口尺寸自适应
+   ============================================================ */
+@container rps (min-width: 400px) {
+  .game { padding: 18px; gap: 14px; }
+  .die { --die-size: 118px; border-radius: 18%; }
+  .vs { font-size: 14px; }
+  .stamp { font-size: 16px; padding: 9px 22px; }
+  .stamp .delta { font-size: 13px; }
+  .wallet .balance { font-size: 17px; }
+  .sticker { font-size: 13px; padding: 7px 13px; }
+  .roll-btn { height: 62px; font-size: 16px; }
+  .lucky-tag { font-size: 13px; padding: 6px 14px; }
+}
+
+@container rps (min-width: 500px) {
+  .die { --die-size: 142px; }
+  .roll-btn { height: 68px; font-size: 17px; }
+}
+
+@container rps (max-width: 320px) {
+  .game { padding: 10px; gap: 8px; }
+  .die { --die-size: 72px; }
+  .sticker { font-size: 11px; padding: 5px 9px; }
+  .wallet .balance { font-size: 13px; }
+  .quota .used { font-size: 12px; }
+  .perm-btn { font-size: 9.5px; padding: 5px 8px; }
+  .vs { font-size: 10px; }
+  .stamp { font-size: 12px; padding: 6px 14px; }
+  .stamp .delta { font-size: 11px; }
+  .lucky-tag { font-size: 10px; padding: 4px 9px; }
+  .roll-btn { height: 50px; font-size: 13px; }
+  .roll-btn .sub { font-size: 10px; }
+  .foot { font-size: 9.5px; }
+  .side-label { font-size: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .12s !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="plugin-window" id="pluginWindow">
+  <div class="game">
+
+    <!-- 顶部 -->
+    <header class="head">
+      <div class="sticker wallet">
+        <span>🪙</span>
+        <span class="balance" id="balance">30</span>
+        <span class="label">喵币</span>
+      </div>
+      <div class="sticker quota">
+        <span class="label">今日</span>
+        <span class="used" id="quotaUsed">0</span>
+        <span class="total" id="quotaTotal">/ 20</span>
+      </div>
+      <span class="head-spacer"></span>
+      <button class="perm-btn" id="permBtn" title="切换喵币权限">喵币：开</button>
+    </header>
+
+    <div class="playmode" id="playmode">纯玩模式 · 不下注、不修改喵币</div>
+
+    <!-- 对战场 -->
+    <main class="stage">
+      <div class="side">
+        <div class="die" id="playerDie"></div>
+        <div class="side-label">你</div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="side">
+        <div class="die" id="aiDie"></div>
+        <div class="side-label">AI</div>
+      </div>
+    </main>
+
+    <!-- 结果 -->
+    <div class="result-area" id="resultArea">
+      <span class="stamp" id="stamp">
+        <span id="stampText">——</span>
+        <span class="delta" id="stampDelta"></span>
+      </span>
+      <span class="lucky-tag" id="luckyTag">✨ 幸运 6 +2</span>
+    </div>
+
+    <!-- 掷骰按钮 -->
+    <button class="roll-btn" id="rollBtn">
+      <span class="dice-icon">🎲</span>
+      <span id="rollBtnText">掷骰子</span>
+      <span class="sub" id="rollBtnSub">赌注 3</span>
+    </button>
+
+    <!-- 底部 -->
+    <div class="foot">
+      <div class="rule">赢 +3 · 输 −3 · 平 0</div>
+      <div class="rule lucky-rule">✨ 掷出 6 额外 +2（无论输赢平）</div>
+      <div id="footHint">点击开始</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="runtime.js"></script>
+<script src="game.js"></script>
+
+</body>
+</html>

@@ -327,7 +327,7 @@ fn capture(runtime: &Runtime, key: WorkKey) -> AppResult<Option<(Snapshot, Reque
     })
 }
 /// 字数设置按中文汉字计算；标点、拉丁字母和 emoji 不计为汉字。
-fn han_count(content: &str) -> usize {
+pub(crate) fn han_count(content: &str) -> usize {
     content.chars().filter(|c| matches!(*c as u32, 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff | 0x20000..=0x323af)).count()
 }
 #[derive(Deserialize)]

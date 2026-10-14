@@ -1,8 +1,10 @@
-import type { ReminderOccurrence } from "../types";
+import type { CurrentContext, ReminderOccurrence } from "../types";
+import { useReminderPolish } from "../hooks/useReminderPolish";
 import "./ReminderNotifications.css";
 
 export type ReminderBubbleProps = {
   occurrence: ReminderOccurrence;
+  context?: Pick<CurrentContext, "personaId" | "contextRevision">;
   busy: boolean;
   error: string;
   onComplete: () => void;
@@ -17,12 +19,14 @@ function formatScheduledAt(value: string) {
 
 export default function ReminderBubble({
   occurrence,
+  context,
   busy,
   error,
   onComplete,
   onDismiss,
   onOpenReminders,
 }: ReminderBubbleProps) {
+  const polished = useReminderPolish(occurrence, context);
   if (occurrence.status === "done") return null;
 
   const displayedTime = formatScheduledAt(occurrence.scheduledAt);
@@ -37,7 +41,8 @@ export default function ReminderBubble({
       </header>
       <div className="ym-reminder-notification__body">
         <p className="ym-reminder-notification__message">
-          <span>{`${occurrence.name}事件提醒：${occurrence.content}`}</span>
+          <span>{polished ?? `${occurrence.name}事件提醒：${occurrence.content}`}</span>
+          {polished && <span className="ym-reminder-notification__original">提醒详情：{occurrence.content}</span>}
           <time dateTime={occurrence.scheduledAt}>{displayedTime}</time>
         </p>
         {error && <p className="ym-reminder-notification__error" role="alert">{error}</p>}

@@ -16,6 +16,8 @@ struct Session {
     notebook: NotebookTools,
     reminders: ReminderCreation,
     journals: TravelJournalTools,
+    festivals: crate::festivals::tools::Tools,
+    web: Option<crate::web_search::SearchSession>,
     events: Arc<dyn ChatToolEventSink>,
     runtime: Runtime,
     lease: Arc<RequestLease>,
@@ -55,7 +57,15 @@ impl Session {
             }
             "create_reminder" => serde_json::to_value(self.reminders.execute(call, &chrono::Local, self.events.as_ref())?)
                 .map_err(|_| AppError::storage()),
+            "request_accessory_craft" => serde_json::to_value(crate::accessories::craft::request(&self.runtime,&self.lease,
+                crate::memory::management::Context {persona_id:self.persona_id.to_string(),session_id:self.session_id.to_string(),context_revision:self.revision},call,self.events.clone())?)
+                .map_err(|_|AppError::storage()),
             "list_travel_journals" | "search_travel_journals" | "open_travel_journal" => self.journals.execute(call),
+            "list_festival_catalog" | "list_session_festivals" | "get_session_festival" | "create_session_festival" | "update_session_festival" | "delete_session_festival" => {
+                let result=self.festivals.execute(call)?;
+                if crate::festivals::tools::is_write(&call.name) && result["already_applied"]!=true {self.events.festivals_changed(&self.session_id.to_string());}
+                Ok(result)
+            }
             _ => Err(AppError::new("UNKNOWN_TOOL", "未注册此工具，未执行任何操作")),
         }
     }
@@ -68,6 +78,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     let evolution = prepared.evolution.clone();
     let (persona_id, session_id, revision) = (prepared.persona_id, prepared.session_id, prepared.context_revision);
     let events = prepared.tool_events.clone().unwrap_or_else(|| Arc::new(SilentEvents));
+    let allow_web = !prepared.proactive && !prepared.continuation;
     let (mut session, rounds) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
         let rounds = runtime.read(|store, _| {
             let settings = crate::config::get(&store.connection)?;
@@ -77,6 +88,8 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
             notebook: NotebookTools::new(&runtime, &lease, persona_id, session_id, revision)?,
             reminders: ReminderCreation::new(&runtime, &lease, persona_id, session_id, revision)?,
             journals: TravelJournalTools::new(&runtime, &lease, persona_id, session_id, revision)?,
+            festivals: crate::festivals::tools::Tools::new(&runtime, &lease, persona_id, session_id, revision),
+            web: allow_web.then(||crate::web_search::SearchSession::new(&runtime)),
             events, runtime, lease, persona_id, session_id, revision, evolution, calls: HashMap::new(),
         }, rounds))
     }).await.map_err(|_| AppError::storage())??;
@@ -85,10 +98,18 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     let mut history = Vec::new();
     let mut definitions = crate::notebook_tools::definitions();
     definitions.extend(crate::travel_journal_tools::definitions());
+    definitions.extend(crate::festivals::tools::definitions());
+    history.push(Message::new("system",crate::festivals::tools::RULES));
     definitions.push(crate::reminder_extract::definition());
     definitions.extend(memory_tools::definitions());
+    definitions.push(crate::accessories::craft::definition());
+    history.push(Message::new("system",crate::accessories::craft::RULES));
+    if session.web.as_ref().is_some_and(|web|web.available()) {
+        definitions.extend(crate::web_search::definitions());
+        history.push(Message::new("system",crate::web_search::RULES));
+    }
     if prepared.evolution.is_some() { definitions.push(evolution::definition()); }
-    if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"))); }
+    if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"|"request_accessory_craft"|"create_session_festival"|"update_session_festival"|"delete_session_festival"))); }
     if prepared.continuation {definitions.clear();}
     let mut content = String::new();
     let rounds=if prepared.continuation {0} else {rounds};
@@ -126,6 +147,10 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         if choice.finish != Finish::ToolCalls {
             if choice.finish == Finish::Stop && choice.content.trim().is_empty() { return Err(protocol()); }
             prepared.lease.cancel.check()?;
+            if choice.finish == Finish::Stop {
+                let footer=session.web.as_ref().map(|web|web.footer(&content)).unwrap_or_default();
+                if !footer.is_empty(){emit(ReplyEventKind::Text{text:footer.clone()})?;content.push_str(&footer);}
+            }
             choice.content = content;
             return Ok(choice);
         }
@@ -134,8 +159,23 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         let mut results=Vec::new();
         let mut observations = Vec::new();
         for call in choice.tools {
-                if prepared.regenerating && matches!(call.name.as_str(),"update_notebook"|"create_reminder") {return Err(AppError::new("PERMISSION_DENIED","重说不执行记事本写入或提醒创建，旧操作保持不变"));}
-                let result=if matches!(call.name.as_str(),"search_long_memories"|"open_long_memory"|"open_long_memory_sources"|"open_chat_round") {
+                if prepared.regenerating && matches!(call.name.as_str(),"update_notebook"|"create_reminder"|"request_accessory_craft"|"create_session_festival"|"update_session_festival"|"delete_session_festival") {return Err(AppError::new("PERMISSION_DENIED","重说不执行记事本写入、提醒创建、饰品制作或日期记录修改，旧操作保持不变"));}
+                let result=if matches!(call.name.as_str(),"search_web"|"open_web_page") {
+                    match session.check_call(&call) {
+                        Ok(())=>{
+                            let phase=if call.name=="search_web"{"searching"}else{"reading"};
+                            emit(ReplyEventKind::WebActivity{phase:Some(phase.into())})?;
+                            let result=match session.web.as_mut() {
+                                Some(web)=>web.execute(client,&session.runtime,&call,&session.lease.cancel).await,
+                                None=>Err(AppError::new("PERMISSION_DENIED","本请求不允许联网搜索或网页读取")),
+                            };
+                            emit(ReplyEventKind::WebActivity{phase:None})?;
+                            session.check_call(&call)?;
+                            result
+                        },
+                        Err(error)=>Err(error),
+                    }
+                } else if matches!(call.name.as_str(),"search_long_memories"|"open_long_memory"|"open_long_memory_sources"|"open_chat_round") {
                     match session.check_call(&call) {
                         Ok(())=>memory_tools::execute(&session.runtime,&session.lease,session.persona_id,session.session_id,session.revision,&call).await,
                         Err(error)=>Err(error),

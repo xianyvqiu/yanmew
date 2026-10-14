@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
-import type { ChatReplyEvent, ChatRequestSnapshot, Message, MessagePage, Persona, RoundSnapshot, Session } from "../types";
+import type { ChatReplyEvent, ChatRequestSnapshot, Message, MessagePage, Persona, RoundSnapshot, Session, Travel } from "../types";
 import ChatPage from "./ChatPage";
 
 const api = vi.hoisted(() => ({
@@ -22,6 +22,11 @@ vi.mock("../api", () => ({
   backgroundApi: { get: api.backgroundGet, save: api.backgroundSave },
   errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : "操作失败",
 }));
+
+const travelState = vi.hoisted(() => ({current:null as Travel | null, loading:false, error:"", refresh:vi.fn()}));
+const navigation = vi.hoisted(() => ({open:vi.fn(),openLetter:vi.fn()}));
+vi.mock("../hooks/useTravel", () => ({useTravel:()=>travelState}));
+vi.mock("../platform/navigation", () => ({navigation}));
 
 const persona: Persona = {
   id: "persona-1", name: "小喵", prompt: "", initialPrompt: "",
@@ -61,6 +66,9 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  travelState.current=null; travelState.loading=false; travelState.error="";
+  navigation.open.mockReset().mockResolvedValue(undefined); navigation.openLetter.mockReset().mockResolvedValue(undefined);
+
   api.backgroundGet.mockReset().mockResolvedValue({ record: { personaId: persona.id, file: null, opacity: 0, blur: 0 }, imageDataUrl: null, imageError: null });
   api.backgroundSave.mockReset().mockImplementation(async (_id, input) => ({ ...input.expected, opacity: input.opacity, blur: input.blur }));
   api.current.mockReset().mockResolvedValue(null);
@@ -649,4 +657,14 @@ describe("ChatPage", () => {
     expect(screen.queryByText("迟到的旧消息")).toBeNull();
     expect(oldRefresh).not.toHaveBeenCalled();
   });
+});
+
+it("出门时禁止普通聊天并按当前出行打开写信", async () => {
+  travelState.current={id:"3",sessionId:"session-1",status:"away",startedAt:"2026-10-09T00:00:00Z",plannedReturnAt:"2099-10-09T01:00:00Z",actualReturnAt:null,cancelledAt:null,midwayLetterAt:"2026-10-09T00:30:00Z",destination:"湖边",factsState:"ready",midwayLetterState:"done",returnLetterState:"pending",giftState:"pending",journalState:"pending",giftKind:null};
+  render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
+  await screen.findByText("小喵出门啦");
+  expect(screen.getByRole("textbox",{name:"聊天消息"})).toHaveProperty("disabled",true);
+  fireEvent.click(screen.getByRole("button",{name:"写信"}));
+  await waitFor(()=>expect(navigation.openLetter).toHaveBeenCalledWith(snapshot("session-1").context,"3"));
+  expect(api.submit).not.toHaveBeenCalled();
 });

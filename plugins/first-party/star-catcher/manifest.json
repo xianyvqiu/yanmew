@@ -1,0 +1,19 @@
+{
+  "id": "com.yanmew.game.star-catcher",
+  "name": "接星星",
+  "description": "每局20秒，使用喵币时开局8币，每接住一颗星星获得1币。",
+  "author": "颜喵",
+  "version": "1.0.0",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": [
+    "wallet.modify"
+  ],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": "https://github.com/xianyvqiu/yanmew",
+  "homepage": null,
+  "release_page": "https://github.com/xianyvqiu/yanmew/releases",
+  "migration": null
+}

@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useCurrentContext } from "./useCurrentContext";
 import type { CurrentContext } from "../types";
 
-const api = vi.hoisted(() => ({ get: vi.fn(), personas: vi.fn(), sessions: vi.fn(), listen: vi.fn(), changes: vi.fn() }));
-vi.mock("../api", () => ({ configurationApi: { getCurrentContext: api.get, listPersonas: api.personas, listenContext: api.listen, listenChanges: api.changes }, sessionApi: { list: api.sessions }, errorMessage: () => "读取失败" }));
+const api = vi.hoisted(() => ({ get: vi.fn(), personas: vi.fn(), sessions: vi.fn(), profiles: vi.fn(), listen: vi.fn(), changes: vi.fn() }));
+vi.mock("../api", () => ({ configurationApi: { getCurrentContext: api.get, listPersonas: api.personas, listenContext: api.listen, listenChanges: api.changes }, sessionApi: { list: api.sessions }, userProfileApi: { list: api.profiles }, errorMessage: () => "读取失败" }));
 let receive: (context: CurrentContext) => void;
 let current: CurrentContext;
 const stop = vi.fn();
@@ -13,6 +13,7 @@ beforeEach(() => {
   api.get.mockImplementation(async () => ({ ...current }));
   api.personas.mockResolvedValue([{ id: "1", name: "喵喵" }]);
   api.sessions.mockResolvedValue([]);
+  api.profiles.mockResolvedValue([{ id: "7", name: "测试资料", content: "资料正文" }]);
   api.listen.mockImplementation(async callback => { receive = callback; return stop; });
   api.changes.mockResolvedValue(stop);
 });
@@ -31,6 +32,7 @@ it("同一上下文聚焦刷新期间保留页面快照", async () => {
 it("先订阅再读取，聚焦补查且卸载释放监听", async () => {
   const hook = renderHook(useCurrentContext);
   await waitFor(() => expect(hook.result.current.snapshot?.context.contextRevision).toBe(0));
+  expect(hook.result.current.snapshot?.userProfiles).toEqual([{ id: "7", name: "测试资料", content: "资料正文" }]);
   expect(api.listen.mock.invocationCallOrder[0]).toBeLessThan(api.get.mock.invocationCallOrder[0]);
   current = { ...current, contextRevision: 1, sessionId: "2" };
   act(() => window.dispatchEvent(new Event("focus")));

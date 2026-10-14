@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { Settings } from "../../types";
 import AutostartPanel from "./AutostartPanel";
+import BackupPanel from "./BackupPanel";
+import AppInfoPanel from "./AppInfoPanel";
 
 export default function GeneralPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -33,6 +35,5 @@ export default function GeneralPanel() {
       <div className="ym-inline-form"><button className="ym-button" disabled={saving} type="submit">{saving ? "正在保存…" : "保存主题"}</button>{saved && <span role="status">主题已保存</span>}</div>
     </form> : !error && <p role="status">正在读取设置…</p>}
     {error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={() => setAttempt(value => value + 1)}>重新读取</button></div>}
-    <p className="ym-page-note">其他通用设置与导入导出将在对应功能完成后开放。</p>
-  </section><AutostartPanel /></>;
+  </section><AutostartPanel /><BackupPanel /><AppInfoPanel /></>;
 }

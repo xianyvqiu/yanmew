@@ -1,7 +1,6 @@
 //! 当前请求的上下文快照及整项裁剪，不修改历史、记忆或全局条数设置。
 use super::*;
 use crate::chat_capacity::{self, Budget, Capacity};
-use chrono::Datelike;
 use rusqlite::params;
 use serde_json::{json, Value};
 
@@ -12,7 +11,7 @@ struct Part {
     removable: Option<(u8, String)>,
 }
 #[derive(Clone)]
-pub(super) struct Context {
+pub(crate) struct Context {
     parts: Vec<Part>,
     pub query: String,
     pub recent_long: usize,
@@ -36,6 +35,16 @@ impl Context {
 
     pub(super) fn proactive(store: &crate::runtime::Store, runtime: &Runtime, session: i64, provider: i64, prompt: &str, instruction: &str) -> AppResult<Self> {
         Self::snapshot_mode(store, runtime, session, provider, prompt, instruction, None, None, true)
+    }
+
+    /// 信件复用完整会话资料和预算；任务指令固定为系统指令，不开放聊天工具。
+    pub(crate) fn letter(store:&crate::runtime::Store,runtime:&Runtime,session:i64,provider:i64,prompt:&str,
+        instruction:&str,history:Vec<(String,String)>)->AppResult<Self> {
+        let mut context=Self::snapshot_mode(store,runtime,session,provider,prompt,instruction,None,None,true)?;
+        let task=context.parts.pop().ok_or_else(AppError::storage)?;
+        for (content,time) in history {context.push("system",content,Some((1,time)));}
+        context.parts.push(task);
+        Ok(context)
     }
 
     fn snapshot_mode(store: &crate::runtime::Store, runtime: &Runtime, session: i64, provider: i64, prompt: &str, input: &str,
@@ -90,19 +99,14 @@ impl Context {
             Some(data) => json!({"availability":weather.availability,"position":data.position,"observation":data.observation,"fetchedAt":data.fetched_at}).to_string(),
             None => "地点与天气未知；不能虚构当前天气。".into(),
         };
-        let mut holidays = Vec::<Value>::new();
-        for sql in ["SELECT name,blessing FROM festival_catalog WHERE year=?1 AND solar_month=?2 AND solar_day=?3", "SELECT name,blessing FROM session_festivals WHERE year=?1 AND solar_month=?2 AND solar_day=?3 AND session_id=?4"] {
-            let mut q = c.prepare(sql)?;
-            let values = [local.year() as i64,local.month() as i64,local.day() as i64,session];
-            let params = if sql.contains("session_id") { &values[..] } else { &values[..3] };
-            holidays.extend(q.query_map(rusqlite::params_from_iter(params),|r|Ok(json!({"name":r.get::<_,String>(0)?,"blessing":r.get::<_,String>(1)?})))?.collect::<Result<Vec<_>,_>>()?);
-        }
-        result.push("system", format!("当前本地时间：{}，时区偏移{}。环境：{}。当天已登记节日：{}。当前记忆参数：{}。工具只允许当前会话；只有成功结果才表示操作完成。记事本建议上限{}字，超限不截断，应优先整理。",local.to_rfc3339(),local.offset(),weather_text,json!(holidays),json!({"k":settings["memory_merge_count"],"recentMessages":count,"recentLongMemories":recent_long}),settings["notebook_max_chars"]),None);
+        let holidays = crate::festivals::session::today(c,local.date_naive(),Some(session))?;
+        result.push("system", format!("当前本地时间：{}，时区偏移{}。环境：{}。当天已登记日期：{}；isMemorial=true使用纪念向文案，不说快乐，不猜测未登记的日期。当前记忆参数：{}。工具只允许当前会话；只有成功结果才表示操作完成。记事本建议上限{}字，超限不截断，应优先整理。",local.to_rfc3339(),local.offset(),weather_text,json!(holidays),json!({"k":settings["memory_merge_count"],"recentMessages":count,"recentLongMemories":recent_long}),settings["notebook_max_chars"]),None);
         let profile: Option<String> = c.query_row("SELECT u.content FROM sessions s JOIN user_profiles u ON u.id=s.user_profile_id WHERE s.id=?1",[session],|r|r.get(0)).optional()?;
         if let Some(value) = profile {
             result.push("system", format!("绑定的用户设定：\n{value}"), None);
         }
         result.push("system", prompt, None);
+        result.push("system",format!("当前会话饰品制作资格：{}。只有用户确认才扣币，候选不等于已购买。",crate::accessories::craft::hint(store,session)),None);
         let notebook: Option<(String, String)> = c
             .query_row(
                 "SELECT content,updated_at FROM notebooks WHERE session_id=?1",

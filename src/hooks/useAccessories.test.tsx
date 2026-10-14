@@ -1,0 +1,57 @@
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useAccessories } from "./useAccessories";
+import type { Accessory, CurrentContext } from "../types";
+const api = vi.hoisted(() => ({ list: vi.fn(), listen: vi.fn() }));
+vi.mock("../api", () => ({ accessoriesApi: api, errorMessage: (cause: Error) => cause.message }));
+const context: CurrentContext = { personaId: "1", sessionId: "1", contextRevision: 1 };
+const accessory = (id: string, isWorn = false): Accessory => ({ id, sessionId: "1", name: `饰品${id}`, displayText: "✿", imageFile: null, description: "花", cost: "20", source: "crafted", travelId: null, isWorn, createdAt: "now" });
+beforeEach(() => { api.list.mockReset().mockResolvedValue([]); api.listen.mockReset().mockResolvedValue(() => {}); });
+afterEach(cleanup);
+it("先订阅再查询，头顶查找翻页覆盖旧饰品", async () => {
+  api.list.mockResolvedValueOnce(Array.from({ length: 200 }, (_, i) => accessory(String(300 - i)))).mockResolvedValueOnce([accessory("8", true)]);
+  const { result } = renderHook(() => useAccessories(context, true));
+  await waitFor(() => expect(result.current.items[0]?.id).toBe("8"));
+  expect(api.listen.mock.invocationCallOrder[0]).toBeLessThan(api.list.mock.invocationCallOrder[0]);
+  expect(api.list).toHaveBeenLastCalledWith(context, "101", 200);
+});
+it("列表加载下一页去重，变更通知刷新当前会话", async () => {
+  let receive!: (change: { sessionId: string }) => void;
+  api.listen.mockImplementation(async cb => { receive = cb; return () => {}; });
+  const page = Array.from({ length: 30 }, (_, i) => accessory(String(40 - i)));
+  api.list.mockResolvedValueOnce(page).mockResolvedValueOnce([page[29], accessory("2")]).mockResolvedValue([accessory("50")]);
+  const { result } = renderHook(() => useAccessories(context));
+  await waitFor(() => expect(result.current.more).toBe(true));
+  await act(async () => { await result.current.loadMore(); });
+  expect(result.current.items.length).toBe(31);
+  await act(async () => { receive({ sessionId: "other" }); });
+  expect(api.list).toHaveBeenCalledTimes(2);
+  await act(async () => { receive({ sessionId: "1" }); });
+  expect(result.current.items.map(item => item.id)).toEqual(["50"]);
+});
+it("切换会话立即清空旧列表，迟到响应不可覆盖", async () => {
+  let complete!: (rows: Accessory[]) => void;
+  api.list.mockImplementation((scope: CurrentContext) => scope.sessionId === "1" ? new Promise(resolve => { complete = resolve; }) : Promise.resolve([accessory("90")]));
+  const { result, rerender } = renderHook(({ scope }) => useAccessories(scope), { initialProps: { scope: context } });
+  await waitFor(() => expect(api.list).toHaveBeenCalled());
+  rerender({ scope: { ...context, sessionId: "2", contextRevision: 2 } });
+  await act(async () => { complete([accessory("1")]); });
+  await waitFor(() => expect(result.current.items.map(item => item.id)).toEqual(["90"]));
+});
+it("聚焦和新增通知保留已经展开的较旧饰品", async () => {
+  let receive!: (change: { sessionId: string }) => void;
+  api.listen.mockImplementation(async cb => { receive = cb; return () => {}; });
+  let records = Array.from({ length: 31 }, (_, i) => accessory(String(100 - i)));
+  api.list.mockImplementation(async (_context, before) => records.filter(row => !before || BigInt(row.id) < BigInt(before)).slice(0, 30));
+  const { result } = renderHook(() => useAccessories(context));
+  await waitFor(() => expect(result.current.more).toBe(true));
+  await act(async () => { await result.current.loadMore(); });
+  expect(result.current.items).toHaveLength(31);
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(result.current.items).toHaveLength(31);
+  records = [accessory("101"), ...records];
+  await act(async () => { receive({ sessionId: "1" }); });
+  expect(result.current.items).toHaveLength(32);
+  expect(result.current.items[result.current.items.length - 1]?.id).toBe("70");
+  expect(result.current.more).toBe(false);
+});

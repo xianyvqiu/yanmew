@@ -218,7 +218,7 @@ export default function PetTimingPanel() {
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>出行</legend>
         <div className="ym-pet-timing-grid">{timingKeys.filter(key => definitions[key].group === "travel").map(field)}</div>
-        <p className="ym-page-note">旅行玩法尚未启用；这些设置可先保存供后续使用。范围变化只影响以后抽取的旅行倒计时。</p>
+        <p className="ym-page-note">只有当前会话在家空闲时累计出行时间。范围变化只影响以后抽取的旅行倒计时。</p>
       </fieldset>
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>四档亲密度与饰品价格</legend>
@@ -228,7 +228,7 @@ export default function PetTimingPanel() {
           {field(`intimacy_threshold_${level}` as PetTimingKey)}
           {field(`accessory_cost_${level}` as PetTimingKey)}
         </div>)}</div>
-        <p className="ym-page-note">旅行与饰品玩法尚未启用；价格设置可先保存供后续使用。修改档位不会退还或补发喵币，也不会改变已使用档位。</p>
+        <p className="ym-page-note">饰品制作先使用尚未使用的最低档，前三档各一次，第四档可重复。修改档位不会退还或补发喵币，也不会改变已使用档位。</p>
       </fieldset>
       <div className="ym-pet-timing-actions">
         <button className="ym-button" type="button" disabled={saving || defaultsLoading} onClick={() => void restoreDefaults()}>

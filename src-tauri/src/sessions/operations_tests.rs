@@ -57,6 +57,7 @@ fn pending(runtime: &Runtime, session_id: i64) -> (RequestLease, RequestSnapshot
                 expression: Some("(^_^)".into()),
                 notice: None,
                 budget: None,
+                web_activity: None,
                 regenerating: false,
                 round,
             };

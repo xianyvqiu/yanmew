@@ -121,7 +121,7 @@ fn extension(name: &str) -> AppResult<(&'static str, image::ImageFormat)> {
         )),
     }
 }
-fn validate(name: &str, bytes: &[u8]) -> AppResult<&'static str> {
+pub(crate) fn validate(name: &str, bytes: &[u8]) -> AppResult<&'static str> {
     if bytes.is_empty() || bytes.len() > MAX_BYTES {
         return Err(AppError::validation("image", "图片不能为空且不能超过 10MB"));
     }
@@ -141,7 +141,7 @@ fn validate(name: &str, bytes: &[u8]) -> AppResult<&'static str> {
     })?;
     Ok(extension)
 }
-fn managed_file(runtime: &Runtime, name: &str) -> AppResult<PathBuf> {
+pub(crate) fn managed_file(runtime: &Runtime, name: &str) -> AppResult<PathBuf> {
     extension(name)?;
     if Path::new(name).components().count() != 1 {
         return Err(AppError::validation("image", "背景引用必须是受管文件名"));
@@ -156,7 +156,7 @@ fn managed_file(runtime: &Runtime, name: &str) -> AppResult<PathBuf> {
     }
     Ok(path)
 }
-fn read_image(runtime: &Runtime, name: &str) -> AppResult<String> {
+pub(crate) fn read_image(runtime: &Runtime, name: &str) -> AppResult<String> {
     let path = managed_file(runtime, name)?;
     let mut file = fs::File::open(path).map_err(|_| AppError::storage())?;
     if file.metadata().map_err(|_| AppError::storage())?.len() > MAX_BYTES as u64 {
@@ -195,7 +195,7 @@ pub fn get(runtime: &Runtime, id: i64, revision: Option<u64>) -> AppResult<View>
         image_error,
     })
 }
-fn publish(runtime: &Runtime, extension: &str, bytes: &[u8]) -> AppResult<String> {
+pub(crate) fn publish(runtime: &Runtime, extension: &str, bytes: &[u8]) -> AppResult<String> {
     let directory = directory(runtime, true)?;
     for _ in 0..16 {
         let time = std::time::SystemTime::now()
@@ -226,7 +226,7 @@ fn publish(runtime: &Runtime, extension: &str, bytes: &[u8]) -> AppResult<String
     }
     Err(AppError::storage())
 }
-fn cleanup_one(runtime: &Runtime, name: &str) {
+pub(crate) fn cleanup_one(runtime: &Runtime, name: &str) {
     // 数据库不可读、文件越界或仍有任一人设引用时，绝不删除。
     let _ = runtime.read(|store, _| {
         let used: bool = store.connection.query_row(

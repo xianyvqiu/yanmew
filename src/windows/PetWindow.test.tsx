@@ -359,4 +359,16 @@ describe("PetWindow", () => {
     expect(invoke.mock.calls.some(([command]) => command === "interact_pet")).toBe(false);
     expect(startDragging).not.toHaveBeenCalled();
   });
+
+it("出门时聊天入口变为写信且不触发互动",async()=> {
+  const previous=invoke.getMockImplementation()!;
+  invoke.mockImplementation(async(command,args)=>command==="get_current_travel"?{id:"3"}:previous(command,args));
+  await act(async()=>{render(<PetWindow />);});
+  await act(async()=>{receiveActivity({payload:{...initialActivity,revision:4,activity:"away",expression:"小喵出门啦",canInteract:false,canWander:false}});});
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"写信"}));});
+  expect(invoke).toHaveBeenCalledWith("open_letter_window",{personaId:"1",sessionId:"1",contextRevision:0,travelId:"3",replyToId:null});
+  expect(invoke.mock.calls.some(([command])=>command==="interact_pet")).toBe(false);
+  expect(startDragging).not.toHaveBeenCalled();
+});
+
 });

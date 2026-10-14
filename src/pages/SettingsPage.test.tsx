@@ -2,9 +2,9 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SettingsPage from "./SettingsPage";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
-const nav = vi.hoisted(() => ({ takeReminderRequest: vi.fn(), listenSettings: vi.fn() }));
+const nav = vi.hoisted(() => ({ takeSettingsRequest: vi.fn(), listenSettings: vi.fn() }));
 vi.mock("../platform/navigation", () => ({ navigation: nav }));
-beforeEach(() => { nav.takeReminderRequest.mockReset().mockResolvedValue(false); nav.listenSettings.mockReset().mockResolvedValue(() => {}); });
+beforeEach(() => { nav.takeSettingsRequest.mockReset().mockResolvedValue(false); nav.listenSettings.mockReset().mockResolvedValue(() => {}); });
 
 vi.mock("../components/settings/GeneralPanel", () => ({ default: () => <p>主题表单</p> }));
 vi.mock("../components/settings/ProvidersPanel", () => ({ default: () => <p>提供商表单</p> }));
@@ -13,10 +13,17 @@ vi.mock("../components/settings/UserProfilePanel", () => ({ default: () => <p>�
 vi.mock("../components/settings/ReminderPanel", () => ({ default: () => <p>提醒表单</p> }));
 vi.mock("../components/settings/WeatherPanel", () => ({ default: ({ contextRevision }: { contextRevision: number }) => <p>天气表单：{contextRevision}</p> }));
 vi.mock("../components/settings/PetTimingPanel", () => ({ default: () => <p>桌宠计时表单</p> }));
+vi.mock("../components/settings/PetStatusPanel", () => ({ default: () => <p>桌宠状态内容</p> }));
 vi.mock("../components/settings/MemorySettingsPanel", () => ({ default: () => <p>记忆设置表单</p> }));
+vi.mock("../components/GameCenterPanel", () => ({ default: () => <p>游戏中心内容</p> }));
+vi.mock("../components/PluginManagerPanel", () => ({ default: () => <p>插件管理内容</p> }));
+vi.mock("../components/settings/AccessoryPanel", () => ({ default: () => <p>饰品管理内容</p> }));
+vi.mock("../components/TravelPanel", () => ({default:()=> <p>出行与邮箱内容</p>}));
+vi.mock("../components/settings/FestivalPanel", () => ({ default: () => <p>节日管理内容</p> }));
+
 afterEach(cleanup);
 it("设置窗就绪后消费提醒导航，即使上下文尚未加载也保留目标", async () => {
-  nav.takeReminderRequest.mockResolvedValueOnce(true);
+  nav.takeSettingsRequest.mockResolvedValueOnce("reminders");
   await act(async () => { render(<SettingsPage snapshot={null} loading={true} error="" onRefresh={() => {}} />); });
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("提醒");
 });
@@ -38,7 +45,19 @@ it("桌面导航和窄窗选择器同步切换已开放设置", async () => {
   fireEvent.click(screen.getByRole("button", { name: "提醒" }));
   expect(screen.getByText("提醒表单")).toBeTruthy();
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("提醒");
-  expect((screen.getByRole("button", { name: "游戏中心 · 未开放" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "游戏中心" }));
+  expect(screen.getByText("游戏中心内容")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "节日" }));
+  expect(screen.getByText("节日管理内容")).toBeTruthy();
+  expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("节日");
+  fireEvent.click(screen.getByRole("button", { name: "出行" }));
+  expect(screen.getByText("出行与邮箱内容")).toBeTruthy();
+  expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("出行");
+  fireEvent.click(screen.getByRole("button", { name: "饰品" }));
+  expect(screen.getByText("饰品管理内容")).toBeTruthy();
+  expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("饰品");
+  fireEvent.click(screen.getByRole("button", { name: "插件管理" }));
+  expect(screen.getByText("插件管理内容")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("设置页面"), { target: { value: "时间与天气" } });
   expect(screen.getByText("天气表单：0")).toBeTruthy();
   expect(screen.getByRole("button", { name: "时间与天气" }).getAttribute("aria-current")).toBe("page");
@@ -47,4 +66,16 @@ it("桌面导航和窄窗选择器同步切换已开放设置", async () => {
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("时间与桌宠");
   fireEvent.change(screen.getByLabelText("设置页面"), { target: { value: "记忆" } });
   expect(screen.getByText("记忆设置表单")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "桌宠状态" }));
+  expect(screen.getByText("桌宠状态内容")).toBeTruthy();
+  expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("桌宠状态");
+  fireEvent.change(screen.getByLabelText("设置页面"), { target: { value: "通用" } });
+  fireEvent.change(screen.getByLabelText("设置页面"), { target: { value: "桌宠状态" } });
+  expect(screen.getByText("桌宠状态内容")).toBeTruthy();
+});
+
+it("饰品快捷导航在设置窗加载时恢复目标页面", async () => {
+  nav.takeSettingsRequest.mockResolvedValueOnce("accessories");
+  await act(async () => { render(<SettingsPage snapshot={null} loading={true} error="" onRefresh={() => {}} />); });
+  expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("饰品");
 });

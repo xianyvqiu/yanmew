@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, sessionApi } from "../api";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
+import { useTravel } from "../hooks/useTravel";
 import { useChat } from "../hooks/useChat";
 import type { Message } from "../types";
 import ChatComposer from "../components/ChatComposer";
@@ -20,6 +21,8 @@ function sameContext(left: WorkspaceContext["context"], right: WorkspaceContext[
 export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceContext; onRefresh: () => void }) {
   const { context, persona, sessions, userProfiles } = snapshot;
   const chat = useChat(context);
+  const travel = useTravel(context);
+  const away = Boolean(travel.current);
   const { messages, loading, afterId } = chat;
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,7 +104,7 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
   const send = async () => {
-    if (locked.current || editing || dialogOpen) return;
+    if (locked.current || editing || dialogOpen || away || travel.loading || travel.error) return;
     const input = draft;
     const target = { ...context };
     await messageAction(() => chat.send(input), () => {
@@ -199,7 +202,7 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
         : !messages.length && !loading ? <p className="ym-page-empty">这个会话还没有消息。</p>
         : <ol className="ym-message-list">{messages.filter(message => chat.active?.regenerating || message.id !== chat.active?.round.assistantMessage?.id).map(message => <li key={message.id} data-role={message.role}>
           <div className="ym-message-meta"><strong>{message.role === "user" ? "你" : persona.name}</strong><time>{new Date(message.createdAt).toLocaleString()}</time></div>
-          <p>{message.content}</p>
+          <ChatMessageText content={message.content} />
           {editing?.message.id === message.id ? <form className="ym-message-editor" onSubmit={event => { event.preventDefault(); void saveEdit(); }}>
             <label className="ym-field">编辑消息<textarea aria-label="编辑消息正文" value={editDraft} rows={4} disabled={busy || chat.busy}
               onChange={event => setEditDraft(event.target.value)} /></label>
@@ -215,17 +218,18 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
             {message.id === deletableTail?.id && <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)}
               onClick={() => openTailDelete(message)}>{message.roundId !== null && message.role === "assistant" ? "删除本轮" : "删除"}</button>}
             {message.id === tail?.id && finalReply?.round.status === "completed" && !chat.busy && <button className="ym-button"
-              disabled={busy || !chat.ready || dialogOpen || Boolean(editing)} onClick={() => { void messageAction(() => chat.regenerateReply()); }}>重说</button>}
+              disabled={busy || !chat.ready || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)} onClick={() => { void messageAction(() => chat.regenerateReply()); }}>重说</button>}
           </div>}
           {message.id === tail?.id && finalReply && message.role === "assistant" && message.roundId === chat.lastRound?.round.id
             && chat.lastRound.round.status === "interrupted" && chat.lastRound.round.stopReason === "length_limit" && !chat.active && <div className="ym-inline-form">
               <span className="ym-page-note">已达到本次输出上限</span>
-              <button className="ym-button" disabled={busy || chat.busy || !chat.ready || loading || dialogOpen || Boolean(editing)} onClick={() => { void messageAction(() => chat.continueReply()); }}>继续生成</button>
+              <button className="ym-button" disabled={busy || chat.busy || !chat.ready || loading || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)} onClick={() => { void messageAction(() => chat.continueReply()); }}>继续生成</button>
             </div>}
         </li>)}</ol>}
       {chat.active && <div className="ym-stream-message" aria-label="正在生成的回复">
         <strong>{persona.name} {chat.active.expression}</strong>
-        <p>{chat.active.partialContent || "正在想怎么回答你…"}</p>
+        <ChatMessageText content={chat.active.partialContent || "正在想怎么回答你…"} />
+        {chat.active.webActivity && <p role="status" className="ym-page-note">{chat.active.webActivity === "searching" ? "正在搜索网络资料…" : "正在读取网页…"}</p>}
         <span className="ym-page-note">{chat.active.regenerating ? "正在准备回复和记忆，完成后一起替换；中断保留旧结果。" : "正在回复，尚未保存"}</span>
         {!chat.active.regenerating && deletableTail && deletableTail.id === chat.active.round.assistantMessage?.id && <div className="ym-message-actions">
           <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)} onClick={() => openTailDelete(deletableTail)}>删除本轮</button>
@@ -240,8 +244,15 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
       {loading && <p role="status">正在读取聊天记录…</p>}
       {afterId && <button className="ym-button" disabled={loading || busy || dialogOpen} onClick={() => { void chat.loadMore(); }}>加载后续消息</button>}
     </section>
+    {away && <section className="ym-page-card" aria-label="旅行中的会话">
+      <h2>{persona.name}出门啦</h2><p>本次旅行期间只能写信。切换人设或会话会取消旅行和待回信，不生成返回奖励。</p>
+      <div className="ym-inline-form"><button className="ym-button" disabled={busy || travel.loading || Boolean(travel.error)} onClick={() => { void act(() => navigation.openLetter(context, travel.current!.id)); }}>写信</button>
+        <button className="ym-button" onClick={() => { void act(() => navigation.open("mailbox")); }}>查看邮箱</button></div>
+      <p className="ym-page-note">需要继续聊天时，可在上方“当前会话”中切换其他会话。</p>
+    </section>}
+    {travel.error && <p role="alert" className="ym-page-error">出行状态读取失败：{travel.error}<button className="ym-button" onClick={() => { void travel.refresh(); }}>重试出行状态</button></p>}
     <ChatComposer value={draft} onChange={setDraft} onSend={() => { void send(); }}
-      onCancel={() => { if (!locked.current && !dialogOpen) void chat.cancel(); }} disabled={!context.sessionId || !chat.ready || busy || dialogOpen || Boolean(editing)}
+      onCancel={() => { if (!locked.current && !dialogOpen) void chat.cancel(); }} disabled={!context.sessionId || !chat.ready || busy || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)}
       busy={chat.busy} cancelling={chat.cancelling || busy || dialogOpen} />
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="session-delete-title" aria-describedby="session-delete-details"
       onCancel={event => { if (locked.current) event.preventDefault(); else { setDeleting(null); setDeleteError(""); } }}>
@@ -276,3 +287,4 @@ export default function ChatPage({ snapshot, onRefresh }: { snapshot: WorkspaceC
     </dialog>
   </div>;
 }
+import ChatMessageText from "../components/ChatMessageText";

@@ -35,6 +35,10 @@ pub(crate) struct Server {
 }
 impl Server {
     pub fn new(responses: Vec<Response>) -> Self {
+        Self::new_at(responses,"/v1/chat/completions")
+    }
+    pub fn new_at(responses: Vec<Response>,path:&str) -> Self {
+        let expected=format!("post {path} ");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}/v1", listener.local_addr().unwrap());
@@ -74,7 +78,7 @@ impl Server {
                 let header = std::str::from_utf8(&request[..header_end])
                     .unwrap()
                     .to_ascii_lowercase();
-                assert!(header.starts_with("post /v1/chat/completions "));
+                assert!(header.starts_with(&expected));
                 let len: usize = header
                     .lines()
                     .find_map(|l| l.strip_prefix("content-length:"))

@@ -17,6 +17,7 @@ mod coordinator;
 mod tools;
 mod guards;
 mod context;
+pub(crate) use context::Context as BackgroundContext;
 mod memory_tools;
 mod regeneration;
 mod proactive;
@@ -105,7 +106,7 @@ fn prepare(
             let snapshot = RequestSnapshot {
                 request_id: lease.id.to_string(), persona_id: persona_id.to_string(),
                 session_id: session_id.to_string(), context_revision, round_id: round.round.id.clone(),
-                seq: 0, partial_content: prefix, expression: round.assistant_message.as_ref().and_then(|m|m.expression.clone()), notice:None,budget:None,regenerating,round,
+                seq: 0, partial_content: prefix, expression: round.assistant_message.as_ref().and_then(|m|m.expression.clone()), notice:None,budget:None,web_activity:None,regenerating,round,
             };
             s.chat_requests.insert(session_id, snapshot.clone());
             Some(snapshot)
@@ -116,6 +117,7 @@ fn prepare(
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ReplyEventKind {
+    WebActivity { phase: Option<String> },
     ContextNotice { message: String, budget: crate::chat_capacity::Budget },
     Expression { expression: String },
     Text { text: String },

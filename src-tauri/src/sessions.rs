@@ -161,9 +161,7 @@ pub(crate) fn cancel_current_travel_and_replies(
     connection: &Connection,
     changed_at: &str,
 ) -> AppResult<()> {
-    connection.execute("UPDATE travels SET status='cancelled',cancelled_at=?1,midway_letter_state=CASE WHEN midway_letter_state='pending' THEN 'cancelled' ELSE midway_letter_state END,return_letter_state='cancelled',gift_state='cancelled',journal_state='cancelled',facts_state=CASE WHEN facts_state='pending' THEN 'cancelled' ELSE facts_state END WHERE status='away' AND session_id=(SELECT CAST(value AS INTEGER) FROM settings WHERE key='current_session_id')",[changed_at])?;
-    connection.execute("UPDATE letters SET reply_state='cancelled' WHERE reply_state='pending' AND session_id=(SELECT CAST(value AS INTEGER) FROM settings WHERE key='current_session_id')",[])?;
-    Ok(())
+    crate::travel::cancel_current(connection, changed_at)
 }
 
 fn set_current_in_transaction(
@@ -233,6 +231,7 @@ fn create_in_transaction(
         params![persona_id, user_profile_id, title, changed_at],
     )?;
     let session_id = transaction.last_insert_rowid();
+    crate::travel::reset_wait(transaction, session_id)?;
     set_current_in_transaction(transaction, persona_id, session_id, changed_at)?;
     get(transaction, persona_id, session_id)
 }
@@ -471,15 +470,30 @@ fn finish_round(
     completed: bool,
     stop_reason: Option<&str>,
 ) -> AppResult<RoundSnapshot> {
+    let transaction = connection.transaction()?;
+    let result = finish_round_in_transaction(&transaction, persona_id, session_id, round_id, content, expression, completed, stop_reason)?;
+    transaction.commit()?;
+    Ok(result)
+}
+
+/// 复用终态保存规则；由调用方事务统一提交，失败时部分回复也一并回滚。
+fn finish_round_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    persona_id: i64,
+    session_id: i64,
+    round_id: i64,
+    content: Option<&str>,
+    expression: Option<&str>,
+    completed: bool,
+    stop_reason: Option<&str>,
+) -> AppResult<RoundSnapshot> {
     let normalized = content.filter(|value| !value.trim().is_empty());
     if completed && normalized.is_none() {
         return Err(AppError::validation("content", "完整回复正文不能为空"));
     }
     let completed_at = now();
-    let transaction = connection.transaction()?;
     let current = round_snapshot(&transaction, persona_id, session_id, round_id)?;
     if current.round.status != ChatRoundStatus::Pending {
-        transaction.commit()?;
         return Ok(current);
     }
     if let Some(content) = normalized {
@@ -517,8 +531,19 @@ fn finish_round(
         )?;
     }
     let result = round_snapshot(&transaction, persona_id, session_id, round_id)?;
-    transaction.commit()?;
     Ok(result)
+}
+
+/// 导入改变上下文时，在导入事务中保存中断状态，提交后再取消网络请求。
+pub(crate) fn interrupt_for_import(
+    transaction: &rusqlite::Transaction<'_>,
+    persona_id: i64,
+    session_id: i64,
+    round_id: i64,
+    content: &str,
+    expression: Option<&str>,
+) -> AppResult<RoundSnapshot> {
+    finish_round_in_transaction(transaction, persona_id, session_id, round_id, Some(content), expression, false, Some("context_changed"))
 }
 
 pub fn complete_round(

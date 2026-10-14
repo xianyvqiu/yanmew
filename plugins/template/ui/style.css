@@ -1,0 +1,4 @@
+body { margin: 0; color: #243041; background: #f6f7fb; font: 16px/1.7 system-ui, sans-serif; }
+main { max-width: 640px; padding: 24px; margin: auto; }
+input { display: block; box-sizing: border-box; width: 100%; padding: 10px; }
+button { padding: 10px 16px; margin: 12px 8px 0 0; cursor: pointer; }

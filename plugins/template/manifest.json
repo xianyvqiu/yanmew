@@ -1,0 +1,17 @@
+{
+  "id": "org.example.yanmew-template",
+  "name": "插件开发模板",
+  "description": "仅用于验证宿主连接与存档，不包含小游戏玩法。",
+  "author": "Example",
+  "version": "1.0.0",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": [],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": null,
+  "homepage": null,
+  "release_page": null,
+  "migration": null
+}

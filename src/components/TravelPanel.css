@@ -1,0 +1,27 @@
+.ym-travel-panel { display: grid; gap: 16px; min-width: 0; }
+.ym-travel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.ym-travel-tabs [aria-current="page"] { background: var(--ym-accent-soft); }
+.ym-travel-history, .ym-letter-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.ym-travel-history > li { padding: 14px 0; border-bottom: 1px solid var(--ym-border); }
+.ym-travel-history h3, .ym-letter-detail h3 { margin: 0; font-size: var(--ym-font-heading); }
+.ym-travel-badge { padding: 4px 10px; border-radius: var(--ym-radius-pill); background: var(--ym-surface-muted); font-size: var(--ym-font-caption); white-space: nowrap; }
+.ym-travel-badge[data-status="away"] { background: var(--ym-accent-soft); color: var(--ym-accent-strong); }
+.ym-travel-badge[data-status="cancelled"] { background: var(--ym-warning-soft); color: var(--ym-warning); }
+.ym-travel-times { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; font-size: var(--ym-font-caption); }
+.ym-travel-times dt { color: var(--ym-text-secondary); }
+.ym-travel-times dd { margin: 0; overflow-wrap: anywhere; }
+.ym-mailbox-layout { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(0, 1.4fr); gap: 18px; align-items: start; }
+.ym-letter-item { width: 100%; display: grid; gap: 7px; padding: 12px; text-align: left; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-md); background: var(--ym-surface-muted); color: var(--ym-text); font: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.ym-letter-item[aria-pressed="true"] { border-color: var(--ym-focus); background: var(--ym-accent-subtle); }
+.ym-letter-item:focus-visible { outline: 2px solid var(--ym-focus); outline-offset: 2px; }
+.ym-letter-meta, .ym-letter-item time { color: var(--ym-text-secondary); font-size: var(--ym-font-caption); }
+.ym-letter-preview { white-space: pre-wrap; line-height: 1.55; }
+.ym-letter-detail { min-width: 0; overflow-wrap: anywhere; }
+.ym-letter-body { white-space: pre-wrap; line-height: 1.8; }
+.ym-letter-editor { display: grid; gap: 14px; min-width: 0; }
+.ym-letter-editor textarea { box-sizing: border-box; width: 100%; min-height: 230px; resize: vertical; padding: 14px; background: var(--ym-surface-muted); border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); color: var(--ym-text); font: inherit; line-height: 1.8; }
+.ym-letter-editor textarea:focus-visible { outline: 2px solid var(--ym-focus); outline-offset: 2px; }
+.ym-letter-editor .ym-journal-title { min-height: 76px; }
+.ym-letter-target { border-left: 3px solid var(--ym-accent); padding-left: 12px; }
+@container (max-width: 599px) { .ym-mailbox-layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 599px) { .ym-mailbox-layout { grid-template-columns: minmax(0, 1fr); } }

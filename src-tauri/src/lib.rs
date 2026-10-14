@@ -7,6 +7,13 @@ mod commands;
 mod desktop_windows;
 mod config;
 mod crypto;
+pub mod currency;
+mod accessories;
+mod souvenirs;
+mod image_generation;
+mod import_export;
+pub mod game_plugins;
+mod game_host;
 mod db;
 mod error;
 mod events;
@@ -16,14 +23,20 @@ mod embedding_providers;
 pub mod memory_index;
 pub mod memory_search;
 mod jobs;
+pub mod lunar;
+mod festivals;
 mod proactive;
 pub mod memory;
 mod location;
 mod weather;
+pub mod web_search;
 pub mod models;
 pub mod notebook;
 pub mod notebook_tools;
 pub mod travel_journal_tools;
+mod travel_journals;
+pub mod travel;
+pub mod letters;
 mod persona;
 pub mod pet;
 mod pet_region;
@@ -71,11 +84,95 @@ pub fn run() {
     );
     tauri::Builder::default()
         .manage(runtime)
+        .manage(game_host::Host::default())
         .manage(pet_position::WindowPosition::default())
         .manage(std::sync::Mutex::new(pet::wander::Controller::default()))
         .manage(desktop_windows::SettingsNavigation::default())
+        .manage(desktop_windows::TravelNavigation::default())
+        .manage(desktop_windows::LetterNavigation::default())
         .manage(std::sync::Mutex::new(commands::PetState::default()))
-        .invoke_handler(tauri::generate_handler![
+        .register_uri_scheme_protocol("yanmew-game", |context, request| {
+            let label=context.webview_label();
+            let result=if request.method()==tauri::http::Method::GET {game_host::resource(context.app_handle(),label,request.uri().path())}else{Err(error::AppError::new("PLUGIN_RESOURCE_DENIED","插件资源仅允许读取"))};
+            let(status,mime,body)=match result{Ok((mime,body))=>(200,mime,body),Err(_)=>(403,"text/plain; charset=utf-8".into(),b"Plugin resource denied".to_vec())};
+            tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Content-Security-Policy",game_host::csp(label)).header("X-Content-Type-Options","nosniff").header("Cache-Control","no-store").body(body).unwrap_or_default()
+        })
+        .invoke_handler(game_host::command_gate(tauri::generate_handler![
+            commands::get_backup_export_options,
+            commands::prepare_backup_import,
+            commands::refresh_backup_import,
+            commands::cancel_backup_import,
+            commands::confirm_backup_import,
+            commands::export_backup,
+            commands::export_game_plugin_data,
+            commands::get_image_generation_config,
+            commands::save_image_generation_provider,
+            commands::select_image_generation_provider,
+            commands::set_image_generation_enabled,
+            commands::delete_image_generation_provider,
+            commands::get_accessory_craft_preview,
+            commands::get_current_accessory_craft_preview,
+            commands::confirm_accessory_craft,
+            commands::cancel_accessory_craft,
+            commands::list_accessories,
+            commands::get_accessory_image,
+            commands::wear_accessory,
+            commands::unwear_accessory,
+            commands::sell_accessory,
+            commands::delete_accessory,
+            commands::list_travels,
+            commands::list_festival_catalog,
+            commands::list_session_festivals,
+            commands::get_session_festival,
+            commands::create_session_festival,
+            commands::update_session_festival,
+            commands::delete_session_festival,
+            commands::list_travel_journals,
+            commands::get_travel_journal,
+            commands::update_travel_journal,
+            commands::delete_travel_journal,
+            commands::get_journal_generation_status,
+            commands::retry_journal_generation,
+            commands::list_souvenirs,
+            commands::get_souvenir,
+            commands::set_souvenir_favorite,
+            commands::delete_souvenir,
+            commands::get_gift_generation_status,
+            commands::retry_gift_generation,
+            commands::get_current_travel,
+            commands::get_travel_generation_status,
+            commands::retry_travel_generation,
+            commands::open_letter_window,
+            commands::take_letter_navigation,
+            commands::take_travel_navigation,
+            commands::list_letters,
+            commands::get_letter,
+            commands::send_letter,
+            commands::set_letter_flags,
+            commands::delete_letter,
+            commands::get_letter_generation_status,
+            commands::retry_letter_generation,
+            commands::list_game_plugins,
+            commands::get_game_plugin,
+            commands::preview_game_plugin_install,
+            commands::confirm_game_plugin_install,
+            commands::cancel_game_plugin_install,
+            commands::set_game_plugin_enabled,
+            commands::set_game_plugin_permission,
+            commands::save_game_plugin_setting,
+            commands::uninstall_game_plugin,
+            commands::clear_game_plugin_data,
+            commands::list_game_plugin_runs,
+            commands::list_game_plugin_ledger,
+            commands::open_game_plugin,
+            commands::game_plugin_call,
+            commands::get_web_search_settings,
+            commands::save_web_search_provider,
+            commands::delete_web_search_provider,
+            commands::set_active_web_search_provider,
+            commands::set_web_search_enabled,
+            commands::test_web_search_provider,
+            commands::open_web_source,
             platform::windows::wander::update_pet_wander_layout,
             autostart::get_autostart_status,
             autostart::set_autostart,
@@ -97,6 +194,7 @@ pub fn run() {
             commands::save_notebook,
             commands::focus_or_create_window,
             commands::take_reminder_navigation,
+            commands::take_settings_navigation,
             commands::submit_chat,
             commands::get_last_chat_round,
             commands::chat_continue_reply,
@@ -104,6 +202,9 @@ pub fn run() {
             commands::cancel_chat,
             commands::list_reminder_occurrences,
             commands::get_reminder_occurrence,
+            commands::polish_reminder_occurrence,
+            commands::get_app_info,
+            commands::request_app_exit,
             commands::list_reminders,
             commands::create_reminder,
             commands::update_reminder,
@@ -122,6 +223,10 @@ pub fn run() {
             commands::update_pet_regions,
             commands::get_configuration_status,
             commands::get_current_context,
+            commands::get_wallet,
+            commands::get_sign_in_status,
+            commands::daily_sign_in,
+            commands::get_session_intimacy,
             commands::list_sessions,
             commands::list_user_profiles,
             commands::create_user_profile,
@@ -160,7 +265,7 @@ pub fn run() {
             commands::update_persona,
             commands::delete_persona,
             commands::set_active_persona
-        ])
+        ]))
         .setup(|app| {
             #[cfg(windows)]
             app.handle().plugin(tauri_plugin_autostart::Builder::new()
@@ -170,12 +275,16 @@ pub fn run() {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
             pet_region::enforce_frameless(&window).map_err(io::Error::other)?;
             let runtime = app.state::<runtime::Runtime>().inner().clone();
+            let plugin_app=app.handle().clone();let plugin_runtime=runtime.clone();
+            tauri::async_runtime::spawn(async move { if let Err(error)=game_host::install::initialize(plugin_app.clone(),plugin_runtime).await {use tauri::Emitter;let _=plugin_app.emit("game_plugin_error",error);} plugin_app.state::<game_host::Host>().ready.store(true,std::sync::atomic::Ordering::Release); });
             let open_initial_chat = runtime.initial_session_created;
             if let Err(error) = app.state::<pet_position::WindowPosition>().restore(&window, &runtime) {
                 pet_position::report(app.handle(), &error);
             }
             tauri::async_runtime::spawn(jobs::run(
                 runtime,
+                std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
+                std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
@@ -266,6 +375,7 @@ pub fn run() {
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
+                game_host::shutdown(app);
                 if let Err(error) = app.state::<pet_position::WindowPosition>()
                     .flush_exit(app.state::<runtime::Runtime>().inner()) {
                     pet_position::report(app, &error);

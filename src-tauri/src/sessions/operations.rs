@@ -64,6 +64,7 @@ pub(crate) fn delete_in_context(
         }
         if changed {
             crate::memory::management::discard(runtime);
+            store.accessory_crafts.discard();
             store.context_revision = next_revision;
             store.pet.reset_context();
         }

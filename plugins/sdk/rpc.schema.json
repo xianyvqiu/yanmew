@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:yanmew:game:rpc:1.0.0",
+  "type": "object", "additionalProperties": false, "required": ["method", "args"],
+  "properties": {"method": {"type": "string"}, "args": {"type": "object"}},
+  "oneOf": [
+    {"properties": {"method": {"enum": ["game.ready", "game.getContext", "game.random", "game.close", "wallet.getBalance"]}, "args": {"type": "object", "maxProperties": 0}}},
+    {"properties": {"method": {"enum": ["storage.get", "storage.delete"]}, "args": {"type": "object", "additionalProperties": false, "required": ["key"], "properties": {"key": {"$ref": "#/$defs/key"}}}}},
+    {"properties": {"method": {"const": "storage.set"}, "args": {"type": "object", "additionalProperties": false, "required": ["key", "value"], "properties": {"key": {"$ref": "#/$defs/key"}, "value": {}}}}},
+    {"properties": {"method": {"const": "game.complete"}, "args": {"type": "object", "additionalProperties": false, "required": ["outcome"], "properties": {"outcome": {"type": "string", "minLength": 1}, "details": {}}}}},
+    {"properties": {"method": {"const": "wallet.changeCoins"}, "args": {"type": "object", "additionalProperties": false, "required": ["request_id", "game_run_id", "delta", "reason"], "properties": {"request_id": {"type": "string", "minLength": 1, "maxLength": 128}, "game_run_id": {"type": "string", "pattern": "^[1-9][0-9]*$"}, "delta": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991}, "reason": {"type": "string", "minLength": 1, "maxLength": 200}, "details": {}}}}},
+    {"properties": {"method": {"const": "network.fetch"}, "args": {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {"type": "string", "pattern": "^https://"}, "method": {"enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], "default": "GET"}, "headers": {"type": "object", "additionalProperties": {"type": "string"}, "maxProperties": 32, "default": {}}, "body": {"type": ["string", "null"]}}}}}
+  ],
+  "$defs": {"key": {"type": "string", "pattern": "^[a-z0-9_-]+(\\.[a-z0-9_-]+)*$", "maxLength": 128}},
+  "$comment": "Native instance supplies identity, never args. Migration RPC is host-internal. Responses are typed in index.d.ts; host checks byte limits, permission and lifecycle."
+}

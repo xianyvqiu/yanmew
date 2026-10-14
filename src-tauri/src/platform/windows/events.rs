@@ -32,6 +32,10 @@ impl PetEventSink for PetEvents {
     }
 }
 impl crate::events::ChatToolEventSink for PetEvents {
+    fn festivals_changed(&self, session_id: &str) { let _ = self.0.emit(crate::events::FESTIVALS_CHANGED, serde_json::json!({"sessionId":if session_id.is_empty() {None}else{Some(session_id)}})); }
+    fn accessory_preview_changed(&self,session:&str,preview:&str) {
+        let _=self.0.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session,"previewId":preview}));
+    }
     fn notebook_changed(&self) { let _ = self.0.emit(crate::events::NOTEBOOK_CHANGED, ()); }
 }
 impl crate::events::ProactiveEventSink for PetEvents {
@@ -39,5 +43,18 @@ impl crate::events::ProactiveEventSink for PetEvents {
     fn proactive_message(&self, value: &crate::events::ProactiveMessage) {
         let _ = self.0.emit("chat-messages-changed", serde_json::json!({"sessionId": value.session_id}));
         let _ = self.0.emit("proactive-message", value);
+    }
+}
+
+impl crate::events::LetterEventSink for PetEvents {
+    fn letters_changed(&self,session_id:&str){let _=self.0.emit(crate::events::LETTERS_CHANGED,serde_json::json!({"sessionId":session_id}));}
+}
+
+impl crate::events::TravelEventSink for PetEvents {
+    fn accessories_changed(&self, session_id:&str) {
+        let _=self.0.emit(crate::events::ACCESSORIES_CHANGED,serde_json::json!({"sessionId":session_id}));
+    }
+    fn travel_changed(&self, session_id: &str) {
+        let _ = self.0.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session_id}));
     }
 }

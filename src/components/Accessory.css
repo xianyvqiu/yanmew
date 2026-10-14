@@ -1,0 +1,25 @@
+.ym-accessory-panel { display: grid; gap: 16px; }
+.ym-accessory-list { list-style: none; padding: 0; margin: 18px 0; display: grid; gap: 16px; }
+.ym-accessory-list > li { display: flex; flex-wrap: wrap; align-items: start; gap: 16px; padding: 16px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); background: var(--ym-surface-muted); }
+.ym-accessory-detail { flex: 1 1 240px; min-width: 0; }
+.ym-accessory-detail h3 { margin: 0; font-size: var(--ym-font-body); }
+.ym-accessory-description { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.ym-accessory-visual { width: 100px; max-width: 100%; color: var(--ym-text); text-shadow: none; }
+.ym-accessory-visual img { display: block; width: 100%; height: 90px; object-fit: contain; background: transparent; }
+.ym-accessory-glyph { display: block; text-align: center; font-family: var(--ym-font-kaomoji); font-size: 32px; line-height: 1.2; overflow-wrap: anywhere; }
+.ym-accessory-fallback { font-family: var(--ym-font-kaomoji); }
+.ym-accessory-craft { min-height: 0; }
+.ym-accessory-craft h2 { margin: 0; font-size: var(--ym-font-body); overflow-wrap: anywhere; }
+.ym-accessory-craft .ym-accessory-visual { margin: 10px auto; }
+.ym-accessory-craft-pet { overflow-y: auto; max-height: 100%; pointer-events: auto; user-select: text; padding: 10px 12px; font-size: var(--ym-font-caption); }
+.ym-accessory-craft-pet .ym-accessory-visual img { height: 52px; }
+.ym-accessory-craft-pet .ym-inline-form { align-items: center; gap: 6px; }
+.ym-accessory-craft-pet .ym-button { min-height: 28px; padding: 4px 10px; font-size: var(--ym-font-caption); }
+.pet-accessory-layer { position: absolute; left: 50%; bottom: calc(100% - 12px + 4px); transform: translateX(-50%); text-shadow: none; cursor: inherit; }
+.pet-accessory-layer .ym-accessory-visual { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; margin: 0; }
+.pet-accessory-layer img { height: 100%; width: 100%; object-fit: contain; }
+.pet-accessory-layer .ym-accessory-glyph { white-space: nowrap; overflow-wrap: normal; font-size: 24px; line-height: 1; }
+.ym-accessory-glyph-fit { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.ym-accessory-glyph-fit > span { flex: 0 0 auto; width: max-content; transform-origin: center; }
+/* 有头顶饰品时给气泡留出本体与饰品上方空间，卡片内部滚动。 */
+.pet-window:has(.pet-accessory-layer) .pet-reminder-slot { bottom: calc(56px + var(--ym-font-pet) * 2.6); }

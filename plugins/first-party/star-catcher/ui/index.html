@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接星星 · YanMew</title>
+<style>
+:root {
+  --paper: #FFFDF7;
+  --ink: #1F1B16;
+  --ink-dim: #8A8175;
+  --line: rgba(31, 27, 22, .055);
+  --border: rgba(31, 27, 22, .12);
+  --border-strong: rgba(31, 27, 22, .22);
+  --win: #4CAF7D;
+  --lose: #E5484D;
+  --lucky-deep: #C98A00;
+  --sky: #2A3A52;
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "SF Mono", Consolas, ui-monospace, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse at 20% 15%, #38404d 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 85%, #2c3b48 0%, transparent 55%),
+    #14171d;
+  display: grid;
+  place-items: center;
+  padding: 30px 20px;
+  min-height: 100vh;
+}
+
+.plugin-window {
+  width: 360px; height: 520px;
+  min-width: 300px; min-height: 460px;
+  max-width: 640px; max-height: 760px;
+  resize: both;
+  overflow: hidden;
+  border-radius: 20px;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 20px 20px;
+  box-shadow:
+    0 30px 70px -20px rgba(0, 0, 0, .65),
+    0 8px 24px -8px rgba(0, 0, 0, .35),
+    inset 0 0 0 1px rgba(255, 255, 255, .5);
+  container-type: inline-size;
+  container-name: cstar;
+}
+
+.game { display: flex; flex-direction: column; gap: 10px; padding: 12px; height: 100%; }
+
+/* ============ 顶栏 ============ */
+.head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; flex: none; }
+.sticker {
+  background: #FFF; border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 3px 10px -4px rgba(31,27,22,.14);
+  padding: 6px 10px; display: flex; align-items: baseline; gap: 5px;
+  font-size: 11.5px; line-height: 1; flex: none;
+}
+.wallet .balance {
+  font-family: var(--font-mono); font-size: 15px; font-weight: 700;
+  transition: color .35s var(--ease-out); display: inline-block;
+}
+.wallet .balance.up { color: var(--win); }
+.wallet .balance.down { color: var(--lose); }
+.wallet .label { font-size: 10px; color: var(--ink-dim); }
+.quota .used { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+.quota .total { font-family: var(--font-mono); font-size: 11px; color: var(--ink-dim); }
+.head-spacer { flex: 1; }
+.perm-btn {
+  font-family: inherit; font-size: 10.5px; padding: 6px 10px;
+  border-radius: 12px; border: 1px solid var(--border);
+  background: #FFF; color: var(--ink-dim); cursor: pointer;
+  box-shadow: 0 3px 10px -4px rgba(31,27,22,.14);
+  transition: all .3s var(--ease-out); white-space: nowrap;
+}
+.perm-btn:hover { color: var(--ink); border-color: var(--border-strong); transform: translateY(-1.5px); }
+.perm-btn.off { color: var(--lose); border-color: color-mix(in srgb, var(--lose) 40%, transparent); }
+
+.playmode {
+  display: none; font-size: 10.5px; color: var(--ink-dim); text-align: center;
+  padding: 5px 10px; border: 1px dashed var(--border-strong);
+  border-radius: 10px; background: rgba(255,255,255,.55); flex: none;
+}
+.playmode.show { display: block; }
+
+/* ============ 夜空游戏区 ============ */
+.sky {
+  flex: 1; min-height: 0;
+  border-radius: 16px;
+  border: 2px solid var(--border-strong);
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.06) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(255,255,255,.04) 0%, transparent 45%),
+    linear-gradient(180deg, #1E2A3C 0%, var(--sky) 100%);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 3px 10px -4px rgba(31,27,22,.12);
+  touch-action: none;
+}
+
+.hud {
+  position: absolute; top: 8px; left: 8px; right: 8px;
+  display: flex; align-items: center; gap: 8px;
+  z-index: 5; pointer-events: none;
+}
+.hud-tag {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: #FFF; background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 9px; padding: 4px 9px;
+}
+.hud-tag.time { color: #FFD86E; }
+.hud-tag.score { color: #9BE8B8; }
+.hud-tag.coin { color: #FFD86E; }
+.hud-spacer { flex: 1; }
+
+/* 星星 */
+.star {
+  position: absolute;
+  left: 0; top: 0;
+  font-size: 18px; line-height: 1;
+  pointer-events: none;
+  will-change: transform;
+  filter: drop-shadow(0 0 6px rgba(255, 220, 100, .75));
+  z-index: 2;
+  transition: opacity .2s var(--ease-out);
+}
+.star.gold {
+  font-size: 22px;
+  filter: drop-shadow(0 0 10px rgba(255, 200, 50, 1));
+}
+
+/* 篮子 */
+.basket {
+  position: absolute; bottom: 10px; left: 50%;
+  transform: translateX(-50%);
+  width: 52px; height: 34px;
+  z-index: 3;
+  transition: left .08s linear;
+  pointer-events: none;
+}
+.basket::before {
+  content: ""; position: absolute; inset: 0;
+  border-radius: 4px 4px 14px 14px;
+  background: linear-gradient(180deg, #E8C98A 0%, #C99B5A 100%);
+  border: 2px solid #8A6838;
+  box-shadow: inset 0 3px 6px rgba(255,255,255,.35), 0 3px 8px rgba(0,0,0,.3);
+}
+.basket::after {
+  content: ""; position: absolute;
+  left: -3px; right: -3px; top: -4px; height: 8px;
+  border-radius: 50%;
+  background: #C99B5A; border: 2px solid #8A6838;
+}
+.basket.caught::before { animation: basketCaught .35s var(--ease-spring); }
+@keyframes basketCaught {
+  0% { transform: scale(1, 1); }
+  40% { transform: scale(1.18, .82); }
+  100% { transform: scale(1, 1); }
+}
+
+/* ============ 覆盖面板 ============ */
+.overlay {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  background: rgba(20, 25, 35, .85);
+  z-index: 10;
+  backdrop-filter: blur(3px);
+  transition: opacity .3s var(--ease-out);
+}
+.overlay.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+.overlay-inner {
+  text-align: center; color: #FFF;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 20px 24px;
+  max-width: 100%;
+}
+.overlay-inner .big { font-size: 42px; line-height: 1; font-weight: 800; }
+.overlay-inner .title { font-size: 15px; font-weight: 700; letter-spacing: .5px; }
+.overlay-inner .desc {
+  font-size: 11.5px;
+  color: rgba(255,255,255,.68);
+  letter-spacing: .3px;
+  line-height: 1.6;
+}
+.overlay-inner .cost-line {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #FFD86E;
+  letter-spacing: .3px;
+}
+.overlay-inner .score-text {
+  font-family: var(--font-mono); font-size: 15px; color: #FFD86E;
+}
+.overlay-inner .reward-text {
+  font-family: var(--font-mono); font-size: 17px; font-weight: 700;
+}
+.overlay-inner .reward-text.win { color: var(--win); }
+.overlay-inner .reward-text.lose { color: var(--lose); }
+.overlay-inner .reward-text.draw { color: #9BA8B8; }
+
+/* 按钮 */
+.btn {
+  font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .5px;
+  border: none; cursor: pointer; border-radius: 12px; padding: 11px 26px;
+  background: #2A2621; color: #FFF;
+  box-shadow: 0 4px 0 #0F0D0B, 0 6px 14px -6px rgba(0,0,0,.35);
+  transition: transform .2s var(--ease-out), box-shadow .2s var(--ease-out), opacity .2s var(--ease-out);
+  user-select: none; -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 #0F0D0B, 0 8px 18px -6px rgba(0,0,0,.45);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #0F0D0B;
+}
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: .38;
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #0F0D0B;
+}
+
+/* 底部规则 */
+.foot {
+  text-align: center; font-size: 10.5px; color: var(--ink-dim);
+  letter-spacing: .3px; line-height: 1.6; flex: none;
+}
+.foot .rule { font-family: var(--font-mono); font-size: 10px; }
+.foot .rare-rule { color: var(--lucky-deep); font-weight: 700; }
+
+/* ============ 金币动画 ============ */
+.coin-sprite {
+  position: fixed; width: 18px; height: 18px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #FFE9A8 0%, #F5B700 55%, #C98A00 100%);
+  box-shadow:
+    inset 0 -2px 3px rgba(140,90,0,.3),
+    inset 0 1px 2px rgba(255,255,255,.7),
+    0 0 8px rgba(245,183,0,.55);
+  pointer-events: none; z-index: 9999;
+  transform: translate(-50%, -50%);
+}
+.coin-sprite::after {
+  content: ""; position: absolute; inset: 3px;
+  border-radius: 50%; border: 1.5px solid rgba(160,100,0,.3);
+}
+.coin-sprite.lose {
+  background: radial-gradient(circle at 35% 30%, #FFC5C5 0%, #E5484D 55%, #8A2023 100%);
+}
+.float-text {
+  position: fixed; font-family: var(--font-mono); font-size: 15px; font-weight: 700;
+  pointer-events: none; z-index: 9998; transform: translate(-50%, -50%);
+  text-shadow: 0 1px 0 rgba(255,255,255,.85);
+}
+.float-text.gain { color: var(--win); }
+.float-text.lose { color: var(--lose); }
+
+/* 接住星星时的小飘字 */
+.float-text.catch {
+  color: #FFD86E;
+  font-size: 12px;
+  text-shadow: 0 1px 0 rgba(0,0,0,.5);
+}
+
+/* ============ 容器查询 ============ */
+@container cstar (min-width: 440px) {
+  .game { padding: 16px; gap: 12px; }
+  .basket { width: 60px; height: 38px; }
+  .wallet .balance { font-size: 17px; }
+  .star { font-size: 20px; }
+  .star.gold { font-size: 24px; }
+}
+@container cstar (max-width: 320px) {
+  .game { padding: 9px; gap: 8px; }
+  .sticker { font-size: 10.5px; padding: 5px 8px; }
+  .wallet .balance { font-size: 13px; }
+  .perm-btn { font-size: 9.5px; padding: 5px 8px; }
+  .basket { width: 44px; height: 28px; }
+  .star { font-size: 15px; }
+  .star.gold { font-size: 18px; }
+  .foot { font-size: 9.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .12s !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="plugin-window">
+  <div class="game">
+
+    <header class="head">
+      <div class="sticker wallet">
+        <span>🪙</span>
+        <span class="balance" id="balance">100</span>
+        <span class="label">喵币</span>
+      </div>
+      <div class="sticker quota">
+        <span class="label">今日</span>
+        <span class="used" id="quotaUsed">0</span>
+        <span class="total" id="quotaTotal">/ 20</span>
+      </div>
+      <span class="head-spacer"></span>
+      <button class="perm-btn" id="permBtn">喵币：开</button>
+    </header>
+
+    <div class="playmode" id="playmode">纯玩模式 · 不下注、不修改喵币</div>
+
+    <div class="sky" id="sky">
+      <div class="hud">
+        <span class="hud-tag time" id="timeEl">⏱ 20.0s</span>
+        <span class="hud-spacer"></span>
+        <span class="hud-tag score" id="scoreEl">⭐ 0</span>
+        <span class="hud-tag coin" id="earnEl">+0 🪙</span>
+      </div>
+      <div class="basket" id="basket" style="left:50%"></div>
+
+      <div class="overlay" id="overlay">
+        <div class="overlay-inner">
+          <div class="big" id="overlayIcon">⭐</div>
+          <div class="title" id="overlayTitle">接星星</div>
+          <div class="desc" id="overlayDesc">移动鼠标或方向键，接住掉落的星星</div>
+          <div class="cost-line" id="overlayCost">开一局消耗 8 喵币</div>
+          <div class="score-text" id="overlayScore" style="display:none"></div>
+          <div class="reward-text" id="overlayReward" style="display:none"></div>
+          <button class="btn" id="startBtn">开始 20 秒</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="rule">接住几颗就加几喵币 · 开一局 8 喵币</div>
+      <div class="rule rare-rule">✨ 接满 8 颗即回本</div>
+      <div id="footHint">点击开始</div>
+    </div>
+
+  </div>
+</div>
+
+<script src="runtime.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

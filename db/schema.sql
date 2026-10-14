@@ -28,8 +28,8 @@
 --   game_permissions   → game_plugins.plugin_id，当前用户授权状态；独立插件数据导入后为待确认
 --   game_plugin_settings → game_plugins.plugin_id，插件设置
 --   game_plugin_data   → game_plugins.plugin_id，插件全局私有存档
---   game_runs          历史游戏局，保存插件身份快照，不绑定会话
---   currency_ledger    喵币流水，与 user_state 逻辑配套；插件流水引用历史游戏局
+--   game_runs          历史运行记录，保存插件身份快照，不绑定会话
+--   currency_ledger    喵币流水，与 user_state 逻辑配套；插件流水引用历史运行记录
 --   festival_catalog   系统内置节日母表，独立，不随任何业务数据删除
 --   reminders          全局提醒规则
 --   reminder_occurrences → reminders.id，删除规则级联删除每次触发记录
@@ -60,14 +60,14 @@
 --                        travel_id     → travels.id          置空
 -- 历史记录（不随插件卸载删除）：
 --   game_runs           保存插件 ID / 名称 / 版本快照
---   currency_ledger     保存插件 ID / 版本 / 请求 ID；已记账游戏局由外键限制删除
+--   currency_ledger     保存插件 ID / 版本 / 请求 ID；已记账运行记录由外键限制删除
 --
 -- 级联行为约定：
 --   删除非内置人设 → 删除它名下所有 sessions 及全部会话级数据；内置默认人设由 Rust 禁止删除
 --   删除会话   → 删除该会话的回合 / messages / 记忆 / 记事本 / 节日子表 / 饰品 / 旅行 / 游记 / 信件 / 伴手礼
 --   删除用户设定 → 会话保留，只把 user_profile_id 置空（前端显示“未绑定”）
 --   删除旅行记录 → 对应旅行游记级联删除；饰品 / 信件 / 伴手礼保留，travel_id 置空
---   删除插件登记 → 删除它的当前授权、设置和私有存档；历史游戏局与喵币流水保留
+--   删除插件登记 → 删除它的当前授权、设置和私有存档；历史运行记录与喵币流水保留
 --   节日母表   → 系统内置数据，不随任何业务删除；子表靠 festival_id 引用它
 -- ============================================================
 
@@ -287,10 +287,19 @@ CREATE TABLE IF NOT EXISTS messages (
 --   window_pos_y                      主宠窗左上角物理像素 Y，规范有符号 i32 文本；缺失/残缺/无效坐标回退当前工作区右下角
 --   窗口位置只由原生拖动服务写入，不能经通用 save_settings 修改；显示器/DPI 临时回位不覆盖用户首选位置
 --   theme_mode                       主程序主题：system / light / dark，默认 system；不传递给小游戏插件
+--   image_generation_config          生图专用版本化JSON；默认version=1/revision=0/nextId=1/enabled=false/activeId=null/providers=[]
+--                                    providers=[{id,name,protocol,baseUrl,model}]，protocol仅openai-compatible，baseUrl为HTTPS根地址；按根地址追加/images/generations
+--                                    revision每次保存/选择/开关/删除递增，写入必须匹配expectedRevision；nextId递增不复用，ID及公开nextId用十进制字符串
+--   image_generation_provider_<id>_api_key_encrypted  生图专用DPAPI密文；缺行=无Key，只能由生图仓储与配置同事务写入，不经通用settings或插件接口
+--                                    不借用聊天/记忆/Embedding密钥；全量备份只带非密钥配置，导入强制关闭；不导出任何生图密钥明文/密文
+--   web_search_config                搜索专用版本化 JSON，未登记=关闭且空列表；version=1，revision=配置变更序号，nextId=下一个十进制 ID
+--                                    enabled=全局开关，activeId=当前配置 ID/null，providers=[{id,name,kind,baseUrl}]；kind=tavily/bocha/custom（Tavily 兼容）
+--   web_search_provider_<id>_api_key_encrypted  对应搜索配置的 DPAPI 密文；只允许专用仓储同事务写入，缺行=没有 Key
+--                                    所有搜索密钥（含密文）排除备份；全量导入保留元数据但强制关闭搜索，重新填 Key 后由用户启用
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT NOT NULL PRIMARY KEY, -- 全局设置键；只允许本文件上方及《数据库与持久化设计》2.7 节登记的 V1 键名
-    value TEXT NOT NULL       -- 设置值；按键解析为规范整数、固定枚举、HTTPS URL 或 DPAPI Base64 密文
+    value TEXT NOT NULL       -- 设置值；按登记键解析为整数、枚举、HTTPS URL、专用版本化 JSON 或 DPAPI Base64 密文
 );
 
 -- ------------------------------------------------------------
@@ -455,7 +464,7 @@ CREATE TABLE IF NOT EXISTS user_state (
 -- ------------------------------------------------------------
 -- 11. 小游戏插件
 -- 石头剪刀布是随便携版提供的第一方插件，也登记在本组表中。
--- game_plugins 只表示当前登记状态；历史游戏局自行保存插件快照，不依赖登记行。
+-- game_plugins 只表示当前登记状态；历史运行记录自行保存插件快照，不依赖登记行。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS game_plugins (
     plugin_id         TEXT    PRIMARY KEY CHECK (length(trim(plugin_id)) > 0), -- manifest 中稳定且全局唯一的插件 ID
@@ -529,19 +538,19 @@ CREATE TABLE IF NOT EXISTS game_plugin_data (
     FOREIGN KEY (plugin_id) REFERENCES game_plugins(plugin_id) ON DELETE CASCADE
 );
 
--- 历史游戏局故意不外键关联 game_plugins；卸载或清除登记后仍可审计。
--- 游戏局是应用全局数据，不保存 persona_id 或 session_id。
+-- 历史运行记录故意不外键关联 game_plugins；卸载或清除登记后仍可审计。
+-- 运行记录是应用全局数据，不保存 persona_id 或 session_id。
 CREATE TABLE IF NOT EXISTS game_runs (
-    id                        INTEGER PRIMARY KEY AUTOINCREMENT, -- 游戏局自增主键
-    plugin_id                 TEXT    NOT NULL CHECK (length(trim(plugin_id)) > 0), -- 开局时插件 ID 快照，卸载后仍保留
-    plugin_name               TEXT    NOT NULL CHECK (length(trim(plugin_name)) > 0), -- 开局时插件显示名称快照
-    plugin_version            TEXT    NOT NULL CHECK (length(trim(plugin_version)) > 0), -- 开局时插件版本快照
-    wallet_permission_granted INTEGER NOT NULL CHECK (wallet_permission_granted IN (0, 1)), -- 1=开局时已获 wallet.modify 授权，0=本局纯玩；中途授权不改变本局
-    status                    TEXT    NOT NULL CHECK (status IN ('running', 'completed', 'cancelled', 'error')), -- running=进行中；completed=正常结算；cancelled=用户取消；error=异常结束
-    outcome                   TEXT, -- 插件给出的本局结果标识；未结束或无结果时可为 NULL
-    details_json              TEXT, -- 插件提供的本局明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实
-    coin_delta                INTEGER NOT NULL DEFAULT 0, -- 本局累计实际喵币变化；纯玩或平局为 0
-    started_at                TEXT    NOT NULL, -- 开局时间 UTC RFC3339
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT, -- 运行记录自增主键
+    plugin_id                 TEXT    NOT NULL CHECK (length(trim(plugin_id)) > 0), -- 打开时插件 ID 快照，卸载后仍保留
+    plugin_name               TEXT    NOT NULL CHECK (length(trim(plugin_name)) > 0), -- 打开时插件显示名称快照
+    plugin_version            TEXT    NOT NULL CHECK (length(trim(plugin_version)) > 0), -- 打开时插件版本快照
+    wallet_permission_granted INTEGER NOT NULL CHECK (wallet_permission_granted IN (0, 1)), -- 1=打开时已获 wallet.modify 授权，0=本次运行纯玩；中途授权不改变本次运行
+    status                    TEXT    NOT NULL CHECK (status IN ('running', 'completed', 'cancelled', 'error')), -- running=进行中；completed=正常结束运行；cancelled=用户取消；error=异常结束
+    outcome                   TEXT, -- 插件给出的本次运行结果标识；未结束或无结果时可为 NULL
+    details_json              TEXT, -- 插件提供的本次运行明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实
+    coin_delta                INTEGER NOT NULL DEFAULT 0, -- 本次运行累计实际喵币变化；未授权运行为 0
+    started_at                TEXT    NOT NULL, -- 打开时间 UTC RFC3339
     ended_at                  TEXT, -- 结束时间；running 时为 NULL
     UNIQUE (id, plugin_id, plugin_version),
     CHECK (
@@ -562,7 +571,7 @@ CREATE TABLE IF NOT EXISTS currency_ledger (
     delta                 INTEGER NOT NULL, -- 本次余额变化量；正数增加、负数扣除、插件平局可为 0
     reason                TEXT    NOT NULL CHECK (reason IN ('daily_sign_in', 'sign_in_festival', 'plugin_game', 'accessory_craft', 'accessory_sell')), -- daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品
     ref_id                INTEGER, -- 制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL
-    game_run_id           INTEGER, -- 插件游戏流水所属游戏局 -> game_runs.id；非插件流水为 NULL
+    game_run_id           INTEGER, -- 插件游戏流水所属运行记录 -> game_runs.id；非插件流水为 NULL
     plugin_id             TEXT, -- 插件游戏时保存插件 ID 快照；非插件流水为 NULL
     plugin_version        TEXT, -- 插件游戏时保存插件版本快照；非插件流水为 NULL
     plugin_display_reason TEXT, -- 插件展示给用户的本次变动原因；插件流水必填
@@ -675,13 +684,14 @@ CREATE TABLE IF NOT EXISTS accessories (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
     session_id   INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
     name         TEXT    NOT NULL,                    -- 饰品名称
-    display_text TEXT    NOT NULL,                    -- 头顶显示的文字/emoji/颜文字
+    display_text TEXT    NOT NULL,                    -- 头顶视觉兜底：图标字符/Emoji/颜文字/符号组合，不是名称或简介
     description  TEXT    NOT NULL,                    -- AI 按人设口吻写的简介
     cost         INTEGER NOT NULL DEFAULT 0 CHECK (cost >= 0),          -- 制作费用；旅行带回为 0
     source       TEXT    NOT NULL CHECK (source IN ('crafted', 'travel')), -- crafted=使用喵币制作，travel=旅行带回
     travel_id    INTEGER,                             -- 旅行带回时为 travels.id，制作为 NULL
     is_worn      INTEGER NOT NULL DEFAULT 0 CHECK (is_worn IN (0, 1)),          -- 是否佩戴：1 佩戴，0 未佩戴
     created_at   TEXT    NOT NULL,                    -- 创建时间 RFC3339
+    image_file   TEXT,                                -- 可选透明饰品PNG受管相对路径；NULL显示display_text，不存远程URL或绝对路径
     FOREIGN KEY (travel_id, session_id) REFERENCES travels(id, session_id) ON DELETE NO ACTION,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (travel_id)  REFERENCES travels(id)   ON DELETE SET NULL
@@ -767,14 +777,15 @@ CREATE TABLE IF NOT EXISTS festival_catalog (
 -- 19. 会话节日子表（会话级）
 -- 由 AI 或用户维护的节日、生日、纪念日、自定义日子。
 -- 与母表同样只存公历月日与农历月日；农历行每年查内置表推出公历月日后更新。
--- festival_id 可空：来源于母表时填写，AI/用户自定义时为空。
+-- 新增仅保存会话自己的固定日期，不复制母表；festival_id固定NULL。
+-- festival_id列保留旧数据/备份兼容，不提供新建关联入口。
 -- 行不随年份删除；AI 可删除自己不需要的行。
 -- 子表与母表一起参与签到、日常聊天和无聊主动消息上下文。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS session_festivals (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
     session_id    INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
-    festival_id   INTEGER,                             -- 关联母表 -> festival_catalog.id，可空
+    festival_id   INTEGER,                             -- 旧数据/备份兼容母表引用；当前新增为NULL
     kind          TEXT    NOT NULL CHECK (kind IN ('festival', 'birthday', 'anniversary', 'custom')), -- festival=节日，birthday=生日，anniversary=纪念日，custom=其他自定义日子
     name          TEXT    NOT NULL,                    -- 名称
     year          INTEGER NOT NULL,                    -- 本年公历年份：日期已按哪一年查表更新，不是生日出生年
@@ -832,7 +843,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_currency_ledger_plugin_request
 
 -- 跨表规则由 Rust 命令在事务中检查：round/message/记忆来源、旅行/游记/信件/礼物/饰品必须属于同一会话。
 -- 切换当前项先验证目标存在，再在同一事务内清除旧项并启用新项。
--- 余额检查、签到/游戏次数检查、插件游戏局、饰品增删、档位使用标记和流水写入必须共用同一事务。
+-- 余额检查、签到/游戏次数检查、插件运行记录、饰品增删、档位使用标记和流水写入必须共用同一事务。
 -- settings 在 Rust 层逐键校验：非负值、最小值 <= 最大值、亲密度档位严格递增。
 -- 日期、重复规则 JSON、颜色及饰品字符限制在 Rust 层验证；前端校验不替代后端校验。
 

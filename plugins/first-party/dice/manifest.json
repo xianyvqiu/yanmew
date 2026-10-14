@@ -1,0 +1,19 @@
+{
+  "id": "com.yanmew.game.dice",
+  "name": "掷骰子比大小",
+  "description": "每日最多20局，胜负±3，掷出6额外+2。",
+  "author": "颜喵",
+  "version": "1.0.0",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": [
+    "wallet.modify"
+  ],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": "https://github.com/xianyvqiu/yanmew",
+  "homepage": null,
+  "release_page": "https://github.com/xianyvqiu/yanmew/releases",
+  "migration": null
+}

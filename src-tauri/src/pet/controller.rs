@@ -97,6 +97,8 @@ pub struct Controller {
     expression_key: Option<(String, Activity, Option<String>)>,
     expression: String,
     sequence: u64,
+    /// 整秒在同一桌宠事务中保存，亚秒余量仅存活于当前运行区间。
+    travel_fraction: Duration,
 }
 
 impl Controller {
@@ -173,6 +175,7 @@ impl Controller {
 
     pub fn reset_context(&mut self) {
         self.anchor = None;
+        self.travel_fraction = Duration::ZERO;
         self.transient = None;
         self.chat_expression = None;
         self.proactive_expression = None;
@@ -190,6 +193,7 @@ impl Controller {
         if self.stopping {
             return self.last_view.clone().ok_or_else(AppError::storage);
         }
+        crate::travel::recover_returns(connection, sample.utc, random)?;
         let context = crate::persona::context(connection, revision)?;
         let (name, library): (String, Option<String>) = connection.query_row(
             "SELECT name,expressions FROM personas WHERE id=?1",
@@ -254,7 +258,10 @@ impl Controller {
                 } else {
                     Duration::ZERO
                 };
-                let result = super::advance(
+                let travel_elapsed = self.travel_fraction + if snapshot.idle_branch == IdleBranch::Sleeping {
+                    Duration::ZERO
+                } else { idle };
+                let result = super::advance_with_travel(
                     connection,
                     revision,
                     PetWriteScope {
@@ -270,7 +277,11 @@ impl Controller {
                         allow_idle_transition: idle_allowed,
                     },
                     random,
+                    travel_elapsed.as_secs(),
                 )?;
+                self.travel_fraction = if result.away { Duration::ZERO }
+                    else { travel_elapsed - Duration::from_secs(travel_elapsed.as_secs()) };
+                away = result.away;
                 sleep_until = result.snapshot.sleep_until;
                 activity = match result.snapshot.idle_branch {
                     IdleBranch::Sleeping => Activity::Sleeping,
@@ -285,7 +296,7 @@ impl Controller {
                 session_id: session.clone(),
                 context_revision: revision,
                 running: sample.running,
-                idle_allowed: idle_allowed && !away,
+                idle_allowed: idle_allowed && !away && activity != Activity::Sleeping,
                 effective_allowed: !away,
             });
         }

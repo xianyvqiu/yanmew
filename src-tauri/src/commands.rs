@@ -6,6 +6,198 @@ use crate::{
     runtime::{Runtime, Store},
 };
 use tauri::{State, WebviewWindow};
+use crate::web_search;
+use crate::{game_host, game_plugins};
+
+fn authorize_plugin_management(window:&WebviewWindow)->AppResult<()> {
+    authorize(window)?;if window.label()!="settings"{return Err(AppError::new("PERMISSION_DENIED","请在设置窗口管理小游戏插件"))}Ok(())
+}
+
+/// 导出仅供可信设置窗口；不允许插件或聊天工具取得应用备份。
+fn authorize_backup(window: &WebviewWindow) -> AppResult<()> {
+    authorize(window)?;
+    if window.label() != "settings" { return Err(AppError::new("PERMISSION_DENIED", "请在设置窗口管理备份")); }
+    Ok(())
+}
+fn backup_files(window:&WebviewWindow)->AppResult<Box<dyn crate::platform::contracts::FileTransferPort>> {
+    #[cfg(windows)] {Ok(Box::new(crate::platform::windows::files::BackupFiles{owner:window.hwnd().map_err(|_|AppError::storage())?.0 as isize}))}
+    #[cfg(not(windows))] {let _=window;Err(AppError::new("PLATFORM_UNSUPPORTED","当前平台尚未接入系统文件保存"))}
+}
+#[tauri::command]
+pub async fn export_backup(window:WebviewWindow,runtime:State<'_,Runtime>,input:crate::import_export::ExportRequest)->AppResult<Option<crate::import_export::ExportArchive>> {
+    authorize_backup(&window)?;
+    let transfer=backup_files(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::import_export::export(&worker,input,transfer.as_ref())).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn export_game_plugin_data(window:WebviewWindow,runtime:State<'_,Runtime>,ids:Vec<String>)->AppResult<Option<crate::import_export::ExportArchive>> {
+    export_backup(window,runtime,crate::import_export::ExportRequest{kind:crate::import_export::PackageKind::PluginData,ids,include_sessions:false}).await
+}
+#[tauri::command]
+pub async fn get_backup_export_options(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<crate::import_export::ExportOptions> {
+    authorize_backup(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::import_export::options(&worker)).await.map_err(|_|AppError::storage())?
+}
+
+#[tauri::command]
+pub async fn prepare_backup_import(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Option<crate::import_export::restore::Preview>> {
+    authorize_backup(&window)?;let transfer=backup_files(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::import_export::restore::prepare(&worker,transfer.as_ref())).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn refresh_backup_import(window:WebviewWindow,runtime:State<'_,Runtime>,preview_id:String)->AppResult<crate::import_export::restore::Preview> {
+    authorize_backup(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::import_export::restore::refresh(&worker,&preview_id)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn cancel_backup_import(window:WebviewWindow,runtime:State<'_,Runtime>,preview_id:String)->AppResult<()> {
+    authorize_backup(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::import_export::restore::cancel(&worker,&preview_id)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn confirm_backup_import(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,input:crate::import_export::restore::Confirm)->AppResult<crate::import_export::restore::Imported> {
+    authorize_backup(&window)?;
+    let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;
+    crate::import_export::restore::check(runtime.inner(),&input)?;
+    for id in crate::import_export::restore::plugins_to_close(runtime.inner(),&input.preview_id)? {game_host::close_plugin(&app,&id)?;}
+    let preview=crate::import_export::restore::current_preview(runtime.inner(),&input.preview_id)?;
+    for index in 0..preview.plugins.len() {
+        let worker=runtime.inner().clone();let token=input.preview_id.clone();
+        let job=tauri::async_runtime::spawn_blocking(move||crate::import_export::restore::plugin_job(&worker,&token,index)).await.map_err(|_|AppError::storage())??;
+        if let Some((target,package,mut snapshot))=job {
+            if snapshot.storage_version!=package.manifest.storage_version && (!snapshot.settings.is_empty()||!snapshot.data.is_empty()) {
+                snapshot=game_host::migrate(&app,runtime.inner(),package.clone(),snapshot).await?;
+            }else{snapshot.storage_version=package.manifest.storage_version;game_plugins::validate_snapshot(&package.manifest,&snapshot)?;}
+            crate::import_export::restore::accept_plugin(runtime.inner(),&input.preview_id,target,&package,snapshot)?;
+        }
+    }
+    let full=preview.kind==crate::import_export::PackageKind::Full;
+    let previous=runtime.read(|store,_|Ok(store.context_revision))?;
+    let worker=runtime.inner().clone();
+    let result=tauri::async_runtime::spawn_blocking(move||crate::import_export::restore::confirm(&worker,input)).await.map_err(|_|AppError::storage())??;
+    // 已提交的数据不能因刷新通知或后台重试失败而被报告成未导入。
+    if full {let _=runtime.memory_index.reset();let _=runtime.memory.retry(None);}
+    runtime.memory.wake.notify_one();
+    for event in ["configuration_changed","game_plugins_changed",crate::events::WALLET_CHANGED,crate::events::REMINDERS_CHANGED,crate::events::MEMORY_GENERATION_CHANGED,crate::events::NOTEBOOK_CHANGED,crate::events::EMBEDDING_CHANGED,crate::events::IMAGE_GENERATION_CONFIG_CHANGED] {let _=app.emit(event,());}
+    if let Ok(context)=runtime.read(|store,_|crate::persona::context(&store.connection,store.context_revision)) {
+        if context.context_revision!=previous {let _=app.emit("window_context_changed",&context);}
+        if let Some(session)=context.session_id {
+            for event in [crate::events::TRAVEL_CHANGED,crate::events::LETTERS_CHANGED,crate::events::ACCESSORIES_CHANGED,"chat-messages-changed"] {let _=app.emit(event,serde_json::json!({"sessionId":session}));}
+        }
+    }
+    Ok(result)
+}
+#[derive(serde::Serialize)]#[serde(rename_all="camelCase")]
+pub struct PluginDetail {pub plugin:game_plugins::Plugin,pub manifest:Option<game_plugins::Manifest>,pub permissions:Vec<game_plugins::Permission>,pub usage:game_plugins::PrivateSnapshot}
+#[tauri::command]
+pub async fn list_game_plugins(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<game_plugins::Plugin>> {
+    authorize_plugin_management(&window)?;storage(runtime.inner().clone(),|s,_|game_plugins::list(&s.connection)).await
+}
+#[tauri::command]
+pub async fn get_game_plugin(window:WebviewWindow,runtime:State<'_,Runtime>,id:String)->AppResult<PluginDetail> {
+    authorize_plugin_management(&window)?;let worker=runtime.inner().clone();let paths=worker.paths.clone()?;
+    tauri::async_runtime::spawn_blocking(move||{let (plugin,permissions,usage)=worker.read(|s,_|Ok((game_plugins::get(&s.connection,&id)?,game_plugins::permissions(&s.connection,&id)?,game_plugins::snapshot(&s.connection,&id)?)))?;
+        let manifest=if plugin.package_status=="available"{Some(game_plugins::package::load(&game_plugins::package::root(&paths),&plugin)?.manifest)}else{None};Ok(PluginDetail{plugin,manifest,permissions,usage})}).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn preview_game_plugin_install(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,filename:String,bytes_base64:String)->AppResult<game_host::install::Preview> {
+    authorize_plugin_management(&window)?;let app=app.clone();let runtime=runtime.inner().clone();tauri::async_runtime::spawn_blocking(move||game_host::install::preview(app.state::<game_host::Host>().inner(),&runtime,&filename,&bytes_base64)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn confirm_game_plugin_install(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,token:String,choices:Vec<game_plugins::PermissionChoice>)->AppResult<game_plugins::Plugin> {
+    authorize_plugin_management(&window)?;let result=game_host::install::confirm(&app,runtime.inner(),&token,choices).await?;let _=app.emit("game_plugins_changed",());Ok(result)
+}
+#[tauri::command]
+pub fn cancel_game_plugin_install(window:WebviewWindow,app:AppHandle,token:String)->AppResult<()> {authorize_plugin_management(&window)?;game_host::install::cancel(app.state::<game_host::Host>().inner(),&token)}
+#[tauri::command]
+pub async fn set_game_plugin_enabled(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,version:String,enabled:bool)->AppResult<()> {
+    authorize_plugin_management(&window)?;let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;
+    runtime.read(|s,_|game_plugins::set_enabled(&s.connection,&id,&version,enabled,runtime.clock.sample()?.utc))?;
+    if !enabled {game_host::close_plugin(&app,&id)?;}let _=app.emit("game_plugins_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn set_game_plugin_permission(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,version:String,choice:game_plugins::PermissionChoice)->AppResult<()> {
+    authorize_plugin_management(&window)?;let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;
+    storage(runtime.inner().clone(),move|s,_|game_plugins::decide(&mut s.connection,&id,&version,&choice,chrono::Utc::now())).await?;let _=app.emit("game_plugins_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn save_game_plugin_setting(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,version:String,key:String,value:serde_json::Value)->AppResult<()> {
+    authorize_plugin_management(&window)?;let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;let worker=runtime.inner().clone();let paths=worker.paths.clone()?;
+    tauri::async_runtime::spawn_blocking(move||{let p=worker.read(|s,_|game_plugins::get(&s.connection,&id))?;if p.installed_version!=version{return Err(game_plugins::denied())}let m=game_plugins::package::load(&game_plugins::package::root(&paths),&p)?.manifest;worker.read(|s,_|game_plugins::save_setting(&s.connection,&m,&key,&value,worker.clock.sample()?.utc))}).await.map_err(|_|AppError::storage())??;let _=app.emit("game_plugins_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn uninstall_game_plugin(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,version:String,clear_data:bool)->AppResult<()> {
+    authorize_plugin_management(&window)?;let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;
+    runtime.read(|s,_|{let p=game_plugins::get(&s.connection,&id)?;if p.is_bundled||p.installed_version!=version{return Err(AppError::new("PLUGIN_UNINSTALL_DENIED","随包插件不可卸载，或版本已改变"))}Ok(())})?;
+    game_host::close_plugin(&app,&id)?;storage(runtime.inner().clone(),move|s,_|game_plugins::uninstall(&mut s.connection,&id,&version,clear_data,chrono::Utc::now())).await?;let _=app.emit("game_plugins_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn clear_game_plugin_data(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,version:String)->AppResult<()> {
+    authorize_plugin_management(&window)?;let host=app.state::<game_host::Host>();let _operation=host.operations.lock().await;
+    runtime.read(|s,_|{if game_plugins::get(&s.connection,&id)?.installed_version!=version{return Err(game_plugins::denied())}Ok(())})?;
+    game_host::close_plugin(&app,&id)?;storage(runtime.inner().clone(),move|s,_|game_plugins::clear_private_data(&mut s.connection,&id,&version)).await?;let _=app.emit("game_plugins_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn list_game_plugin_runs(window:WebviewWindow,runtime:State<'_,Runtime>,id:String,before:Option<String>,limit:usize)->AppResult<Vec<game_plugins::runs::Run>> {authorize_plugin_management(&window)?;storage(runtime.inner().clone(),move|s,_|game_plugins::runs::history(&s.connection,&id,before,limit)).await}
+#[tauri::command]
+pub async fn list_game_plugin_ledger(window:WebviewWindow,runtime:State<'_,Runtime>,id:String,before:Option<String>,limit:usize)->AppResult<Vec<game_plugins::runs::LedgerEntry>> {authorize_plugin_management(&window)?;storage(runtime.inner().clone(),move|s,_|game_plugins::runs::ledger(&s.connection,&id,before,limit)).await}
+#[tauri::command]
+pub async fn open_game_plugin(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String)->AppResult<String> {authorize_plugin_management(&window)?;game_host::open(app,runtime.inner().clone(),id).await}
+#[tauri::command]
+pub async fn game_plugin_call(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,method:String,args:serde_json::Value)->AppResult<serde_json::Value> {game_host::call(app,runtime.inner().clone(),window.label().into(),method,args).await}
+
+fn authorize_search_settings(window:&WebviewWindow)->AppResult<()> {
+    authorize(window)?;
+    if window.label()!="settings" {return Err(AppError::new("PERMISSION_DENIED","请在设置窗口管理搜索提供商"));}
+    Ok(())
+}
+#[tauri::command]
+pub async fn get_web_search_settings(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<web_search::View> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(),|s,_|web_search::view(&s.connection)).await
+}
+#[tauri::command]
+pub async fn save_web_search_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:Option<String>,input:web_search::Input)->AppResult<()> {
+    authorize_search_settings(&window)?;
+    storage(runtime.inner().clone(),move|s,secrets|web_search::save(&mut s.connection,id,input,secrets)).await?;
+    let _=app.emit("configuration_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn delete_web_search_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String)->AppResult<()> {
+    authorize_search_settings(&window)?;
+    storage(runtime.inner().clone(),move|s,_|web_search::delete(&mut s.connection,&id)).await?;
+    let _=app.emit("configuration_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn set_active_web_search_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String)->AppResult<()> {
+    authorize_search_settings(&window)?;
+    storage(runtime.inner().clone(),move|s,_|web_search::select(&mut s.connection,&id)).await?;
+    let _=app.emit("configuration_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn set_web_search_enabled(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,enabled:bool)->AppResult<()> {
+    authorize_search_settings(&window)?;
+    storage(runtime.inner().clone(),move|s,_|web_search::enable(&mut s.connection,enabled)).await?;
+    let _=app.emit("configuration_changed",());Ok(())
+}
+#[tauri::command]
+pub async fn test_web_search_provider(window:WebviewWindow,runtime:State<'_,Runtime>,id:String)->AppResult<usize> {
+    authorize_search_settings(&window)?;
+    let runtime=runtime.inner().clone();let selected=id.clone();
+    let snapshot=storage(runtime.clone(),move|s,secrets|web_search::snapshot(&s.connection,secrets,Some(&selected))).await?.ok_or_else(AppError::not_found)?;
+    let lease=runtime.requests.start(format!("web-search-test:{id}"),0)?;
+    let client=runtime.ai.clone()?;
+    let count=snapshot.test(&client,&lease.cancel).await?;
+    lease.cancel.check()?;
+    storage(runtime,move|s,_|snapshot.check(&s.connection)).await?;
+    Ok(count)
+}
+#[tauri::command]
+pub async fn open_web_source(window:WebviewWindow,url:String)->AppResult<()> {
+    authorize(&window)?;
+    let url=crate::web_search::source_url(&url)?;
+    tauri::async_runtime::spawn_blocking(move||crate::platform::windows::links::open(&url)).await.map_err(|_|AppError::storage())?
+}
 use crate::memory::management as memory_management;
 
 #[tauri::command]
@@ -251,6 +443,9 @@ impl crate::events::ReminderEventSink for ChatToolEvents {
     fn reminder_failed(&self, error: &AppError) { let _ = self.0.emit(crate::events::REMINDER_ERROR, error); }
 }
 impl crate::events::ChatToolEventSink for ChatToolEvents {
+    fn accessory_preview_changed(&self,session:&str,preview:&str) {
+        let _=self.0.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session,"previewId":preview}));
+    }
     fn notebook_changed(&self) { let _ = self.0.emit(crate::events::NOTEBOOK_CHANGED, ()); }
     fn persona_updated(&self, update: &crate::events::PersonaUpdated) {
         let _ = self.0.emit("configuration_changed", ());
@@ -646,6 +841,7 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
     let worker = runtime.clone();
     storage(runtime, move |s, p| {
         s.pet.health(&s.connection, p)?;
+        let testing_chat=token.is_some();
         if let Some(token) = token {
             if !s.pet.complete_health(&token, &health_result) {
                 return Err(AppError::new("CONTEXT_CHANGED", "提供商配置或恢复状态已改变，旧连接测试结果已忽略"));
@@ -658,6 +854,7 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
                 [], |row| row.get(0),
             ).optional()?;
             if selected == Some(id) { worker.memory.retry(None)?; }
+            if testing_chat {worker.travel_gifts.provider_ready()?;worker.travel_journals.provider_ready()?;}
         }
         Ok(())
     })
@@ -719,6 +916,77 @@ fn validate_persona_context(
     Ok(context)
 }
 
+#[tauri::command]
+pub async fn get_wallet(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<crate::models::Wallet> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |store, _| crate::currency::get_wallet(&store.connection)).await
+}
+
+#[tauri::command]
+pub fn get_app_info(window: WebviewWindow, app: AppHandle) -> AppResult<crate::models::AppInfo> {
+    authorize(&window)?;
+    Ok(crate::models::AppInfo { name: app.config().product_name.clone().unwrap_or_else(|| "颜喵 YanMew".into()), version: app.package_info().version.to_string() })
+}
+
+#[tauri::command]
+pub fn request_app_exit(window: WebviewWindow, app: AppHandle) -> AppResult<()> {
+    authorize(&window)?;
+    if window.label() != "settings" { return Err(AppError::new("PERMISSION_DENIED", "请从设置窗口退出应用")); }
+    // 和托盘相同，退出事件调用已有Runtime.shutdown完成保存及请求取消。
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn polish_reminder_occurrence(window: WebviewWindow, runtime: State<'_, Runtime>, id: String, persona_id: String, context_revision: u64) -> AppResult<Option<crate::reminders::polish::Presentation>> {
+    authorize(&window)?;
+    if window.label() != "main" { return Err(AppError::new("PERMISSION_DENIED", "仅宠窗可润色到点提醒")); }
+    crate::reminders::polish::get(runtime.inner().clone(), parse_id(&id)?, persona_id, context_revision).await
+}
+
+#[tauri::command]
+pub async fn get_sign_in_status(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<crate::models::SignInStatus> {
+    authorize(&window)?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |store, _| {
+        let now = worker.clock.sample()?.utc;
+        crate::currency::get_sign_in_status(&store.connection, now, &chrono::Local)
+    }).await
+}
+
+#[tauri::command]
+pub async fn daily_sign_in(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>) -> AppResult<crate::models::DailySignInResult> {
+    authorize(&window)?;
+    if window.label() != "settings" {
+        return Err(AppError::new("PERMISSION_DENIED", "请从设置的桌宠状态页面签到"));
+    }
+    let worker = runtime.inner().clone();
+    let result = storage(worker.clone(), move |store, _| {
+        let now = worker.clock.sample()?.utc;
+        let mut random = worker.random.lock().map_err(|_| AppError::storage())?;
+        crate::currency::daily_sign_in(&mut store.connection, now, &chrono::Local, random.as_mut())
+    }).await?;
+    if result.granted_coins.is_some() { let _ = app.emit(crate::events::WALLET_CHANGED, ()); }
+    Ok(result)
+}
+
+pub(crate) fn query_session_intimacy(store: &Store, persona_id: i64, session_id: i64, context_revision: u64) -> AppResult<crate::models::SessionIntimacy> {
+    let context = validate_persona_context(store, persona_id, context_revision)?;
+    if context.session_id.as_deref() != Some(session_id.to_string().as_str()) {
+        return Err(AppError::new("CONTEXT_CHANGED", "当前会话已改变，请重新读取亲密度"));
+    }
+    crate::currency::get_session_intimacy(&store.connection, persona_id, session_id, context_revision)
+}
+
+#[tauri::command]
+pub async fn get_session_intimacy(window: WebviewWindow, runtime: State<'_, Runtime>, persona_id: String, session_id: String,
+    context_revision: u64) -> AppResult<crate::models::SessionIntimacy> {
+    authorize(&window)?;
+    let persona_id = parse_id(&persona_id)?;
+    let session_id = parse_id(&session_id)?;
+    storage(runtime.inner().clone(), move |store, _| query_session_intimacy(store, persona_id, session_id, context_revision)).await
+}
+
 fn parse_optional_id(value: Option<String>, field: &str) -> AppResult<Option<i64>> {
     value
         .map(|value| {
@@ -765,6 +1033,7 @@ pub async fn create_session(
         let before = validate_persona_context(store, persona_id, context_revision)?;
         let session = crate::sessions::create_with_profile(&mut store.connection, persona_id, user_profile_id)?;
         memory_management::discard(&worker);
+        store.accessory_crafts.discard();
         if let Some(old_session) = before.session_id {
             requests.cancel_key(&format!("chat:{old_session}")); requests.cancel_key(&format!("proactive:{old_session}"));
         }
@@ -775,6 +1044,7 @@ pub async fn create_session(
         Ok((session, context, pet_error))
     })
     .await?;
+    crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
     if let Some(error) = pet_error {
         let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
     }
@@ -806,6 +1076,7 @@ pub async fn set_active_session(
             return Ok((before, false, None));
         }
         memory_management::discard(&worker);
+        store.accessory_crafts.discard();
         if let Some(old_session) = before.session_id {
             requests.cancel_key(&format!("chat:{old_session}")); requests.cancel_key(&format!("proactive:{old_session}"));
         }
@@ -816,6 +1087,7 @@ pub async fn set_active_session(
         Ok((context, true, pet_error))
     })
     .await?;
+    crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
     if let Some(error) = pet_error {
         let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
     }
@@ -865,6 +1137,7 @@ pub async fn delete_session(
     let outcome = tauri::async_runtime::spawn_blocking(move ||
         crate::sessions::delete_in_context(&worker,persona_id,session_id,context_revision)
     ).await.map_err(|_|AppError::storage())??;
+    crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
     if let Some(error) = outcome.pet_error { let _ = app.emit(crate::events::PET_ACTIVITY_ERROR,&error); }
     // 仅删除当前项改变上下文，其余删除刷新列表，不打断当前窗口任务。
     if outcome.context_changed && app.emit("window_context_changed",&outcome.context).is_err() {
@@ -1076,7 +1349,16 @@ pub fn take_reminder_navigation(window: WebviewWindow, navigation: State<'_, cra
         return Err(AppError::new("PERMISSION_DENIED", "仅设置窗口可读取设置导航"));
     }
     let mut pending = navigation.inner().0.lock().map_err(|_| AppError::storage())?;
-    Ok(std::mem::take(&mut *pending))
+    if matches!(*pending, Some(crate::desktop_windows::SettingsTarget::Reminders)) {
+        *pending = None; Ok(true)
+    } else { Ok(false) }
+}
+/// 固定设置目标可在页面加载后消费，避免快捷入口的一次性事件丢失。
+#[tauri::command]
+pub fn take_settings_navigation(window: WebviewWindow, navigation: State<'_, crate::desktop_windows::SettingsNavigation>) -> AppResult<Option<crate::desktop_windows::SettingsTarget>> {
+    if window.label() != "settings" { return Err(AppError::new("PERMISSION_DENIED", "仅设置窗口可读取设置导航")); }
+    let mut pending = navigation.inner().0.lock().map_err(|_| AppError::storage())?;
+    Ok(pending.take())
 }
 async fn storage<T: Send + 'static>(
     runtime: Runtime,
@@ -1356,6 +1638,7 @@ async fn change_persona(
 ) -> AppResult<crate::persona::Context> {
     let requests = runtime.requests.clone();
     let worker = runtime.clone();
+    let cleanup_runtime = runtime.clone();
     let (context, changed) = storage(runtime, move |s, p| {
         worker.settle_pet(s, p)?;
         let before = crate::persona::context(&s.connection, s.context_revision)?;
@@ -1371,6 +1654,7 @@ async fn change_persona(
         if changed {
             requests.cancel_persona(parse_id(&before.persona_id)?);
             memory_management::discard(&worker);
+            s.accessory_crafts.discard();
             s.context_revision += 1;
             after.context_revision = s.context_revision;
             s.pet.reset_context();
@@ -1379,7 +1663,10 @@ async fn change_persona(
         Ok((after, changed))
     })
     .await?;
-    if delete { let _ = app.emit("configuration_changed", ()); }
+    if delete || changed { crate::accessories::images::cleanup_unused(&cleanup_runtime, &[]); }
+    if delete {
+        let _ = app.emit("configuration_changed", ());
+    }
     // 事务已提交；窗口可通过列表重新获取权威当前项。
     if changed && app.emit("window_context_changed", &context).is_err() {
         eprintln!("上下文变化通知发送失败，请刷新窗口");
@@ -1587,4 +1874,390 @@ mod tests {
         assert!(!state.accepts_region(1));
         assert!(state.accepts_region(2));
     }
+}
+
+fn letter_scope(persona:&str,session:&str,revision:u64)->AppResult<crate::letters::Scope> {
+    Ok(crate::letters::Scope{persona:parse_id(persona)?,session:parse_id(session)?,revision})
+}
+
+#[tauri::command]
+pub async fn list_travels(window: WebviewWindow, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64, before_id: Option<String>, limit: i64) -> AppResult<Vec<crate::travel::Travel>> {
+    authorize(&window)?;
+    let scope = letter_scope(&persona_id, &session_id, context_revision)?;
+    let before = before_id.as_deref().map(parse_id).transpose()?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |s, secrets| {
+        worker.settle_pet(s, secrets)?;
+        crate::letters::require_current(&s.connection, s.context_revision, scope)?;
+        crate::travel::queries::list(&s.connection, scope.session, before, limit)
+    }).await
+}
+#[tauri::command]
+pub async fn get_current_travel(window: WebviewWindow, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64) -> AppResult<Option<crate::travel::Travel>> {
+    authorize(&window)?;
+    let scope = letter_scope(&persona_id, &session_id, context_revision)?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |s, secrets| {
+        worker.settle_pet(s, secrets)?;
+        crate::letters::require_current(&s.connection, s.context_revision, scope)?;
+        crate::travel::queries::current(&s.connection, scope.session)
+    }).await
+}
+#[tauri::command]
+pub async fn get_travel_generation_status(window: WebviewWindow, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64) -> AppResult<crate::travel::FactsGenerationStatus> {
+    authorize(&window)?;
+    let scope = letter_scope(&persona_id, &session_id, context_revision)?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |s, _| {
+        crate::letters::require_current(&s.connection, s.context_revision, scope)?;
+        worker.travel_facts.status(&s.connection, scope.session)
+    }).await
+}
+#[tauri::command]
+pub async fn retry_travel_generation(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64) -> AppResult<()> {
+    authorize(&window)?;
+    let scope = letter_scope(&persona_id, &session_id, context_revision)?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |s, _| {
+        crate::letters::require_current(&s.connection, s.context_revision, scope)?;
+        worker.travel_facts.retry(&s.connection, scope.session)
+    }).await?;
+    let _ = app.emit(crate::events::TRAVEL_CHANGED, serde_json::json!({"sessionId":session_id}));
+    Ok(())
+}
+#[tauri::command]
+pub async fn open_letter_window(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, persona_id: String, session_id: String, context_revision: u64, travel_id: String, reply_to_id: Option<String>) -> AppResult<()> {
+    authorize(&window)?;
+    let scope = letter_scope(&persona_id, &session_id, context_revision)?;
+    let travel = parse_id(&travel_id)?;
+    let reply = reply_to_id.as_deref().map(parse_id).transpose()?;
+    let worker = runtime.inner().clone();
+    storage(worker.clone(), move |s, secrets| {
+        worker.settle_pet(s, secrets)?;
+        crate::letters::require_current(&s.connection, s.context_revision, scope)?;
+        crate::letters::validate_target(&s.connection, scope.session, travel, reply, worker.clock.sample()?.utc)
+    }).await?;
+    let target = crate::desktop_windows::LetterTarget { persona_id:scope.persona.to_string(),session_id:scope.session.to_string(),context_revision,travel_id:travel.to_string(),reply_to_id:reply.map(|id|id.to_string()) };
+    *app.state::<crate::desktop_windows::LetterNavigation>().inner().0.lock().map_err(|_|AppError::storage())? = Some(target);
+    crate::desktop_windows::open(app.clone(), crate::desktop_windows::Page::Letter).await?;
+    if let Some(editor) = app.get_webview_window("letter") { let _ = editor.emit("letter-navigation", ()); }
+    Ok(())
+}
+#[tauri::command]
+pub fn take_letter_navigation(window: WebviewWindow, pending: State<'_, crate::desktop_windows::LetterNavigation>) -> AppResult<Option<crate::desktop_windows::LetterTarget>> {
+    if window.label() != "letter" { return Err(AppError::new("PERMISSION_DENIED", "仅写信窗口可读取写信目标")); }
+    Ok(pending.inner().0.lock().map_err(|_|AppError::storage())?.take())
+}
+#[tauri::command]
+pub fn take_travel_navigation(window: WebviewWindow, pending: State<'_, crate::desktop_windows::TravelNavigation>) -> AppResult<Option<bool>> {
+    if window.label() != "travel" { return Err(AppError::new("PERMISSION_DENIED", "仅出行窗口可读取出行导航")); }
+    Ok(pending.inner().0.lock().map_err(|_|AppError::storage())?.take())
+}
+#[tauri::command]
+pub async fn list_letters(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::models::Letter>> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let before=before_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;crate::letters::list(&s.connection,scope.session,before,limit)}).await
+}
+#[tauri::command]
+pub async fn get_letter(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64,id:String)->AppResult<crate::models::Letter> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let id=parse_id(&id)?;
+    storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;crate::letters::get(&s.connection,scope.session,id)}).await
+}
+#[tauri::command]
+pub async fn send_letter(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64,input:crate::letters::SendInput)->AppResult<crate::models::Letter> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let travel=parse_id(&input.travel_id)?;let reply=input.reply_to_id.as_deref().map(parse_id).transpose()?;
+    let worker=runtime.inner().clone();
+    let result=storage(worker.clone(),move|s,secrets|{
+        worker.settle_pet(s,secrets)?;crate::letters::require_current(&s.connection,s.context_revision,scope)?;
+        let mut random=worker.random.lock().map_err(|_|AppError::storage())?;
+        crate::letters::send(&mut s.connection,s.context_revision,scope,travel,&input.content,reply,worker.clock.sample()?.utc,random.as_mut())
+    }).await?;
+    runtime.letters.wake.notify_one();let _=app.emit(crate::events::LETTERS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(result)
+}
+#[tauri::command]
+pub async fn set_letter_flags(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64,id:String,favorite:Option<bool>,read:Option<bool>)->AppResult<crate::models::Letter> {
+    authorize(&window)?;if favorite.is_none()&&read.is_none(){return Err(AppError::validation("flags","请选择要修改的信件标记"))}
+    let scope=letter_scope(&persona_id,&session_id,context_revision)?;let id=parse_id(&id)?;
+    let letter=storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;crate::letters::flags(&s.connection,scope.session,id,favorite,read)}).await?;
+    let _=app.emit(crate::events::LETTERS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(letter)
+}
+#[tauri::command]
+pub async fn delete_letter(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64,id:String)->AppResult<()> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let id=parse_id(&id)?;
+    storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;crate::letters::delete(&s.connection,scope.session,id)}).await?;
+    runtime.requests.cancel_key(&format!("letter-reply:{id}"));runtime.letters.wake.notify_one();
+    let _=app.emit(crate::events::LETTERS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(())
+}
+#[tauri::command]
+pub async fn get_letter_generation_status(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64)->AppResult<crate::letters::GenerationStatus> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let worker=runtime.inner().clone();
+    storage(worker.clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;worker.letters.status(scope.session)}).await
+}
+#[tauri::command]
+pub async fn retry_letter_generation(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64)->AppResult<()> {
+    authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;let worker=runtime.inner().clone();
+    storage(worker.clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;worker.letters.retry(scope.session)}).await?;
+    let _=app.emit(crate::events::LETTERS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(())
+}
+
+
+// 饰品接口复用聊天的完整上下文输入；窗口白名单与插件命令门控保持不变。
+fn accessory_target(context: &ChatContextInput) -> AppResult<(i64,i64,u64)> {
+    Ok((parse_id(&context.persona_id)?,parse_id(&context.session_id)?,context.context_revision))
+}
+fn notify_accessories(app: &AppHandle, session: i64) {
+    let _ = app.emit(crate::events::ACCESSORIES_CHANGED,serde_json::json!({"sessionId":session.to_string()}));
+}
+#[tauri::command]
+pub async fn list_accessories(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput,before_id:Option<String>,limit:Option<i64>) -> AppResult<Vec<crate::models::Accessory>> {
+    authorize(&window)?;
+    let (persona,session,revision) = accessory_target(&context)?;
+    let before = before_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(),move|store,_| {
+        crate::accessories::require_current(store,persona,session,revision)?;
+        crate::accessories::list(&store.connection,session,before,limit.unwrap_or(30))
+    }).await
+}
+#[tauri::command]
+pub async fn get_accessory_image(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput,id:String) -> AppResult<crate::accessories::images::ImageView> {
+    authorize(&window)?;
+    let (persona,session,revision) = accessory_target(&context)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::accessories::images::get(&worker,persona,session,revision,id))
+        .await.map_err(|_|AppError::storage())?
+}
+async fn change_accessory_wear(app:AppHandle,runtime:Runtime,context:ChatContextInput,id:String,worn:bool) -> AppResult<crate::models::Accessory> {
+    let (persona,session,revision) = accessory_target(&context)?;
+    let id = parse_id(&id)?;
+    let item = storage(runtime,move|store,_| {
+        crate::accessories::require_current(store,persona,session,revision)?;
+        crate::accessories::wear(&mut store.connection,session,id,worn)
+    }).await?;
+    notify_accessories(&app,session);
+    Ok(item)
+}
+#[tauri::command]
+pub async fn wear_accessory(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String) -> AppResult<crate::models::Accessory> {
+    authorize(&window)?;
+    change_accessory_wear(app,runtime.inner().clone(),context,id,true).await
+}
+#[tauri::command]
+pub async fn unwear_accessory(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String) -> AppResult<crate::models::Accessory> {
+    authorize(&window)?;
+    change_accessory_wear(app,runtime.inner().clone(),context,id,false).await
+}
+#[tauri::command]
+pub async fn sell_accessory(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String) -> AppResult<crate::models::AccessorySellResult> {
+    authorize(&window)?;
+    let (persona,session,revision) = accessory_target(&context)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    let clock = worker.clock.clone();
+    let (result,file) = storage(worker.clone(),move|store,_| {
+        crate::accessories::require_current(store,persona,session,revision)?;
+        crate::accessories::sell(&mut store.connection,session,id,clock.sample()?.utc)
+    }).await?;
+    if let Some(file) = file { crate::accessories::images::cleanup_one(&worker,&file,&[]); }
+    notify_accessories(&app,session);
+    let _ = app.emit(crate::events::WALLET_CHANGED,());
+    Ok(result)
+}
+#[tauri::command]
+pub async fn delete_accessory(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String) -> AppResult<crate::models::AccessoryDeleteResult> {
+    authorize(&window)?;
+    let (persona,session,revision) = accessory_target(&context)?;
+    let id = parse_id(&id)?;
+    let worker = runtime.inner().clone();
+    let (result,file) = storage(worker.clone(),move|store,_| {
+        crate::accessories::require_current(store,persona,session,revision)?;
+        crate::accessories::delete(&mut store.connection,session,id)
+    }).await?;
+    if let Some(file) = file { crate::accessories::images::cleanup_one(&worker,&file,&[]); }
+    notify_accessories(&app,session);
+    Ok(result)
+}
+
+
+fn authorize_image_settings(window:&WebviewWindow)->AppResult<()> {
+    authorize(window)?;
+    if window.label()!="settings" {return Err(AppError::new("PERMISSION_DENIED","请在设置窗口管理生图提供商"));}Ok(())
+}
+fn notify_image_config(app:&AppHandle,preview:Option<(String,String)>) {
+    let _=app.emit(crate::events::IMAGE_GENERATION_CONFIG_CHANGED,());
+    if let Some((session,preview))=preview {
+        let _=app.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session,"previewId":preview}));
+    }
+}
+#[tauri::command]
+pub async fn get_image_generation_config(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<crate::image_generation::Config> {
+    authorize(&window)?;storage(runtime.inner().clone(),|store,_|crate::image_generation::get(&store.connection)).await
+}
+#[tauri::command]
+pub async fn save_image_generation_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:Option<String>,expected_revision:u64,input:crate::image_generation::Input)->AppResult<crate::image_generation::Config> {
+    authorize_image_settings(&window)?;
+    let (result,preview)=storage(runtime.inner().clone(),move|store,secrets| {
+        let config=crate::image_generation::save(&mut store.connection,id,expected_revision,input,secrets)?;
+        Ok((config,crate::accessories::craft::configuration_changed(store)))
+    }).await?;notify_image_config(&app,preview);Ok(result)
+}
+#[tauri::command]
+pub async fn select_image_generation_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:Option<String>,expected_revision:u64)->AppResult<crate::image_generation::Config> {
+    authorize_image_settings(&window)?;
+    let (result,preview)=storage(runtime.inner().clone(),move|store,_| {
+        let config=crate::image_generation::select(&mut store.connection,id,expected_revision)?;
+        Ok((config,crate::accessories::craft::configuration_changed(store)))
+    }).await?;notify_image_config(&app,preview);Ok(result)
+}
+#[tauri::command]
+pub async fn set_image_generation_enabled(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,enabled:bool,expected_revision:u64)->AppResult<crate::image_generation::Config> {
+    authorize_image_settings(&window)?;
+    let (result,preview)=storage(runtime.inner().clone(),move|store,_| {
+        let config=crate::image_generation::set_enabled(&mut store.connection,enabled,expected_revision)?;
+        Ok((config,crate::accessories::craft::configuration_changed(store)))
+    }).await?;notify_image_config(&app,preview);Ok(result)
+}
+#[tauri::command]
+pub async fn delete_image_generation_provider(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,expected_revision:u64)->AppResult<crate::image_generation::Config> {
+    authorize_image_settings(&window)?;
+    let (result,preview)=storage(runtime.inner().clone(),move|store,_| {
+        let config=crate::image_generation::delete(&mut store.connection,&id,expected_revision)?;
+        Ok((config,crate::accessories::craft::configuration_changed(store)))
+    }).await?;notify_image_config(&app,preview);Ok(result)
+}
+#[tauri::command]
+pub async fn get_accessory_craft_preview(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,preview_id:String)->AppResult<crate::accessories::craft::Preview> {
+    authorize(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::accessories::craft::get(&worker,&context,&preview_id)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn get_current_accessory_craft_preview(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context)->AppResult<Option<crate::accessories::craft::Preview>> {
+    authorize(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::accessories::craft::current(&worker,&context)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn confirm_accessory_craft(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,preview_id:String)->AppResult<crate::models::Accessory> {
+    authorize(&window)?;let worker=runtime.inner().clone();let session=parse_id(&context.session_id)?;let preview=preview_id.clone();
+    let result=tauri::async_runtime::spawn_blocking(move||crate::accessories::craft::confirm(&worker,&context,&preview_id)).await.map_err(|_|AppError::storage())??;
+    notify_accessories(&app,session);let _=app.emit(crate::events::WALLET_CHANGED,());
+    let _=app.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session.to_string(),"previewId":preview}));Ok(result)
+}
+#[tauri::command]
+pub async fn cancel_accessory_craft(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,preview_id:String)->AppResult<()> {
+    authorize(&window)?;let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::accessories::craft::cancel(&worker,&context,&preview_id)).await.map_err(|_|AppError::storage())?
+}
+
+/// 所有伴手礼操作限定当前会话，前端不能指定任意归属或发放状态。
+fn souvenir_scope(store:&Store,context:&crate::memory::management::Context)->AppResult<i64> {
+    let persona=parse_id(&context.persona_id)?;let session=parse_id(&context.session_id)?;
+    crate::accessories::require_current(store,persona,session,context.context_revision)?;Ok(session)
+}
+#[tauri::command]
+pub async fn list_souvenirs(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::models::Souvenir>> {
+    authorize(&window)?;let before=before_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::list(&store.connection,session,before,limit)}).await
+}
+#[tauri::command]
+pub async fn get_souvenir(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<crate::models::Souvenir> {
+    authorize(&window)?;let id=parse_id(&id)?;
+    storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::get(&store.connection,session,id)}).await
+}
+#[tauri::command]
+pub async fn set_souvenir_favorite(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,favorite:bool)->AppResult<crate::models::Souvenir> {
+    authorize(&window)?;let id=parse_id(&id)?;let session=context.session_id.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::favorite(&store.connection,session,id,favorite)}).await?;
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(result)
+}
+#[tauri::command]
+pub async fn delete_souvenir(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<()> {
+    authorize(&window)?;let id=parse_id(&id)?;let session=context.session_id.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::delete(&store.connection,session,id)}).await?;
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(())
+}
+#[tauri::command]
+pub async fn get_gift_generation_status(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context)->AppResult<crate::souvenirs::generation::Status> {
+    authorize(&window)?;let worker=runtime.travel_gifts.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;worker.status(&store.connection,session)}).await
+}
+#[tauri::command]
+pub async fn retry_gift_generation(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context)->AppResult<()> {
+    authorize(&window)?;let worker=runtime.travel_gifts.clone();let session=context.session_id.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;worker.retry(&store.connection,session)}).await?;
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(())
+}
+
+/// 游记管理只能读取/改动当前会话中的既有记录，不开放AI重新生成或任意插入。
+fn journal_scope(store:&Store,context:&crate::memory::management::Context)->AppResult<i64> {
+    let persona=parse_id(&context.persona_id)?;let session=parse_id(&context.session_id)?;
+    crate::accessories::require_current(store,persona,session,context.context_revision).map_err(|e|if e.code=="CONTEXT_CHANGED" {AppError::new("CONTEXT_CHANGED","当前人设或会话已变化，请重新读取游记")} else {e})?;Ok(session)
+}
+#[tauri::command]
+pub async fn list_travel_journals(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::models::TravelJournalSummary>> {
+    authorize(&window)?;let before=before_id.as_deref().map(parse_id).transpose()?;
+    storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;crate::travel_journals::list(&store.connection,session,before,limit)}).await
+}
+#[tauri::command]
+pub async fn get_travel_journal(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<crate::models::TravelJournal> {
+    authorize(&window)?;let id=parse_id(&id)?;
+    storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;crate::travel_journals::get(&store.connection,session,id)}).await
+}
+#[tauri::command]
+pub async fn update_travel_journal(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,travel_id:String,expected:crate::models::TravelJournalExpected,title:String,content:String)->AppResult<crate::models::TravelJournal> {
+    authorize(&window)?;let id=parse_id(&id)?;let travel=parse_id(&travel_id)?;let session=context.session_id.clone();let clock=runtime.clock.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;crate::travel_journals::update(&mut store.connection,session,travel,id,expected,&title,&content,clock.sample()?.utc)}).await?;
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(result)
+}
+#[tauri::command]
+pub async fn delete_travel_journal(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,travel_id:String)->AppResult<crate::models::TravelJournalDeleted> {
+    authorize(&window)?;let id=parse_id(&id)?;let travel=parse_id(&travel_id)?;let session=context.session_id.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;crate::travel_journals::delete(&mut store.connection,session,travel,id)}).await?;
+    runtime.requests.cancel_key(&format!("travel-journal:{travel}"));
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(result)
+}
+#[tauri::command]
+pub async fn get_journal_generation_status(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context)->AppResult<crate::travel_journals::generation::Status> {
+    authorize(&window)?;let worker=runtime.travel_journals.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;worker.status(&store.connection,session)}).await
+}
+#[tauri::command]
+pub async fn retry_journal_generation(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context)->AppResult<()> {
+    authorize(&window)?;let worker=runtime.travel_journals.clone();let session=context.session_id.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=journal_scope(store,&context)?;worker.retry(&store.connection,session)}).await?;
+    let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(())
+}
+
+/// 母表只读；会话日期管理复用已有可信窗口与当前上下文校验。
+#[tauri::command]
+pub async fn list_festival_catalog(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<crate::festivals::session::CatalogRecord>> {
+    authorize(&window)?;let clock=runtime.clock.clone();
+    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::catalog(&store.connection,today)}).await
+}
+#[tauri::command]
+pub async fn list_session_festivals(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::festivals::session::Record>> {
+    authorize(&window)?;let before=before_id.as_deref().map(parse_id).transpose()?;let clock=runtime.clock.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::list(&store.connection,session,before,limit,today)}).await
+}
+#[tauri::command]
+pub async fn get_session_festival(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<crate::festivals::session::Record> {
+    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::get(&store.connection,session,id,today)}).await
+}
+#[tauri::command]
+pub async fn create_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,input:crate::festivals::session::Input)->AppResult<crate::festivals::session::Record> {
+    authorize(&window)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::create(&mut store.connection,session,input,"user",today,now)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(result)
+}
+#[tauri::command]
+pub async fn update_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,expected:String,input:crate::festivals::session::Input)->AppResult<crate::festivals::session::Record> {
+    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::update(&mut store.connection,session,id,&expected,input,today,now)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(result)
+}
+#[tauri::command]
+pub async fn delete_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,expected:String)->AppResult<()> {
+    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
+    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::delete(&mut store.connection,session,id,&expected,today)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(())
 }

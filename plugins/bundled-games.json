@@ -1,0 +1,9 @@
+{
+  "api_version": "1.0.0",
+  "packages": [
+    "rock-paper-scissors.yanmew-game",
+    "dice.yanmew-game",
+    "star-catcher.yanmew-game",
+    "my-home.yanmew-game"
+  ]
+}

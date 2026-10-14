@@ -35,6 +35,7 @@ export function useChat(context: CurrentContext) {
     let paging = false;
     let mutating = false;
     let loadedPages = 1;
+    let historyGeneration = 0;
     let cancelWanted = false;
     let buffered: ChatReplyEvent[] = [];
     let unlisten: (() => void) | undefined;
@@ -50,34 +51,44 @@ export function useChat(context: CurrentContext) {
       setView(state);
     };
     const save = (round: RoundSnapshot) => {
+      historyGeneration++;
       rows.set(round.userMessage.id, round.userMessage);
       if (round.assistantMessage) rows.set(round.assistantMessage.id, round.assistantMessage);
     };
     const matches = (event: ChatReplyEvent) => event.personaId === context.personaId
       && event.sessionId === context.sessionId && event.contextRevision === context.contextRevision;
     const refreshMessages = async () => {
+      const token = ++historyGeneration;
       const fresh = new Map<string,Message>();
       let cursor:string|null=null;
-      for(let index=0;index<loadedPages;index++) {
-        const page: import("../types").MessagePage=await (cursor ? sessionApi.messages(context,cursor) : sessionApi.messages(context));
-        if(disposed) return;
-        page.items.forEach(item=>fresh.set(item.id,item));
-        cursor=page.nextAfterId;
-        if(!cursor) break;
+      try {
+        for(let index=0;index<loadedPages;index++) {
+          const page: import("../types").MessagePage=await (cursor ? sessionApi.messages(context,cursor) : sessionApi.messages(context));
+          if(disposed || token !== historyGeneration) return null;
+          page.items.forEach(item=>fresh.set(item.id,item));
+          cursor=page.nextAfterId;
+          if(!cursor) break;
+        }
+      } catch (cause) {
+        if (disposed || token !== historyGeneration) return null;
+        throw cause;
       }
-      if (disposed) return;
+      // 消息写入或较新查询使本次快照失效，不能覆盖已编辑/删除的内容。
+      if (disposed || token !== historyGeneration) return null;
       rows.clear();fresh.forEach((item,id)=>rows.set(id,item));
       state.afterId=cursor;
       publish();
+      return token;
     };
     const apply = (event: ChatReplyEvent) => {
       const active = state.active;
       if (ended.has(event.requestId)) return;
       if (active && (event.requestId !== active.requestId || event.roundId !== active.roundId || event.seq <= active.seq)) return;
-      if (!active && (event.type === "text" || event.type === "expression" || event.type === "context_notice")) return;
+      if (!active && (event.type === "text" || event.type === "expression" || event.type === "context_notice" || event.type === "web_activity")) return;
       if (active) state.active = { ...active, seq: event.seq };
       if (event.type === "text" && state.active) state.active.partialContent += event.text;
       else if (event.type === "expression" && state.active) state.active.expression = event.expression;
+      else if (event.type === "web_activity" && state.active) state.active.webActivity = event.phase;
       else if (event.type === "context_notice" && state.active) {
         state.active = { ...state.active, notice: event.message, budget: event.budget };
         state.notice = event.message; state.budget = event.budget;
@@ -91,14 +102,16 @@ export function useChat(context: CurrentContext) {
         state.notice = [active?.notice, event.saved ? interruptedNotice(event.saved) : ""].filter(Boolean).join(" ");
         if(active?.regenerating) state.notice=event.type==="finished" ? "重说回复和记忆已一起保存。" : "重说已停止，原回复和记忆保留。";
         if (!event.saved) state.notice = "回复未能确认保存，请重新加载查看记录。";
+        const generation = historyGeneration + 1;
         void (async () => {
-          await refreshMessages();
+          const token = await refreshMessages();
+          if (token === null) return;
           const lastRound = await chatApi.lastRound(context);
-          if (disposed || state.active || submitting) return;
+          if (disposed || token !== historyGeneration || state.active || submitting || mutating) return;
           state.lastRound = lastRound;
           if (lastRound) save(lastRound);
           publish();
-        })().catch(cause => { if (!disposed) { state.error = errorMessage(cause); publish(); } });
+        })().catch(cause => { if (!disposed && generation === historyGeneration) { state.error = errorMessage(cause); publish(); } });
       }
       publish();
     };
@@ -122,8 +135,8 @@ export function useChat(context: CurrentContext) {
         const active = await chatApi.current(context);
         const completed = !active && previous ? await chatApi.cancel(previous) : null;
         const lastRound = active ? active.round : await chatApi.lastRound(context);
-        await refreshMessages();
-        if (disposed) return;
+        const token = await refreshMessages();
+        if (disposed || token === null || token !== historyGeneration) return;
         state.active = active;
         state.lastRound = lastRound;
         if (lastRound) save(lastRound);
@@ -166,6 +179,7 @@ export function useChat(context: CurrentContext) {
     };
     const submitRequest = async (request: () => Promise<ChatRequestSnapshot>) => {
         if (disposed || !state.ready || submitting || syncing || mutating || paging || state.active) return false;
+        historyGeneration++;
         submitting = true; cancelWanted = false; state.error = ""; state.notice = ""; state.budget = null; publish();
         try {
           const receipt = await request();
@@ -193,12 +207,14 @@ export function useChat(context: CurrentContext) {
       },
       editMessage: async (message,content) => {
         if(disposed || !state.ready || syncing || submitting || mutating || paging || state.active || !content.trim()) return false;
+        historyGeneration++;
         mutating=true;state.error="";publish();
         let saved=false;
         try {
           const result=await chatApi.edit(context,message,content);
           saved=true;
           if(disposed) return true;
+          historyGeneration++;
           rows.set(result.id,result);
           state.lastRound=await chatApi.lastRound(context);
           if(disposed) return true;
@@ -210,6 +226,7 @@ export function useChat(context: CurrentContext) {
       },
       deleteTail: async message => {
         if(disposed || !state.ready || syncing || submitting || mutating || paging || state.afterId) return false;
+        historyGeneration++;
         mutating=true;state.error="";
         const active=state.active;
         if(active) ended.add(active.requestId);
@@ -234,12 +251,13 @@ export function useChat(context: CurrentContext) {
       reload: async () => { if (!unlisten) await connect(); else await synchronize(); },
       more: async () => {
         if (disposed || paging || !state.afterId) return;
+        const token = ++historyGeneration;
         paging = true; state.loading = true; publish();
         try {
           const page = await sessionApi.messages(context, state.afterId);
-          if (disposed) return;
+          if (disposed || token !== historyGeneration) return;
           page.items.forEach(item => rows.set(item.id, item)); state.afterId = page.nextAfterId;loadedPages++;
-        } catch (cause) { if (!disposed) state.error = errorMessage(cause); }
+        } catch (cause) { if (!disposed && token === historyGeneration) state.error = errorMessage(cause); }
         finally { paging = false; state.loading = false; publish(); }
       },
     };

@@ -101,3 +101,5 @@
   outline: 2px solid var(--ym-focus);
   outline-offset: 1px;
 }
+
+.ym-reminder-notification__original { display: block; margin-top: 6px; color: var(--ym-text-secondary); font-size: var(--ym-font-caption); white-space: pre-wrap; overflow-wrap: anywhere; }

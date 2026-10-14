@@ -3,6 +3,7 @@ import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Provider, ProviderInput } from "../../types";
 import ProviderForm from "./ProviderForm";
 import EmbeddingProvidersPanel from "./EmbeddingProvidersPanel";
+import ImageGenerationProvidersPanel from "./ImageGenerationProvidersPanel";
 import "./ProvidersPanel.css";
 
 export default function ProvidersPanel() {
@@ -123,6 +124,8 @@ export default function ProvidersPanel() {
       </li>)}</ul>
     </section>
     <EmbeddingProvidersPanel />
+    <WebSearchProvidersPanel />
+    <ImageGenerationProvidersPanel />
     <dialog ref={dialog} className="ym-provider-dialog" aria-labelledby="provider-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>
       <h2 id="provider-delete-title">{protectedProvider ? "此提供商正在使用" : "删除提供商"}</h2>
       <p>{protectedProvider ? "正在使用的提供商不能删除，请先切换聊天提供商或更改记忆提供商。" : `确定删除“${deleting?.name ?? ""}”的配置和密钥吗？已保存的聊天与记忆不会删除。`}</p>
@@ -132,3 +135,4 @@ export default function ProvidersPanel() {
     </dialog>
   </>;
 }
+import WebSearchProvidersPanel from "./WebSearchProvidersPanel";

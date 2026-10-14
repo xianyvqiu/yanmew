@@ -1,0 +1,13 @@
+.ym-game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; margin-top: 18px; }
+.ym-game-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); background: var(--ym-surface-muted); min-width: 0; overflow-wrap: anywhere; }
+.ym-game-card h3, .ym-game-card p { margin: 0; }
+.ym-game-card .ym-button { margin-top: auto; }
+.ym-game-permissions { display: grid; gap: 12px; margin: 14px 0; }
+.ym-game-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ym-game-data { max-height: 260px; overflow: auto; background: var(--ym-surface-muted); padding: 12px; border-radius: var(--ym-radius-md); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--ym-font-caption); }
+.ym-game-history { display: grid; gap: 10px; padding-left: 22px; overflow-wrap: anywhere; }
+.ym-game-history small { display: block; color: var(--ym-text-secondary); }
+.ym-game-install { display: grid; gap: 12px; }
+.ym-game-check { display: flex; gap: 8px; align-items: center; }
+.ym-game-check input { width: auto; }
+.ym-game-plugin-id { overflow-wrap: anywhere; color: var(--ym-text-secondary); font-size: var(--ym-font-caption); }

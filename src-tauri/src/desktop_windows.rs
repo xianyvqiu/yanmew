@@ -4,7 +4,11 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// 设置窗可能尚未加载；导航请求保留到页面主动读取，不依赖一次性事件送达。
 #[derive(Default)]
-pub struct SettingsNavigation(pub std::sync::Mutex<bool>);
+pub struct SettingsNavigation(pub std::sync::Mutex<Option<SettingsTarget>>);
+
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettingsTarget { Reminders, Accessories }
 
 /// 只接受已实现的主程序页面，不允许前端传 URL、权限或任意窗口标签。
 #[derive(Clone, Copy, Deserialize)]
@@ -13,19 +17,28 @@ pub enum Page {
     Chat,
     Settings,
     Reminders,
+    Accessories,
     Memory,
+    Travel,
+    Mailbox,
+    Letter,
 }
 impl Page {
     fn specification(self) -> (&'static str, &'static str, f64, f64) {
         match self {
+            Self::Travel | Self::Mailbox => ("travel", "出行与邮箱 · 颜喵 YanMew", 800.0, 640.0),
+            Self::Letter => ("letter", "写信 · 颜喵 YanMew", 720.0, 600.0),
             Self::Chat => ("chat", "聊天 · 颜喵 YanMew", 800.0, 640.0),
             Self::Memory => ("memory", "会话记事本 · 颜喵 YanMew", 720.0, 600.0),
-            Self::Settings | Self::Reminders => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
+            Self::Settings | Self::Reminders | Self::Accessories => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
         }
     }
 }
 pub fn is_application_window(label: &str) -> bool {
-    matches!(label, "main" | "chat" | "settings" | "memory")
+    matches!(
+        label,
+        "main" | "chat" | "settings" | "memory" | "travel" | "letter"
+    )
 }
 fn window_error(_: tauri::Error) -> AppError {
     AppError::new("WINDOW_ERROR", "窗口打开失败，请稍后重试")
@@ -69,11 +82,25 @@ pub async fn open(app: AppHandle, page: Page) -> AppResult<()> {
                         .map_err(window_error)?
                 }
             };
+            if matches!(page, Page::Travel | Page::Mailbox) {
+                *owner
+                    .state::<TravelNavigation>()
+                    .inner()
+                    .0
+                    .lock()
+                    .map_err(|_| AppError::storage())? = Some(matches!(page, Page::Mailbox));
+                let _ = window.emit("travel-navigation", ());
+            }
             window.show().map_err(window_error)?;
             window.unminimize().map_err(window_error)?;
             window.set_focus().map_err(window_error)?;
-            if matches!(page, Page::Reminders) {
-                *owner.state::<SettingsNavigation>().inner().0.lock().map_err(|_| AppError::storage())? = true;
+            if matches!(page, Page::Reminders | Page::Accessories) {
+                *owner
+                    .state::<SettingsNavigation>()
+                    .inner()
+                    .0
+                    .lock()
+                    .map_err(|_| AppError::storage())? = Some(if matches!(page, Page::Accessories) { SettingsTarget::Accessories } else { SettingsTarget::Reminders });
                 // 事件仅提示查询；首次加载、重新聚焦均可补查未消费的请求。
                 let _ = window.emit("settings-navigation", ());
             }
@@ -92,7 +119,16 @@ mod tests {
     use super::*;
     #[test]
     fn only_fixed_application_pages_are_authorized() {
-        for page in [Page::Chat, Page::Settings, Page::Reminders, Page::Memory] {
+        for page in [
+            Page::Chat,
+            Page::Settings,
+            Page::Reminders,
+            Page::Accessories,
+            Page::Memory,
+            Page::Travel,
+            Page::Mailbox,
+            Page::Letter,
+        ] {
             assert!(is_application_window(page.specification().0));
         }
         for label in [
@@ -106,4 +142,19 @@ mod tests {
         }
         assert!(serde_json::from_str::<Page>("\"plugin\"").is_err());
     }
+}
+
+/// 请求保留到专属窗口主动消费；不存正文、不进入数据库或备份。
+#[derive(Default)]
+pub struct TravelNavigation(pub std::sync::Mutex<Option<bool>>);
+#[derive(Default)]
+pub struct LetterNavigation(pub std::sync::Mutex<Option<LetterTarget>>);
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LetterTarget {
+    pub persona_id: String,
+    pub session_id: String,
+    pub context_revision: u64,
+    pub travel_id: String,
+    pub reply_to_id: Option<String>,
 }

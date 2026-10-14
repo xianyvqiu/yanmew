@@ -339,6 +339,46 @@ mod tests {
     }
 
     #[test]
+    fn edited_and_deleted_journals_update_tools_and_next_five_title_context() {
+        let (runtime, _, mut handler) = setup();
+        let mut ids = Vec::new();
+        for day in 1..=6 {
+            ids.push(add_journal(&runtime, 1, &format!("历史标题{day}"), "不应自动携带的完整正文", &format!("2026-03-{day:02}T00:00:00Z")));
+        }
+        let titles = || runtime.read(|store, _| {
+            let mut context = crate::chat::BackgroundContext::snapshot(store, &runtime, 1, 1, "人设", "输入", None, None)?;
+            Ok(context.request(vec![], &[])?.0.messages.into_iter().filter(|message| message.content.starts_with("旅行游记标题 ")).map(|message| message.content).collect::<Vec<_>>())
+        }).unwrap();
+        let before = titles();
+        assert_eq!(before.len(), 5);
+        assert!(!before.iter().any(|title| title.contains("历史标题1")));
+        assert!(before.iter().all(|title| !title.contains("不应自动携带的完整正文")));
+        let id = ids[5];
+        runtime.read(|store, _| {
+            let journal = crate::travel_journals::get(&store.connection, 1, id)?;
+            crate::travel_journals::update(&mut store.connection, 1, journal.travel_id.parse().unwrap(), id,
+                crate::models::TravelJournalExpected { title: journal.title, content: journal.content, updated_at: journal.updated_at },
+                "修改后的标题", "修改后的正文", chrono::Utc::now())?;
+            Ok(())
+        }).unwrap();
+        assert!(titles().iter().any(|title| title.contains("修改后的标题")));
+        let found = handler.execute(&call("edited-search", SEARCH_TOOL, json!({"query":"修改后的正文"}))).unwrap();
+        assert_eq!(found["result"]["journals"][0]["title"], "修改后的标题");
+        let opened = handler.execute(&call("edited-open", OPEN_TOOL, json!({"journal_id":id.to_string()}))).unwrap();
+        assert_eq!(opened["result"]["journal"]["content"], "修改后的正文");
+        runtime.read(|store, _| {
+            let journal = crate::travel_journals::get(&store.connection, 1, id)?;
+            crate::travel_journals::delete(&mut store.connection, 1, journal.travel_id.parse().unwrap(), id)?;
+            Ok(())
+        }).unwrap();
+        let after = titles();
+        assert_eq!(after.len(), 5);
+        assert!(!after.iter().any(|title| title.contains("修改后的标题")));
+        assert!(after.iter().any(|title| title.contains("历史标题1")));
+        assert_eq!(handler.execute(&call("deleted-open", OPEN_TOOL, json!({"journal_id":id.to_string()}))).unwrap_err().code, "NOT_FOUND");
+    }
+
+    #[test]
     fn cancellation_context_changes_and_injected_arguments_are_rejected() {
         let (_runtime, request, mut handler) = setup();
         assert!(handler

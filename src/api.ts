@@ -1,4 +1,59 @@
 import { invoke } from "@tauri-apps/api/core";
+/** 应用信息来自运行程序；退出复用已有原生退出事件的保存流程。 */
+export const appApi = {
+  info: () => invoke<{ name: string; version: string }>("get_app_info"),
+  exit: () => invoke<void>("request_app_exit"),
+};
+import type { BackupRequest, BackupArchive, BackupExportOptions, BackupImportPreview, BackupImportConfirm, BackupImported } from "./types";
+/** 六类导出共用流式文件协议；后端系统窗口选择目标，取消返回null。 */
+export const backupApi = {
+  prepareImport: () => invoke<BackupImportPreview | null>("prepare_backup_import"),
+  refreshImport: (previewId: string) => invoke<BackupImportPreview>("refresh_backup_import", { previewId }),
+  cancelImport: (previewId: string) => invoke<void>("cancel_backup_import", { previewId }),
+  confirmImport: (input: BackupImportConfirm) => invoke<BackupImported>("confirm_backup_import", { input }),
+  options: () => invoke<BackupExportOptions>("get_backup_export_options"),
+  export: (input: BackupRequest) => invoke<BackupArchive | null>("export_backup", { input }),
+  exportPluginData: (ids: string[]) => invoke<BackupArchive | null>("export_game_plugin_data", { ids }),
+};
+import type { GamePlugin, GamePluginDetail, GameInstallPreview, GamePermissionChoice, GameRun, GamePluginLedger, PluginJson } from "./types";
+/** 仅设置窗口可调用管理接口；游戏中心与插件管理共用现有宿主。 */
+export const gamePluginsApi = {
+  list: () => invoke<GamePlugin[]>("list_game_plugins"),
+  detail: (id: string) => invoke<GamePluginDetail>("get_game_plugin", { id }),
+  previewInstall: (filename: string, bytesBase64: string) => invoke<GameInstallPreview>("preview_game_plugin_install", { filename, bytesBase64 }),
+  confirmInstall: (token: string, choices: GamePermissionChoice[]) => invoke<GamePlugin>("confirm_game_plugin_install", { token, choices }),
+  cancelInstall: (token: string) => invoke<void>("cancel_game_plugin_install", { token }),
+  enable: (id: string, version: string, enabled: boolean) => invoke<void>("set_game_plugin_enabled", { id, version, enabled }),
+  permission: (id: string, version: string, choice: GamePermissionChoice) => invoke<void>("set_game_plugin_permission", { id, version, choice }),
+  setting: (id: string, version: string, key: string, value: PluginJson) => invoke<void>("save_game_plugin_setting", { id, version, key, value }),
+  uninstall: (id: string, version: string, clearData: boolean) => invoke<void>("uninstall_game_plugin", { id, version, clearData }),
+  clearData: (id: string, version: string) => invoke<void>("clear_game_plugin_data", { id, version }),
+  history: (id: string, before: string | null = null, limit = 30) => invoke<GameRun[]>("list_game_plugin_runs", { id, before, limit }),
+  ledger: (id: string, before: string | null = null, limit = 30) => invoke<GamePluginLedger[]>("list_game_plugin_ledger", { id, before, limit }),
+  open: (id: string) => invoke<string>("open_game_plugin", { id }),
+  listen: (receive: () => void) => listen("game_plugins_changed", receive),
+};
+import type { WebSearchSettings, WebSearchProviderInput } from "./types";
+export const webSearchApi = {
+  get: () => invoke<WebSearchSettings>("get_web_search_settings"),
+  save: (id: string | null, input: WebSearchProviderInput) => invoke<void>("save_web_search_provider", { id, input }),
+  delete: (id: string) => invoke<void>("delete_web_search_provider", { id }),
+  select: (id: string) => invoke<void>("set_active_web_search_provider", { id }),
+  enable: (enabled: boolean) => invoke<void>("set_web_search_enabled", { enabled }),
+  test: (id: string) => invoke<number>("test_web_search_provider", { id }),
+  open: (url: string) => invoke<void>("open_web_source", { url }),
+  listen: (receive: () => void) => listen("configuration_changed", receive),
+};
+import type { Wallet, SessionIntimacy, SignInStatus, DailySignInResult } from "./types";
+export const walletApi = {
+  get: () => invoke<Wallet>("get_wallet"),
+  signInStatus: () => invoke<SignInStatus>("get_sign_in_status"),
+  signIn: () => invoke<DailySignInResult>("daily_sign_in"),
+  listen: (receive: () => void) => listen("wallet_changed", receive),
+  intimacy: (context: CurrentContext) => invoke<SessionIntimacy>("get_session_intimacy", {
+    personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision,
+  }),
+};
 import type { ChatBackgroundInput, ChatBackgroundRecord, ChatBackgroundView } from "./types";
 export const backgroundApi = {
   get: (id: RecordId, contextRevision?: number) => invoke<ChatBackgroundView>("get_chat_background", { id, contextRevision: contextRevision ?? null }),
@@ -77,6 +132,7 @@ export const weatherApi = {
 import type { Reminder, ReminderInput, MissedReminderSummary, ReminderDeliveryState, ReminderOccurrence, ReminderOccurrencePage, ReminderStatus } from "./types";
 
 export const reminderApi = {
+  polish: (id: RecordId, personaId: RecordId, contextRevision: number) => invoke<import("./types").ReminderPresentation | null>("polish_reminder_occurrence", { id, personaId, contextRevision }),
   getOccurrence: (id: string) => invoke<ReminderOccurrence>("get_reminder_occurrence", { id }),
   list: (afterId: string | null = null, limit = 50) => invoke<Reminder[]>("list_reminders", { afterId, limit }),
   create: (input: ReminderInput) => invoke<Reminder>("create_reminder", { input }),
@@ -182,3 +238,89 @@ export function errorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return typeof error === "string" ? error : "操作失败，请重试";
 }
+
+import type { Letter, SendLetterInput, LetterGenerationStatus } from "./types";
+/** 所有信件命令跟随当前上下文；分页按ID倒序，界面在14.4接入。 */
+export const lettersApi = {
+  list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<Letter[]>("list_letters", { ...context, beforeId, limit }),
+  get: (context: CurrentContext, id: RecordId) => invoke<Letter>("get_letter", { ...context, id }),
+  send: (context: CurrentContext, input: SendLetterInput) => invoke<Letter>("send_letter", { ...context, input }),
+  flags: (context: CurrentContext, id: RecordId, flags: { favorite?: boolean; read?: boolean }) => invoke<Letter>("set_letter_flags", { ...context, id, favorite: flags.favorite ?? null, read: flags.read ?? null }),
+  delete: (context: CurrentContext, id: RecordId) => invoke<void>("delete_letter", { ...context, id }),
+  status: (context: CurrentContext) => invoke<LetterGenerationStatus>("get_letter_generation_status", { ...context }),
+  retry: (context: CurrentContext) => invoke<void>("retry_letter_generation", { ...context }),
+  listen: (receive: (event: { sessionId: RecordId }) => void) => listen<{ sessionId: RecordId }>("letters-changed", event => receive(event.payload)),
+};
+
+import type { Travel, TravelGenerationStatus } from "./types";
+/** 当前出行与历史以服务端状态为准；不提交计时或生成标记。 */
+export const travelApi = {
+  current: (context: CurrentContext) => invoke<Travel | null>("get_current_travel", {...context}),
+  list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<Travel[]>("list_travels", {...context,beforeId,limit}),
+  status: (context: CurrentContext) => invoke<TravelGenerationStatus>("get_travel_generation_status", {...context}),
+  retry: (context: CurrentContext) => invoke<void>("retry_travel_generation", {...context}),
+  listen: (receive: (event: {sessionId: RecordId}) => void) => listen<{sessionId: RecordId}>("travel-changed", event => receive(event.payload)),
+};
+
+import type { Accessory, AccessoryImage, AccessoryDeleteResult, AccessorySellResult } from "./types";
+/** 不接收图片路径、售价或会话之外的目标；所有变更都由后端验证。 */
+export const accessoriesApi = {
+  list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<Accessory[]>("list_accessories", { context, beforeId, limit }),
+  image: (context: CurrentContext, id: RecordId) => invoke<AccessoryImage>("get_accessory_image", { context, id }),
+  wear: (context: CurrentContext, id: RecordId) => invoke<Accessory>("wear_accessory", { context, id }),
+  unwear: (context: CurrentContext, id: RecordId) => invoke<Accessory>("unwear_accessory", { context, id }),
+  sell: (context: CurrentContext, id: RecordId) => invoke<AccessorySellResult>("sell_accessory", { context, id }),
+  delete: (context: CurrentContext, id: RecordId) => invoke<AccessoryDeleteResult>("delete_accessory", { context, id }),
+  listen: (receive: (event: { sessionId: RecordId }) => void) => listen<{ sessionId: RecordId }>("accessories-changed", event => receive(event.payload)),
+};
+
+import type { ImageGenerationConfig, ImageGenerationProviderInput, AccessoryCraftPreview } from "./types";
+/** 生图配置检查只在页面完成；此接口没有付费测试调用。 */
+export const imageGenerationApi = {
+  get: () => invoke<ImageGenerationConfig>("get_image_generation_config"),
+  save: (id: RecordId | null, expectedRevision: number, input: ImageGenerationProviderInput) => invoke<ImageGenerationConfig>("save_image_generation_provider", { id, expectedRevision, input }),
+  select: (id: RecordId | null, expectedRevision: number) => invoke<ImageGenerationConfig>("select_image_generation_provider", { id, expectedRevision }),
+  enable: (enabled: boolean, expectedRevision: number) => invoke<ImageGenerationConfig>("set_image_generation_enabled", { enabled, expectedRevision }),
+  delete: (id: RecordId, expectedRevision: number) => invoke<ImageGenerationConfig>("delete_image_generation_provider", { id, expectedRevision }),
+  listen: (receive: () => void) => listen("image-generation-config-changed", receive),
+};
+export const accessoryCraftApi = {
+  current: (context: CurrentContext) => invoke<AccessoryCraftPreview | null>("get_current_accessory_craft_preview", { context }),
+  get: (context: CurrentContext, previewId: string) => invoke<AccessoryCraftPreview>("get_accessory_craft_preview", { context, previewId }),
+  confirm: (context: CurrentContext, previewId: string) => invoke<Accessory>("confirm_accessory_craft", { context, previewId }),
+  cancel: (context: CurrentContext, previewId: string) => invoke<void>("cancel_accessory_craft", { context, previewId }),
+  listen: (receive: (event: { sessionId: RecordId; previewId: string }) => void) => listen<{ sessionId: RecordId; previewId: string }>("accessory-craft-preview-changed", event => receive(event.payload)),
+};
+
+import type { Souvenir, GiftGenerationStatus } from "./types";
+export const souvenirsApi = {
+  list: (context:CurrentContext,beforeId:RecordId|null=null,limit=30) => invoke<Souvenir[]>("list_souvenirs",{context,beforeId,limit}),
+  get: (context:CurrentContext,id:RecordId) => invoke<Souvenir>("get_souvenir",{context,id}),
+  favorite: (context:CurrentContext,id:RecordId,favorite:boolean) => invoke<Souvenir>("set_souvenir_favorite",{context,id,favorite}),
+  delete: (context:CurrentContext,id:RecordId) => invoke<void>("delete_souvenir",{context,id}),
+  status: (context:CurrentContext) => invoke<GiftGenerationStatus>("get_gift_generation_status",{context}),
+  retry: (context:CurrentContext) => invoke<void>("retry_gift_generation",{context}),
+};
+
+import type { TravelJournal, TravelJournalSummary, TravelJournalExpected, TravelJournalDeleted, JournalGenerationStatus } from "./types";
+/** 列表无正文，详情单独读取；编辑用原快照，删除不重置已生成状态。 */
+export const travelJournalsApi = {
+  list: (context:CurrentContext,beforeId:RecordId|null=null,limit=30) => invoke<TravelJournalSummary[]>("list_travel_journals",{context,beforeId,limit}),
+  get: (context:CurrentContext,id:RecordId) => invoke<TravelJournal>("get_travel_journal",{context,id}),
+  update: (context:CurrentContext,id:RecordId,travelId:RecordId,expected:TravelJournalExpected,title:string,content:string) => invoke<TravelJournal>("update_travel_journal",{context,id,travelId,expected,title,content}),
+  delete: (context:CurrentContext,id:RecordId,travelId:RecordId) => invoke<TravelJournalDeleted>("delete_travel_journal",{context,id,travelId}),
+  status: (context:CurrentContext) => invoke<JournalGenerationStatus>("get_journal_generation_status",{context}),
+  retry: (context:CurrentContext) => invoke<void>("retry_journal_generation",{context}),
+};
+
+import type { FestivalCatalogRecord, SessionFestivalInput, SessionFestivalRecord } from "./types";
+/** 母表只读，子表修改始终携带当前会话和旧记录token。 */
+export const festivalsApi = {
+  listen: (receive: (event: { sessionId: RecordId | null }) => void) => listen<{ sessionId: RecordId | null }>("festivals-changed", event => receive(event.payload)),
+  catalog: () => invoke<FestivalCatalogRecord[]>("list_festival_catalog"),
+  list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<SessionFestivalRecord[]>("list_session_festivals", { context, beforeId, limit }),
+  get: (context: CurrentContext, id: RecordId) => invoke<SessionFestivalRecord>("get_session_festival", { context, id }),
+  create: (context: CurrentContext, input: SessionFestivalInput) => invoke<SessionFestivalRecord>("create_session_festival", { context, input }),
+  update: (context: CurrentContext, id: RecordId, expected: string, input: SessionFestivalInput) => invoke<SessionFestivalRecord>("update_session_festival", { context, id, expected, input }),
+  delete: (context: CurrentContext, id: RecordId, expected: string) => invoke<void>("delete_session_festival", { context, id, expected }),
+};

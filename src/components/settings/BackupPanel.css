@@ -1,0 +1,13 @@
+.ym-backup-panel form { display: grid; gap: 12px; min-width: 0; }
+.ym-backup-panel .ym-field { margin: 0; }
+.ym-backup-options { display: grid; gap: 8px; max-height: 18rem; overflow-y: auto; min-width: 0; }
+.ym-backup-option { display: flex; align-items: start; gap: 8px; min-width: 0; color: var(--ym-text); }
+.ym-backup-panel input[type="checkbox"] { width: 1rem; min-width: 1rem; height: 1rem; flex: none; padding: 0; margin: 3px 0 0; accent-color: var(--ym-focus); }
+.ym-backup-option span, .ym-backup-panel > p { min-width: 0; overflow-wrap: anywhere; }
+.ym-backup-panel fieldset { border: 1px solid var(--ym-border); border-radius: var(--ym-radius-md); padding: 12px; }
+.ym-backup-panel form > .ym-button { justify-self: start; }
+
+.ym-backup-import-preview { display: grid; gap: 12px; margin-top: 16px; min-width: 0; }
+.ym-backup-binding + .ym-backup-binding { margin-top: 12px; }
+.ym-backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ym-backup-panel li { overflow-wrap: anywhere; }

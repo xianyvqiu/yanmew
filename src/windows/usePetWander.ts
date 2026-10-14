@@ -35,6 +35,15 @@ export function usePetWander(root: RefObject<HTMLDivElement>, face: RefObject<HT
       let left = petRect.left - canvasRect.left - p.x;
       let top = petRect.top - canvasRect.top - p.y;
       let right = left + petRect.width; let bottom = top + petRect.height;
+      // 饰品为绝对定位，不扩大本体排版；活动范围必须包含实际头顶边界。
+      const accessory = canvas.querySelector<HTMLElement>(".pet-accessory-layer");
+      if (accessory) {
+        const r = accessory.getBoundingClientRect();
+        left = Math.min(left, r.left - canvasRect.left - p.x);
+        top = Math.min(top, r.top - canvasRect.top - p.y);
+        right = Math.max(right, r.right - canvasRect.left - p.x);
+        bottom = Math.max(bottom, r.bottom - canvasRect.top - p.y);
+      }
       const bubble = canvas.querySelector<HTMLElement>(".pet-reminder-slot");
       if (bubble?.childElementCount) {
         const r = bubble.getBoundingClientRect();

@@ -1,0 +1,8 @@
+.ym-pet-status { display: grid; gap: 16px; min-width: 0; }
+.ym-pet-status .ym-page-heading { margin-bottom: 14px; }
+.ym-pet-status-value { margin: 10px 0; color: var(--ym-accent); font-size: clamp(24px, 4vw, 34px); font-weight: 650; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.ym-pet-status-value span { color: var(--ym-text-secondary); font-size: 14px; font-weight: 400; }
+.ym-pet-status progress { width: 100%; height: 8px; accent-color: var(--ym-accent); }
+.ym-pet-status-notice { padding: 10px 14px; border-radius: var(--ym-radius-md); background: var(--ym-success-soft); color: var(--ym-text); }
+.ym-pet-sign-in .ym-page-error { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 420px) { .ym-pet-sign-in .ym-page-heading { align-items: stretch; } .ym-pet-sign-in .ym-page-heading > .ym-button { width: 100%; } }
