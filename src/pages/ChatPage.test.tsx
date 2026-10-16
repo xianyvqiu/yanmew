@@ -1,15 +1,24 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderReact, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import type { ChatReplyEvent, ChatRequestSnapshot, Message, MessagePage, Persona, RoundSnapshot, Session, Travel } from "../types";
 import ChatPage from "./ChatPage";
+
+function render(ui: React.ReactElement) { return renderReact(ui); }
+function openSettings() { fireEvent.click(screen.getByRole("button", { name: "会话设置" })); }
+function openCurrentSessionDeletion() {
+  const current = screen.getByRole("navigation", { name: "会话列表" }).querySelector('button[aria-current="page"]');
+  if (!current) throw new Error("缺少当前会话");
+  fireEvent.contextMenu(current);
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除会话" }));
+}
 
 const api = vi.hoisted(() => ({
   create: vi.fn(),
   select: vi.fn(),
   rename: vi.fn(),
   delete: vi.fn(),
-  setUserProfile: vi.fn(),
+  setUserProfile: vi.fn(), setPinned: vi.fn(),
   messages: vi.fn(),
   current: vi.fn(), lastRound: vi.fn(), continue: vi.fn(), listen: vi.fn(), submit: vi.fn(), cancel: vi.fn(),
   edit: vi.fn(), deleteTail: vi.fn(), regenerate: vi.fn(), listenMessages: vi.fn(),
@@ -24,7 +33,7 @@ vi.mock("../api", () => ({
 }));
 
 const travelState = vi.hoisted(() => ({current:null as Travel | null, loading:false, error:"", refresh:vi.fn()}));
-const navigation = vi.hoisted(() => ({open:vi.fn(),openLetter:vi.fn()}));
+const navigation = vi.hoisted(() => ({open:vi.fn(),openLetter:vi.fn(),openSettingsDetail:vi.fn()}));
 vi.mock("../hooks/useTravel", () => ({useTravel:()=>travelState}));
 vi.mock("../platform/navigation", () => ({navigation}));
 
@@ -38,7 +47,7 @@ const persona: Persona = {
 const firstSession: Session = {
   id: "session-1", personaId: persona.id, userProfileId: null, title: "第一段对话",
   memoryRevision: 0, intimacy: 0, createdAt: "2026-09-28T08:00:00Z",
-  updatedAt: "2026-09-28T08:00:00Z", isCurrent: true,
+  updatedAt: "2026-09-28T08:00:00Z", isCurrent: true, isPinned: false,
 };
 
 const secondSession: Session = { ...firstSession, id: "session-2", title: "第二段对话", isCurrent: false };
@@ -66,6 +75,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  navigation.openSettingsDetail.mockReset().mockResolvedValue(undefined);
   travelState.current=null; travelState.loading=false; travelState.error="";
   navigation.open.mockReset().mockResolvedValue(undefined); navigation.openLetter.mockReset().mockResolvedValue(undefined);
 
@@ -84,7 +94,7 @@ beforeEach(() => {
   api.select.mockReset();
   api.rename.mockReset();
   api.delete.mockReset();
-  api.setUserProfile.mockReset();
+  api.setUserProfile.mockReset(); api.setPinned.mockReset();
   api.messages.mockReset().mockResolvedValue({ items: [], nextAfterId: null } satisfies MessagePage);
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
@@ -93,6 +103,22 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("用户设定卡片可打开详情并绑定，绑定失败保留弹窗供重试", async () => {
+    const current=snapshot("session-1"), refresh=vi.fn();
+    current.userProfiles=[{id:"7",name:"日常",content:"喜欢猫咪",createdAt:"2026-10-15",updatedAt:"2026-10-15"}];
+    api.setUserProfile.mockRejectedValueOnce(new Error("保存失败")).mockResolvedValueOnce({...firstSession,userProfileId:"7"});
+    render(<ChatPage snapshot={current} onRefresh={refresh} />);
+    await waitFor(() => expect(screen.getByRole("button",{name:"绑定用户设定"})).toHaveProperty("disabled",false));
+    fireEvent.click(screen.getByRole("button",{name:"绑定用户设定"}));
+    fireEvent.click(screen.getByRole("button",{name:"查看用户设定详情：日常"}));
+    expect(navigation.openSettingsDetail).toHaveBeenCalledWith("userProfile","7");
+    expect(api.setUserProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"绑定 日常"}));
+    await screen.findByText("保存失败");
+    fireEvent.click(screen.getByRole("button",{name:"绑定 日常"}));
+    await waitFor(() => expect(screen.queryByRole("dialog",{name:"绑定用户设定"})).toBeNull());
+    expect(api.setUserProfile).toHaveBeenCalledWith(current.context,"session-1","7"); expect(refresh).toHaveBeenCalledOnce();
+  });
   it("回复进行中可以保存背景，不中断回复或重建聊天页", async () => {
     const round = completedRound();
     api.current.mockResolvedValue({ requestId: "1", personaId: persona.id, sessionId: "session-1", contextRevision: 1,
@@ -100,12 +126,13 @@ describe("ChatPage", () => {
       round: { ...round, round: { ...round.round, status: "pending" }, assistantMessage: null } } satisfies ChatRequestSnapshot);
     const refresh = vi.fn();
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={refresh} />);
+    openSettings();
     await screen.findByText("正在回复");
-    fireEvent.click(screen.getByRole("button", { name: "背景" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "保存背景" }).closest("fieldset")?.disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "聊天外观" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存外观" }).closest("fieldset")?.disabled).toBe(false));
     fireEvent.change(screen.getByLabelText("背景透明度：0%"), { target: { value: "60" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存背景" }));
-    await screen.findByText("聊天背景已保存");
+    fireEvent.click(screen.getByRole("button", { name: "保存外观" }));
+    await screen.findByText("聊天外观已保存");
     expect(api.backgroundSave).toHaveBeenCalledWith(persona.id, expect.objectContaining({ opacity: 60 }), 1);
     expect(api.cancel).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
@@ -121,6 +148,7 @@ describe("ChatPage", () => {
     api.setUserProfile.mockRejectedValueOnce(new Error("保存失败，原绑定保留")).mockResolvedValueOnce({ ...firstSession, userProfileId: "7" });
     const refresh = vi.fn();
     render(<ChatPage snapshot={current} onRefresh={refresh} />);
+    openSettings();
     await screen.findByText("正在回复");
     fireEvent.change(screen.getByLabelText("当前会话的用户设定"), { target: { value: "7" } });
     await waitFor(() => expect(screen.getByRole("button", { name: "修改绑定" })).toHaveProperty("disabled", false));
@@ -138,6 +166,7 @@ describe("ChatPage", () => {
     const current = snapshot("session-1");
     current.userProfiles = [{ id: "7", name: "背景", content: "内容", createdAt: "2026-10-06", updatedAt: "2026-10-06" }];
     const view = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
+    openSettings();
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeTruthy());
     fireEvent.change(screen.getByLabelText("当前会话的用户设定"), { target: { value: "7" } });
     const next = { ...current, context: { ...current.context, sessionId: "session-2", contextRevision: 2 } };
@@ -146,7 +175,7 @@ describe("ChatPage", () => {
     expect(api.setUserProfile).not.toHaveBeenCalled();
     view.rerender(<ChatPage snapshot={{ ...next, sessions: [firstSession, { ...secondSession, userProfileId: "7" }] }} onRefresh={vi.fn()} />);
     await waitFor(() => expect(screen.getByLabelText("当前会话的用户设定")).toHaveProperty("value", "7"));
-    expect(screen.getByRole("option", { name: "第二段对话 · 用户设定：背景" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "第二段对话 · 用户设定：背景" })).toBeTruthy();
   });
 
   it("新会话可选择全局设定，列表展示绑定名称且设定删除后恢复未绑定", async () => {
@@ -156,14 +185,17 @@ describe("ChatPage", () => {
     const refresh = vi.fn();
     api.create.mockResolvedValue({ ...firstSession, id: "new-session", userProfileId: "7" });
     const view = render(<ChatPage snapshot={current} onRefresh={refresh} />);
+    openSettings();
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeTruthy());
-    expect(screen.getByRole("option", { name: "第一段对话 · 用户设定：我的背景" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "第一段对话 · 用户设定：我的背景" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("新会话的用户设定"), { target: { value: "7" } });
+    if (screen.queryByRole("dialog", { name: "会话设置" })) fireEvent.click(screen.getByRole("button", { name: "关闭会话设置" }));
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(current.context, "7"));
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
     view.rerender(<ChatPage snapshot={{ ...current, userProfiles: [], sessions: [firstSession, secondSession] }} onRefresh={refresh} />);
-    expect(screen.getByRole("option", { name: "第一段对话 · 用户设定：未绑定" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "第一段对话 · 用户设定：未绑定" })).toBeTruthy();
+    openSettings();
     await waitFor(() => expect(screen.getByLabelText("新会话的用户设定")).toHaveProperty("value", ""));
   });
 
@@ -337,6 +369,7 @@ describe("ChatPage", () => {
   it("自动标题刷新不覆盖未保存名称，保存失败后仍保留草稿", async () => {
     const current = snapshot("session-1");
     const { rerender } = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
+    openSettings();
     await waitFor(() => expect(screen.getByLabelText("聊天消息")).toHaveProperty("disabled", false));
     const input = screen.getByLabelText("会话名称");
     fireEvent.change(input, { target: { value: "我的名称草稿" } });
@@ -352,6 +385,7 @@ describe("ChatPage", () => {
   it("未编辑时同步自动标题，保存名称后允许继续同步权威名称", async () => {
     const current = snapshot("session-1");
     const { rerender } = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
+    openSettings();
     await waitFor(() => expect(screen.getByLabelText("聊天消息")).toHaveProperty("disabled", false));
     const updated = { ...current, sessions: current.sessions.map(item => item.id === "session-1" ? { ...item, title: "AI 自动标题" } : item) };
     rerender(<ChatPage snapshot={updated} onRefresh={vi.fn()} />);
@@ -367,7 +401,7 @@ describe("ChatPage", () => {
   it("删除会话确认说明级联与保留范围，取消不调用删除接口", async () => {
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole("textbox", { name: "聊天消息" })).toHaveProperty("disabled", false));
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     const modal = within(screen.getByRole("dialog", { name: "删除会话？" }));
     expect(modal.getByText(/第一段对话.*此操作不可恢复/)).toBeTruthy();
     expect(modal.getByText(/聊天回合与消息、短期和长期记忆及来源、记事本、出行与旅行游记、节日、饰品、信件和伴手礼/)).toBeTruthy();
@@ -385,7 +419,7 @@ describe("ChatPage", () => {
     api.delete.mockReturnValue(pending.promise);
     const page = render(<ChatPage snapshot={current} onRefresh={onRefresh} />);
     await waitFor(() => expect(screen.getByRole("textbox", { name: "聊天消息" })).toHaveProperty("disabled", false));
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     expect(api.delete).toHaveBeenCalledWith(current.context, "session-1");
     expect(onRefresh).not.toHaveBeenCalled();
@@ -393,7 +427,7 @@ describe("ChatPage", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
     await act(async () => { page.rerender(<ChatPage snapshot={snapshot(currentSessionId, 8)} onRefresh={onRefresh} />); });
-    expect(screen.getByLabelText("当前会话")).toHaveProperty("value", currentSessionId ?? "");
+    if (currentSessionId) expect(screen.getByRole("button", { name: "第二段对话 · 用户设定：未绑定" }).getAttribute("aria-current")).toBe("page");
     if (!currentSessionId) {
       expect(screen.queryByRole("button", { name: "删除会话" })).toBeNull();
       expect(screen.getByText(/创建一个会话/)).toBeTruthy();
@@ -405,7 +439,7 @@ describe("ChatPage", () => {
     api.delete.mockRejectedValue(new Error("会话删除失败，请重试"));
     const onRefresh = vi.fn();
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={onRefresh} />);
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     await screen.findByText("会话删除失败，请重试");
     const modal = within(screen.getByRole("dialog", { name: "删除会话？" }));
@@ -420,11 +454,11 @@ describe("ChatPage", () => {
     const pending = deferred<{ currentSessionId: string | null; contextRevision: number }>();
     api.delete.mockReturnValue(pending.promise);
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.delete).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     const modal = screen.getByRole("dialog");
     const confirm = within(modal).getByRole("button", { name: "删除中…" });
@@ -443,7 +477,7 @@ describe("ChatPage", () => {
     const current = snapshot("session-1");
     const page = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
     await waitFor(() => expect(screen.getByRole("textbox", { name: "聊天消息" })).toHaveProperty("disabled", false));
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     const next = snapshot(changed === "session" ? "session-2" : "session-1", changed === "revision" ? 2 : 1);
     if (changed === "persona") next.context.personaId = "persona-2";
     await act(async () => { page.rerender(<ChatPage snapshot={next} onRefresh={vi.fn()} />); });
@@ -464,7 +498,7 @@ describe("ChatPage", () => {
     api.delete.mockResolvedValue({ currentSessionId: null, contextRevision: 2 });
     render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
     await screen.findByRole("button", { name: "暂停回复" });
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     expect(api.cancel).toHaveBeenCalledTimes(1);
     expect(api.delete).not.toHaveBeenCalled();
@@ -486,7 +520,7 @@ describe("ChatPage", () => {
     api.cancel.mockReturnValue(cancelling.promise);
     const page = render(<ChatPage snapshot={current} onRefresh={onRefresh} />);
     await screen.findByRole("button", { name: "暂停回复" });
-    fireEvent.click(screen.getByRole("button", { name: "删除会话" }));
+    openCurrentSessionDeletion();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     api.current.mockResolvedValue(null);
     page.rerender(<ChatPage snapshot={snapshot("session-2", 2)} onRefresh={onRefresh} />);
@@ -589,6 +623,7 @@ describe("ChatPage", () => {
     api.create.mockReturnValue(pending.promise);
     render(<ChatPage snapshot={current} onRefresh={onRefresh} />);
 
+    if (screen.queryByRole("dialog", { name: "会话设置" })) fireEvent.click(screen.getByRole("button", { name: "关闭会话设置" }));
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     expect(api.create).toHaveBeenCalledWith(current.context, null);
     expect(onRefresh).not.toHaveBeenCalled();
@@ -603,7 +638,7 @@ describe("ChatPage", () => {
     api.select.mockResolvedValue({ ...current.context, sessionId: "session-2", contextRevision: 8 });
     render(<ChatPage snapshot={current} onRefresh={onRefresh} />);
 
-    fireEvent.change(screen.getByLabelText("当前会话"), { target: { value: "session-2" } });
+    fireEvent.click(screen.getByRole("button", { name: "第二段对话 · 用户设定：未绑定" }));
     expect(api.select).toHaveBeenCalledWith(current.context, "session-2");
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
   });
@@ -644,6 +679,7 @@ describe("ChatPage", () => {
     api.create.mockReturnValue(oldCreate.promise);
 
     const oldPage = render(<ChatPage snapshot={oldSnapshot} onRefresh={oldRefresh} />);
+    if (screen.queryByRole("dialog", { name: "会话设置" })) fireEvent.click(screen.getByRole("button", { name: "关闭会话设置" }));
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     oldPage.unmount();
     render(<ChatPage snapshot={newSnapshot} onRefresh={vi.fn()} />);
@@ -667,4 +703,73 @@ it("出门时禁止普通聊天并按当前出行打开写信", async () => {
   fireEvent.click(screen.getByRole("button",{name:"写信"}));
   await waitFor(()=>expect(navigation.openLetter).toHaveBeenCalledWith(snapshot("session-1").context,"3"));
   expect(api.submit).not.toHaveBeenCalled();
+});
+
+it("聊天详情使用会话侧栏，管理表单通过弹窗显示",async()=>{
+  renderReact(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()}/>);
+  expect(screen.queryByRole("dialog",{name:"会话设置"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"保存名称"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"删除会话"})).toBeNull();
+  expect(screen.queryByRole("combobox",{name:"当前会话"})).toBeNull();
+  expect(screen.getByRole("navigation",{name:"会话列表"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"会话设置"}));
+  expect(screen.getByRole("button",{name:"保存名称"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:"删除会话"})).toBeTruthy();
+});
+
+it("侧栏可收起展开，底部入口打开原设置与记事本窗口",async()=>{
+  render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()}/>);
+  await waitFor(()=>expect(screen.getByRole("textbox",{name:"聊天消息"})).toHaveProperty("disabled",false));
+  fireEvent.click(screen.getByRole("button",{name:"收起会话侧栏"}));
+  expect(screen.queryByRole("navigation",{name:"会话列表"})).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"展开会话侧栏"}));
+  expect(screen.getByRole("navigation",{name:"会话列表"})).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"设置"}));
+  await waitFor(()=>expect(navigation.open).toHaveBeenCalledWith("settings"));
+  await waitFor(()=>expect(screen.getByRole("button",{name:"查看记事本"})).toHaveProperty("disabled",false));
+  fireEvent.click(screen.getByRole("button",{name:"查看记事本"}));
+  await waitFor(()=>expect(navigation.open).toHaveBeenCalledWith("memory"));
+});
+
+it("右键重命名和置顶使用点中的非当前会话，不切换或中断回复",async()=>{
+  const current=snapshot("session-1"), refresh=vi.fn();
+  api.rename.mockRejectedValueOnce(new Error("名称保存失败")).mockResolvedValueOnce({...secondSession,title:"新的名称"});
+  api.setPinned.mockResolvedValue({...secondSession,isPinned:true});
+  const page=render(<ChatPage snapshot={current} onRefresh={refresh}/>);
+  const other=screen.getByRole("button",{name:"第二段对话 · 用户设定：未绑定"});
+  fireEvent.contextMenu(other);
+  fireEvent.click(screen.getByRole("menuitem",{name:"重命名"}));
+  fireEvent.change(screen.getByLabelText("新会话名称"),{target:{value:"新的名称"}});
+  fireEvent.click(screen.getByRole("button",{name:"保存名称"}));
+  await screen.findByText("名称保存失败");
+  expect(screen.getByLabelText("新会话名称")).toHaveProperty("value","新的名称");
+  fireEvent.click(screen.getByRole("button",{name:"保存名称"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog",{name:"重命名会话"})).toBeNull());
+  expect(api.rename).toHaveBeenLastCalledWith(current.context,"session-2","新的名称");
+  fireEvent.contextMenu(other);
+  fireEvent.click(screen.getByRole("menuitem",{name:"置顶"}));
+  await waitFor(()=>expect(api.setPinned).toHaveBeenCalledWith(current.context,"session-2",true));
+  await waitFor(()=>expect(refresh).toHaveBeenCalledTimes(2));
+  page.rerender(<ChatPage snapshot={{...current,sessions:[{...secondSession,isPinned:true},firstSession]}} onRefresh={refresh}/>);
+  expect(within(screen.getByRole("region",{name:"已置顶"})).getByRole("button",{name:"第二段对话 · 用户设定：未绑定"})).toBeTruthy();
+  fireEvent.contextMenu(screen.getByRole("button",{name:"第二段对话 · 用户设定：未绑定"}));
+  fireEvent.click(screen.getByRole("menuitem",{name:"取消置顶"}));
+  await waitFor(()=>expect(api.setPinned).toHaveBeenLastCalledWith(current.context,"session-2",false));
+  expect(api.select).not.toHaveBeenCalled(); expect(api.cancel).not.toHaveBeenCalled();
+});
+
+it("右键删除其他会话不取消当前正在生成的回复",async()=>{
+  const current=snapshot("session-1"), refresh=vi.fn();
+  const round:RoundSnapshot={round:{id:"10",sessionId:"session-1",status:"pending",stopReason:null,createdAt:"2026-10-15",completedAt:null},userMessage:{...message("20","session-1","问题"),roundId:"10"},assistantMessage:null};
+  api.current.mockResolvedValue({...current.context,sessionId:"session-1",requestId:"request-1",roundId:"10",seq:0,partialContent:"正在回答",expression:null,round} satisfies ChatRequestSnapshot);
+  api.delete.mockResolvedValue({currentSessionId:"session-1",contextRevision:1});
+  render(<ChatPage snapshot={current} onRefresh={refresh}/>);
+  await screen.findByRole("button",{name:"暂停回复"});
+  fireEvent.contextMenu(screen.getByRole("button",{name:"第二段对话 · 用户设定：未绑定"}));
+  fireEvent.click(screen.getByRole("menuitem",{name:"删除会话"}));
+  expect(screen.getByText(/当前聊天和记忆任务保持不变/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"确认删除"}));
+  await waitFor(()=>expect(api.delete).toHaveBeenCalledWith(current.context,"session-2"));
+  await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());
+  expect(api.cancel).not.toHaveBeenCalled(); expect(api.select).not.toHaveBeenCalled();
 });

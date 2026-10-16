@@ -5,7 +5,7 @@ fn input(key:SecretUpdate)->Input {Input {name:"图片服务".into(),protocol:"o
 #[test]
 fn defaults_keys_are_isolated_encrypted_and_not_in_public_config() {
     let mut c=crate::db::test_database();let original=get(&c).unwrap();assert!(!original.enabled);assert!(original.providers.is_empty());assert!(snapshot(&c,&Protector).unwrap().is_none());
-    c.execute("INSERT INTO providers(name,model,api_key_encrypted,is_active) VALUES('聊天','model','chat-key',1)",[]).unwrap();
+    c.execute_batch("INSERT INTO providers(name,api_key_encrypted) VALUES('聊天','chat-key'); INSERT INTO provider_models(provider_id,purpose,model) VALUES(1,'chat','model'); INSERT INTO provider_roles(purpose,provider_id) VALUES('chat',1);").unwrap();
     let config=save(&mut c,None,0,input(SecretUpdate::Set {value:"private-image-key".into()}),&Protector).unwrap();
     assert_eq!(config.providers[0].provider.base_url,"https://images.example/v1");assert!(config.providers[0].has_api_key);
     let value=serde_json::to_string(&config).unwrap();assert!(!value.contains("private-image-key"));assert!(!value.contains("encrypted:"));assert!(!value.contains("chat-key"));

@@ -36,7 +36,8 @@ fn unsafe_path() -> AppError {
 }
 
 /// PNG/WebP解码前限制边长、分配和输入体积；显式拒绝动画，不能只看扩展名。
-fn decode(bytes: &[u8]) -> AppResult<RgbaImage> {
+pub(crate) fn decode(bytes: &[u8]) -> AppResult<RgbaImage> { decode_transparent(bytes,true) }
+pub(crate) fn decode_transparent(bytes:&[u8],require_border:bool)->AppResult<RgbaImage> {
     if bytes.is_empty() || bytes.len() > MAX_BYTES {
         return Err(invalid());
     }
@@ -79,7 +80,7 @@ fn decode(bytes: &[u8]) -> AppResult<RgbaImage> {
         .all(|x| rgba.get_pixel(x, 0)[3] == 0 && rgba.get_pixel(x, height - 1)[3] == 0)
         && (0..height)
             .all(|y| rgba.get_pixel(0, y)[3] == 0 && rgba.get_pixel(width - 1, y)[3] == 0);
-    if !border_clear || !rgba.pixels().any(|pixel| pixel[3] > 0) {
+    if (require_border && !border_clear) || !rgba.pixels().any(|pixel| pixel[3] > 0) || !rgba.pixels().any(|pixel| pixel[3] == 0) {
         return Err(invalid());
     }
     Ok(rgba)
@@ -326,7 +327,7 @@ pub(crate) fn cleanup_one(runtime: &Runtime, relative: &str, protected: &[String
             return Ok(());
         }
         let used: bool = store.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1)",
+            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
             [relative],
             |row| row.get(0),
         )?;

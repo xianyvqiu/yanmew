@@ -73,7 +73,14 @@ pub(crate) async fn run_regenerated(
             Ok(())
         }).await?;
         if choice.finish!=Finish::Stop {return Err(AppError::new("REGENERATION_INCOMPLETE","重说未完整结束，原回复和记忆已保留"));}
-        let replacement=memories::generate(&runtime,&snapshot,&prepared.lease.cancel,&snapshot.round.user_message.content,&choice.content).await?;
+        let description=prepared.image_description.lock().map_err(|_|AppError::storage())?.clone();
+        let user=&snapshot.round.user_message;
+        let memory_input=if let Some(description)=description.as_deref(){
+            format!("{}\n图片理解资料（模型生成，可能不准确）：\n{description}",user.content)
+        }else if !user.images.is_empty(){
+            format!("{}\n[用户在这条消息附了{}张图片；图片内容参考本轮AI回复，不臆测尚未看清的事实]",user.content,user.images.len())
+        }else{user.content.clone()};
+        let replacement=memories::generate(&runtime,&snapshot,&prepared.lease.cancel,&memory_input,&choice.content).await?;
         runtime.read(|store,_| {
             runtime.jobs_cancel.check()?;
             prepared.lease.require_scope(&runtime.requests,&format!("chat:{session}"),persona)?;
@@ -82,6 +89,9 @@ pub(crate) async fn run_regenerated(
             let stamp=runtime.clock.sample()?.utc.to_rfc3339_opts(chrono::SecondsFormat::Millis,true);
             let tx=store.connection.transaction()?;
             memories::apply(&tx,&snapshot,&replacement,&stamp)?;
+            if !user.images.is_empty(){
+                tx.execute("UPDATE message_images SET caption=?1 WHERE message_id=?2",params![description,crate::error::parse_id(&user.id)?])?;
+            }
             let assistant=snapshot.round.assistant_message.as_ref().ok_or_else(AppError::storage)?;
             tx.execute("UPDATE messages SET content=?1,expression=?2 WHERE id=?3 AND session_id=?4",params![choice.content,active.expression,crate::error::parse_id(&assistant.id)?,session])?;
             tx.execute("UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",params![stamp,session])?;

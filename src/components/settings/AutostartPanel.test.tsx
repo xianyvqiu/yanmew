@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AutostartStatus } from "../../types";
 import AutostartPanel from "./AutostartPanel";
 import GeneralPanel from "./GeneralPanel";
+vi.mock("./ReminderEmailPanel", () => ({ default: () => null }));
 vi.mock("./BackupPanel", () => ({ default: () => null }));
 
 vi.mock("./AppInfoPanel", () => ({ default: () => null }));

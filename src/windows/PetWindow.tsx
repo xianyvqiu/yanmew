@@ -4,9 +4,12 @@ import { configurationApi, errorMessage, petApi, travelApi } from "../api";
 import { usePetWindow } from "./usePetWindow";
 import { usePetAppearance } from "./usePetAppearance";
 import { usePetActivity } from "./usePetActivity";
+import { usePetChat } from "./usePetChat";
+import { PetChatBubble, PetChatInput } from "../components/PetChat";
 import { usePetMemoryErrors } from "./usePetMemoryErrors";
 import { usePetWander } from "./usePetWander";
 import { navigation, type ApplicationPage } from "../platform/navigation";
+import PetArtworkDisplay from "../components/PetArtworkDisplay";
 import AccessoryLayer from "../components/AccessoryLayer";
 import { AccessoryCraftPresentation } from "../components/AccessoryCraftCard";
 import { useAccessoryCraft } from "../hooks/useAccessoryCraft";
@@ -23,7 +26,7 @@ export default function PetWindow() {
   const face = useRef<HTMLDivElement>(null);
   const seenTravelIds = useRef(new Set<string>());
   const seenProactiveMessages = useRef(new Set<string>());
-  const { state, error, pending, toggleHidden, retry, fail } = usePetWindow(root);
+  const { state, error, pending, toggleHidden, setChatOpen, retry, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
   const draggingStarted = useRef(false);
   const [dragging, setDragging] = useState(false);
@@ -31,6 +34,10 @@ export default function PetWindow() {
   const [startupError, setStartupError] = useState("");
   const appearance = usePetAppearance();
   const activity = usePetActivity();
+  const quickChat = usePetChat(activity.view);
+  const [showChatLabel, setShowChatLabel] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const options = useRef<HTMLDivElement>(null);
   const accessoryContext = { personaId: activity.view?.personaId ?? "", sessionId: activity.view?.sessionId ?? null, contextRevision: activity.view?.contextRevision ?? -1 };
   const craft = useAccessoryCraft(accessoryContext);
   const memoryErrors = usePetMemoryErrors(activity.view);
@@ -40,8 +47,9 @@ export default function PetWindow() {
   const reportedErrors = [mainError ? `连接错误：${mainError}` : "", ...memoryErrors].filter(Boolean);
   const visibleError = error || startupError || appearance.error || activity.error || (showErrors ? reportedErrors.join("\n") : "");
   const wanderStyle = usePetWander(root, face, activity.view, appearance.ready && !state.hidden && !pending
-    && !dragging && !pressed && !menuOpen && !visibleError && !craft.preview);
+    && !dragging && !pressed && !menuOpen && !optionsOpen && !state.chatOpen && !quickChat.busy && !quickChat.reply && !visibleError && !craft.preview);
   const openPage = async (page: ApplicationPage) => {
+    setOptionsOpen(false);
     try { await navigation.open(page); }
     catch (cause) { fail(errorMessage(cause)); }
   };
@@ -68,21 +76,26 @@ export default function PetWindow() {
     pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
     setMenuOpen(false);
   }, [state.hidden]);
-  useEffect(() => { setMenuOpen(false); }, [activity.view?.contextRevision]);
+  useEffect(() => { setMenuOpen(false); setOptionsOpen(false); }, [activity.view?.contextRevision, state.hidden]);
   useEffect(() => {
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenuOpen(false); setShowErrors(false); } };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
+    const close = (event: globalThis.PointerEvent) => { if (options.current && !options.current.contains(event.target as Node)) setOptionsOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
   }, []);
   useEffect(() => {
-    const reset = () => { pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false); };
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenuOpen(false); setOptionsOpen(false); setShowErrors(false); if (state.chatOpen && !event.isComposing) void setChatOpen(false); } };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [state.chatOpen, setChatOpen]);
+  useEffect(() => {
+    const reset = () => { pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false); setOptionsOpen(false); setShowChatLabel(false); };
     window.addEventListener("blur", reset);
     return () => window.removeEventListener("blur", reset);
   }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || pointerStart.current) return;
-    setMenuOpen(false);
+    setMenuOpen(false); setOptionsOpen(false);
     setPressed(true);
     pointerStart.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     draggingStarted.current = false;
@@ -114,7 +127,7 @@ export default function PetWindow() {
 
   return (
     <div ref={root} data-testid="pet-window" className="pet-window" data-hidden={state.hidden}
-      data-transitioning={pending}
+      data-transitioning={pending} data-chat-open={Boolean(state.chatOpen)}
       data-dragging={dragging} data-error={Boolean(visibleError)} data-ready={appearance.ready} style={{...appearance.style,...wanderStyle}}>
       <button className="ym-button pet-visibility" data-pet-interactive
         data-variant={error ? "danger" : undefined}
@@ -132,14 +145,32 @@ export default function PetWindow() {
         data-variant="danger" aria-label="查看错误" aria-expanded={showErrors}
         onClick={() => { setShowErrors(value => !value); setMenuOpen(false); }}>!</button>}
       {!state.hidden && <>
-        <button className="ym-button pet-open-chat" data-pet-interactive onClick={() => { void (activity.view?.activity === "away" ? openLetter() : openPage("chat")); }}>{activity.view?.activity === "away" ? "写信" : "聊天"}</button>
-        <button className="ym-button pet-open-settings" data-pet-interactive onClick={() => { void openPage("settings"); }}>设置</button>
+        <div className="pet-options" ref={options}>
+          <button className="ym-button pet-more" data-pet-interactive aria-label="更多操作" title="更多操作" aria-haspopup="menu" aria-expanded={optionsOpen}
+            onClick={() => { setOptionsOpen(value => !value); setMenuOpen(false); setShowErrors(false); }}>...</button>
+          {optionsOpen && <div className="pet-options-menu" data-pet-interactive role="menu" aria-label="宠窗更多操作">
+            <button className="ym-button" role="menuitem" onClick={() => { void openPage("chat"); }}>聊天详情</button>
+            <button className="ym-button" role="menuitem" onClick={() => { void openPage("settings"); }}>设置</button>
+          </div>}
+        </div>
+        <div className="pet-chat-entry">
+          <button className="ym-button pet-chat-toggle" data-pet-interactive aria-label="聊天" aria-expanded={Boolean(state.chatOpen)} aria-controls="pet-quick-chat"
+            onPointerEnter={() => setShowChatLabel(true)} onPointerLeave={() => setShowChatLabel(false)} onFocus={() => setShowChatLabel(true)} onBlur={() => setShowChatLabel(false)}
+            disabled={pending || state.revision < 0} onClick={() => { setOptionsOpen(false); setMenuOpen(false); void setChatOpen(!state.chatOpen); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 1 1 18 0Z"/><path d="M7 10h8M7 14h5"/></svg>
+          </button>
+          {showChatLabel && <span className="pet-chat-tooltip" data-pet-interactive aria-hidden="true">聊天</span>}
+        </div>
+        {state.chatOpen && <div id="pet-quick-chat"><PetChatInput chat={quickChat} hasSession={Boolean(activity.view?.sessionId)} away={activity.view?.activity === "away"} pending={pending}
+          onDetails={() => { void openPage("chat"); }} onLetter={() => { void openLetter(); }} /></div>}
       </>}
       {visibleError && !state.hidden && <div className="pet-error" data-pet-interactive role="alert" tabIndex={0}>
         <strong><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v7m0 3v2"/></svg>暂时遇到一点问题</strong>
         <p style={{ whiteSpace: "pre-line" }}>{visibleError}</p>
-        {mainError && <button className="ym-button" disabled={activity.pending} onClick={() => { void activity.refresh(); }}>{activity.pending ? "正在刷新…" : "刷新"}</button>}
-        {!!memoryErrors.length && <button className="ym-button" onClick={() => { void openPage("memory"); }}>查看记忆</button>}
+        {(mainError || memoryErrors.length > 0) && <div className="pet-error-actions">
+          {mainError && <button className="ym-button" disabled={activity.pending} onClick={() => { void activity.refresh(); }}>{activity.pending ? "正在刷新…" : "刷新"}</button>}
+          {!!memoryErrors.length && <button className="ym-button" onClick={() => { void openPage("memory"); }}>查看记忆</button>}
+        </div>}
       </div>}
       {menuOpen && !state.hidden && <div className="pet-menu" data-pet-interactive aria-label="桌宠互动">
         <p>{activity.view?.intimacy == null ? "当前未选择会话" : `亲密度 ${activity.view.intimacy} / 999${activity.view.intimacy === 999 ? " · 已达上限" : ""}`}</p>
@@ -149,18 +180,18 @@ export default function PetWindow() {
           onClick={() => { setMenuOpen(false); void activity.interact("stroke"); }}>摸摸</button>
         <button className="ym-button" onClick={() => { setMenuOpen(false); void openPage("accessories"); }}>饰品</button>
       </div>}
-      {!state.hidden && <div ref={face} data-pet-interactive aria-label="颜文字桌宠" role="img" className="pet-face"
+      {!state.hidden && <div ref={face} data-pet-interactive aria-label="桌宠" role="img" className="pet-face"
         data-away={activity.view?.activity === "away"}
         onContextMenu={event => { event.preventDefault(); setMenuOpen(value => !value); setShowErrors(false); }}
         onLostPointerCapture={resetPointer} onPointerCancel={resetPointer}
         onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={releasePointer}>
         {activity.view?.sessionId && activity.view.activity !== "away" && <AccessoryLayer key={`${accessoryContext.personaId}:${accessoryContext.sessionId}:${accessoryContext.contextRevision}`} context={accessoryContext} face={face} canvas={root} />}
-        <span className="pet-expression">{activity.view?.expression || "(・ω・)"}</span>
+        <PetArtworkDisplay personaId={accessoryContext.personaId} expression={activity.view?.expression || "(・ω・)"} />
       </div>}
       <PetReminderNotifications hidden={state.hidden} ready={appearance.ready && state.revision >= 0 && !pending}
         context={activity.view ? { personaId: activity.view.personaId, contextRevision: activity.view.contextRevision } : undefined}
-        unobscured={!visibleError && !menuOpen}
-        stateBubble={!dragging && (craft.preview || craft.error ? <AccessoryCraftPresentation context={accessoryContext} craft={craft} pet /> : activity.view?.activity === "away" ? <PetTravelBubble view={activity.view} seenTravelIds={seenTravelIds.current} /> : <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />)} />
+        unobscured={!visibleError && !menuOpen && !optionsOpen}
+        stateBubble={!dragging && (craft.preview || craft.error ? <AccessoryCraftPresentation context={accessoryContext} craft={craft} pet /> : activity.view?.activity === "away" ? <PetTravelBubble view={activity.view} seenTravelIds={seenTravelIds.current} /> : quickChat.reply ? <PetChatBubble chat={quickChat} onDetails={() => { void openPage("chat"); }} /> : <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />)} />
     </div>
   );
 }

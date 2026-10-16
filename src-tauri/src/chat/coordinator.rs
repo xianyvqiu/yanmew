@@ -60,6 +60,13 @@ pub fn submit(
     Ok((reply, snapshot.ok_or_else(AppError::storage)?))
 }
 
+pub fn submit_images(runtime:&Runtime,persona_id:i64,session_id:i64,revision:u64,input:String,images:Vec<crate::chat_images::Input>)->AppResult<(PreparedReply,RequestSnapshot)> {
+    runtime.read(|store,_|require_context(store,persona_id,session_id,revision))?;
+    let mut staged=crate::chat_images::stage(runtime.paths.as_ref().map_err(Clone::clone)?,images)?;
+    let (reply,snapshot)=prepare_media(runtime,persona_id,session_id,revision,input,true,None,false,&staged.images)?;
+    let snapshot=snapshot.ok_or_else(AppError::storage)?;staged.committed=true;Ok((reply,snapshot))
+}
+
 pub fn continue_reply(runtime:&Runtime,persona_id:i64,session_id:i64,revision:u64,round_id:i64) -> AppResult<(PreparedReply,RequestSnapshot)> {
     let (reply,snapshot)=prepare(runtime,persona_id,session_id,revision,"继续生成".into(),true,Some(round_id),false)?;
     Ok((reply,snapshot.ok_or_else(AppError::storage)?))

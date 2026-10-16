@@ -85,12 +85,14 @@ fn key_name(id: &str) -> String {
     format!("image_generation_provider_{id}_api_key_encrypted")
 }
 fn secret(c: &Connection, id: &str) -> AppResult<Option<String>> {
+    let legacy:Option<String>=c.query_row("SELECT value FROM settings WHERE key=?1",[key_name(id)],|r|r.get(0)).optional()?;
+    if legacy.is_some(){return Ok(legacy);}
     Ok(c.query_row(
-        "SELECT value FROM settings WHERE key=?1",
-        [key_name(id)],
+        "SELECT api_key_encrypted FROM provider_effective WHERE id=?1",
+        [parse_id(id)?],
         |r| r.get(0),
     )
-    .optional()?)
+    .optional()?.flatten())
 }
 fn address(raw: &str) -> AppResult<String> {
     let url = url::Url::parse(raw.trim())
@@ -139,7 +141,17 @@ fn load(c: &Connection) -> AppResult<StoredConfig> {
         )
         .optional()?;
     let Some(value) = value else {
-        return Ok(StoredConfig::default());
+        let roles=crate::provider_roles::get(c)?;
+        let image=roles.roles.iter().find(|r|r.purpose=="image");
+        let mut providers=Vec::new();let mut next_id=1;
+        for p in crate::providers::list(c)? {
+            next_id=next_id.max(parse_id(&p.id)? as u64+1);
+            let model=image.filter(|r|r.provider_id==p.id).map(|r|r.model.clone()).unwrap_or(p.model);
+            providers.push(Provider{id:p.id,name:p.name,protocol:"openai-compatible".into(),base_url:p.base_url.unwrap_or_else(||"https://api.openai.com/v1".into()),model});
+        }
+        let active_id=image.map(|r|r.provider_id.clone());
+        let has_key=active_id.as_deref().map(|id|secret(c,id)).transpose()?.flatten().is_some();
+        return Ok(StoredConfig{version:1,revision:crate::provider_roles::image_revision(c)?,next_id,enabled:image.is_some_and(|r|r.enabled)&&has_key,active_id,providers});
     };
     let config: StoredConfig = serde_json::from_str(&value).map_err(|_| invalid())?;
     let mut ids = std::collections::HashSet::new();

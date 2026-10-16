@@ -6,9 +6,9 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 #[derive(Default)]
 pub struct SettingsNavigation(pub std::sync::Mutex<Option<SettingsTarget>>);
 
-#[derive(Clone, Copy, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SettingsTarget { Reminders, Accessories }
+#[derive(Clone, serde::Serialize, Deserialize)]
+#[serde(tag = "page", rename_all = "camelCase", deny_unknown_fields)]
+pub enum SettingsTarget { Reminders, Accessories, Persona { id: String }, UserProfile { id: String } }
 
 /// 只接受已实现的主程序页面，不允许前端传 URL、权限或任意窗口标签。
 #[derive(Clone, Copy, Deserialize)]
@@ -28,7 +28,7 @@ impl Page {
         match self {
             Self::Travel | Self::Mailbox => ("travel", "出行与邮箱 · 颜喵 YanMew", 800.0, 640.0),
             Self::Letter => ("letter", "写信 · 颜喵 YanMew", 720.0, 600.0),
-            Self::Chat => ("chat", "聊天 · 颜喵 YanMew", 800.0, 640.0),
+            Self::Chat => ("chat", "聊天详情 · 颜喵 YanMew", 800.0, 640.0),
             Self::Memory => ("memory", "会话记事本 · 颜喵 YanMew", 720.0, 600.0),
             Self::Settings | Self::Reminders | Self::Accessories => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
         }
@@ -46,6 +46,14 @@ fn window_error(_: tauri::Error) -> AppError {
 
 /// 主线程串行执行查找与创建，快速重复点击也不会同时创建两个实例。
 pub async fn open(app: AppHandle, page: Page) -> AppResult<()> {
+    open_with_target(app, page, None).await
+}
+
+pub async fn open_settings_detail(app: AppHandle, target: SettingsTarget) -> AppResult<()> {
+    open_with_target(app, Page::Settings, Some(target)).await
+}
+
+async fn open_with_target(app: AppHandle, page: Page, target: Option<SettingsTarget>) -> AppResult<()> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let owner = app.clone();
     app.run_on_main_thread(move || {
@@ -94,13 +102,18 @@ pub async fn open(app: AppHandle, page: Page) -> AppResult<()> {
             window.show().map_err(window_error)?;
             window.unminimize().map_err(window_error)?;
             window.set_focus().map_err(window_error)?;
-            if matches!(page, Page::Reminders | Page::Accessories) {
+            let target = match page {
+                Page::Reminders => Some(SettingsTarget::Reminders),
+                Page::Accessories => Some(SettingsTarget::Accessories),
+                _ => target,
+            };
+            if let Some(target) = target {
                 *owner
                     .state::<SettingsNavigation>()
                     .inner()
                     .0
                     .lock()
-                    .map_err(|_| AppError::storage())? = Some(if matches!(page, Page::Accessories) { SettingsTarget::Accessories } else { SettingsTarget::Reminders });
+                    .map_err(|_| AppError::storage())? = Some(target);
                 // 事件仅提示查询；首次加载、重新聚焦均可补查未消费的请求。
                 let _ = window.emit("settings-navigation", ());
             }
@@ -117,6 +130,15 @@ pub async fn open(app: AppHandle, page: Page) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settings_detail_contract_keeps_page_and_record_without_arbitrary_urls() {
+        for json in [r#"{"page":"persona","id":"1"}"#,r#"{"page":"userProfile","id":"7"}"#,r#"{"page":"reminders"}"#] {
+            let target:SettingsTarget=serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_value(target).unwrap(),serde_json::from_str::<serde_json::Value>(json).unwrap());
+        }
+        assert!(serde_json::from_str::<SettingsTarget>(r#"{"page":"url","id":"https://example.com"}"#).is_err());
+        assert!(serde_json::from_str::<SettingsTarget>(r#"{"page":"persona","id":"1","url":"file:///"}"#).is_err());
+    }
     #[test]
     fn only_fixed_application_pages_are_authorized() {
         for page in [

@@ -94,6 +94,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         }, rounds))
     }).await.map_err(|_| AppError::storage())??;
     let mut context=prepared.context.clone();
+    super::media::enrich(client,prepared,&mut context).await?;
     if !prepared.continuation { context.enrich(prepared).await?; }
     let mut history = Vec::new();
     let mut definitions = crate::notebook_tools::definitions();

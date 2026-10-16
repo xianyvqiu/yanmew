@@ -3,8 +3,10 @@ import "./ResponsiveWindowShell.css";
 
 export type ResponsiveWindowShellProps = {
   title: string;
+  compact?: boolean;
   subtitle: string;
   contextLabel: string;
+  contextContent?: ReactNode;
   loading: boolean;
   error: string;
   onRetry: () => void;
@@ -14,8 +16,10 @@ export type ResponsiveWindowShellProps = {
 
 export default function ResponsiveWindowShell({
   title,
+  compact = false,
   subtitle,
   contextLabel,
+  contextContent,
   loading,
   error,
   onRetry,
@@ -23,7 +27,7 @@ export default function ResponsiveWindowShell({
   sidebar,
 }: ResponsiveWindowShellProps) {
   return (
-    <div className="ym-window-shell">
+    <div className={`ym-window-shell${compact ? " ym-window-shell--compact" : ""}`}>
       <header className="ym-window-shell__header">
         <span className="ym-window-shell__brand" aria-label="颜喵">(・ω・)</span>
         <div className="ym-window-shell__heading">
@@ -32,7 +36,7 @@ export default function ResponsiveWindowShell({
         </div>
         <p className="ym-window-shell__context">
           <span className="ym-window-shell__context-caption">当前人设与会话</span>
-          <span className="ym-window-shell__context-value">{contextLabel}</span>
+          <span className="ym-window-shell__context-value">{contextContent ?? contextLabel}</span>
         </p>
       </header>
 

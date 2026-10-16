@@ -5,19 +5,26 @@ use std::path::PathBuf;
 #[derive(Clone)]
 pub struct AppPaths {
     pub data_root: PathBuf,
+    /// 发布资源跟随exe；安装版数据根与此目录分离。
+    pub resource_root: PathBuf,
 }
 impl AppPaths {
+    /// 便携模式及隔离测试沿用原数据目录，资源在其同级resources。
+    pub fn portable(data_root: PathBuf) -> Self {
+        let resource_root = data_root.parent().unwrap_or(&data_root).join("resources");
+        Self { data_root, resource_root }
+    }
     /// 便携版随包插件资源；运行用的不可变版本副本仍在 data/plugins 下。
     pub fn plugin_resources(&self) -> AppResult<PathBuf> {
         if cfg!(debug_assertions) { Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/plugins")) }
-        else { Ok(self.data_root.parent().ok_or_else(crate::error::AppError::storage)?.join("resources/plugins")) }
+        else { Ok(self.resource_root.join("plugins")) }
     }
     /// 开发资源显式定位到项目；发布版资源跟随可执行文件，不依赖工作目录。
     pub fn embedding_resources(&self) -> AppResult<PathBuf> {
         if cfg!(debug_assertions) {
             Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/models/bge-small-zh-v1.5"))
         } else {
-            Ok(self.data_root.parent().ok_or_else(crate::error::AppError::storage)?.join("resources/models/bge-small-zh-v1.5"))
+            Ok(self.resource_root.join("models/bge-small-zh-v1.5"))
         }
     }
 }

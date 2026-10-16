@@ -466,6 +466,7 @@ fn long_preview_keeps_original_two_sources_despite_current_k_twenty_and_confirms
             json!({"title":"重新整合的中性标题", "content":body}),
         )]);
         let f = fixture(&server.url);
+        f.runtime.read(|s,_|{let revision=crate::provider_roles::revision(&s.connection)?;crate::provider_roles::save(&mut s.connection,"memory",Some("1"),"memory-preview-model",true,revision,None,None)?;Ok(())}).unwrap();
         seed_embedding(&f.runtime);
         assert_eq!(
             scalar(
@@ -486,6 +487,7 @@ fn long_preview_keeps_original_two_sources_despite_current_k_twenty_and_confirms
         assert_eq!(generated.title.as_deref(), Some("重新整合的中性标题"));
         assert_eq!(generated.content, body);
         let sent = server.requests.lock().unwrap()[0].clone();
+        assert_eq!(sent["model"],"memory-preview-model");
         assert_eq!(sent["messages"].as_array().unwrap().len(), 2);
         assert!(sent["messages"][0]["content"]
             .as_str()

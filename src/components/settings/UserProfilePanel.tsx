@@ -1,11 +1,14 @@
+import CardBrowserControls from "../CardBrowserControls";
+import {useCardBrowser} from "../../hooks/useCardBrowser";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { configurationApi, errorMessage, userProfileApi } from "../../api";
 import type { UserProfile } from "../../types";
 import "./PersonasPanel.css";
+import type { SettingsDetailRequest } from "../../platform/navigation";
 
 type Draft = { id?: string; name: string; content: string };
 
-export default function UserProfilePanel() {
+export default function UserProfilePanel({ detailRequest }: { detailRequest?: SettingsDetailRequest }) {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -19,6 +22,7 @@ export default function UserProfilePanel() {
   const locked = useRef(false);
   const pendingRefresh = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const consumedDetail = useRef<SettingsDetailRequest>();
 
   const refresh = useCallback(async () => {
     if (!mounted.current) return;
@@ -116,11 +120,19 @@ export default function UserProfilePanel() {
     const id = confirmation.id;
     void run(() => userProfileApi.delete(id), () => {
       setProfiles(previous => previous.filter(item => item.id !== id));
-      setConfirmation(null);
+      setConfirmation(null);setSelected(null);
     }, "用户设定已删除，绑定它的会话已变为未绑定");
   };
   const cancel = () => { setDraft(null); setError(""); };
   const cancelDelete = () => { setConfirmation(null); setError(""); };
+  const [selected,setSelected]=useState<string|null>(null);
+  useEffect(() => {
+    if (!detailRequest || consumedDetail.current === detailRequest || loading || busy || error || draft || confirmation) return;
+    consumedDetail.current = detailRequest;
+    if (profiles.some(item => item.id === detailRequest.id)) setSelected(detailRequest.id);
+    else { setSelected(null); setError("该用户设定已不存在，请从列表重新选择"); }
+  }, [detailRequest, loading, busy, error, draft, confirmation, profiles]);
+  const browser=useCardBrowser(profiles,p=>`${p.name} ${p.content}`,p=>p.updatedAt,p=>p.id);
   const disabled = busy || loading;
 
   return <>
@@ -129,6 +141,7 @@ export default function UserProfilePanel() {
       <p className="ym-page-note">在此管理用户设定，可在聊天窗选择会话绑定的设定。</p>
       <p className="ym-page-note">编辑或删除设定前，会先中断使用它的会话正在生成的回复；普通回复保留已生成片段，重说保留原回复和记忆。</p>
       {loading && <p role="status">正在读取用户设定…</p>}
+      {detailRequest && consumedDetail.current !== detailRequest && (busy || draft || confirmation) && <p role="status" className="ym-page-note">有未完成的操作，完成或取消后会打开目标用户设定详情；当前编辑内容保留。</p>}
       {notice && <p role="status">{notice}</p>}
       {error && !confirmation && !draft && <div className="ym-page-error" role="alert">{error}<button className="ym-button" disabled={disabled} onClick={() => { setError(""); void refresh(); }}>重新读取</button></div>}
       {draft && <form className="ym-persona-form" onSubmit={save}>
@@ -141,11 +154,16 @@ export default function UserProfilePanel() {
         </fieldset>
       </form>}
       {!loading && profiles.length === 0 && <p className="ym-page-note">暂无用户设定。</p>}
-      <div className="ym-persona-grid">{profiles.map(profile => <article className="ym-persona-card" key={profile.id} aria-label={profile.name}>
-        <h3>{profile.name}</h3>
+      {!selected&&<CardBrowserControls browser={browser} label="用户设定" timeLabel="更新时间" disabled={busy}/>}
+      {selected&&<div className="ym-detail-header"><button className="ym-button" disabled={busy||draft!==null} onClick={()=>setSelected(null)}>返回用户设定列表</button><span>用户设定详情</span></div>}
+      <div className="ym-persona-grid">{(selected?profiles.filter(p=>p.id===selected):browser.items).map(profile => <article className="ym-persona-card" key={profile.id} aria-label={profile.name} onClick={event=>{if(!selected&&!disabled&&!draft&&!(event.target as HTMLElement).closest("button"))setSelected(profile.id);}}>
+        <h3><button className="ym-card-open" disabled={busy||draft!==null} onClick={()=>setSelected(profile.id)}>{profile.name}</button></h3>
+        {!selected&&<p className="ym-card-summary">{profile.content}</p>}
         <p className="ym-page-note">更新时间：{new Date(profile.updatedAt).toLocaleString()}</p>
+        {selected===profile.id&&<>
         <details><summary>内容</summary><p className="ym-persona-prompt">{profile.content}</p></details>
         <div className="ym-inline-form"><button className="ym-button" aria-label={`编辑 ${profile.name}`} disabled={disabled || draft !== null || confirmation !== null} onClick={() => { setDraft({ id: profile.id, name: profile.name, content: profile.content }); setError(""); setNotice(""); }}>编辑</button><button className="ym-button" data-variant="danger" aria-label={`删除 ${profile.name}`} disabled={disabled || draft !== null || confirmation !== null} onClick={() => { setConfirmation(profile); setError(""); setNotice(""); }}>删除</button></div>
+        </>}
       </article>)}</div>
     </section>
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="user-profile-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else cancelDelete(); }}>

@@ -185,6 +185,7 @@ pub fn dispatch<T: TimeZone>(
         .query_map([], rule_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
     let mut inserted = 0;
+    let mut email_occurrences = Vec::new();
     for mut rule in rules {
         let original = parse_time(rule.fire_at.as_deref().ok_or_else(AppError::storage)?)?;
         let due = match &rule.schedule {
@@ -221,9 +222,11 @@ pub fn dispatch<T: TimeZone>(
         };
         let delivery = if offline { "missed" } else { "queued" };
         let status = if offline { "expired" } else { "pending" };
-        inserted += tx.execute("INSERT INTO reminder_occurrences(reminder_id,scheduled_at,status,delivery_state,completed_at,created_at)
+        let added = tx.execute("INSERT INTO reminder_occurrences(reminder_id,scheduled_at,status,delivery_state,completed_at,created_at)
             VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(reminder_id,scheduled_at) DO NOTHING",
             params![rule.id,stamp(scheduled),status,delivery,offline.then(|| stamp(now)),stamp(now)])?;
+        inserted += added;
+        if added > 0 { email_occurrences.push(tx.last_insert_rowid()); }
         let next = if let Some(schedule) = &mut rule.schedule {
             let next = schedule.next(zone, now)?;
             schedule.set_cursor(zone, next);
@@ -250,6 +253,7 @@ pub fn dispatch<T: TimeZone>(
             ],
         )?;
     }
+    crate::reminder_email::enqueue(&tx, &email_occurrences, offline, now)?;
     tx.commit()?;
     Ok(inserted)
 }

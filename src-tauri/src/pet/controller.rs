@@ -116,7 +116,7 @@ impl Controller {
     ) -> AppResult<HealthToken> {
         let stamp: Option<ProviderStamp> = connection
             .query_row(
-                "SELECT id,base_url,model,api_key_encrypted FROM providers WHERE is_active=1",
+                "SELECT id,base_url,model,api_key_encrypted FROM provider_effective WHERE is_active=1",
                 [],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
@@ -195,10 +195,10 @@ impl Controller {
         }
         crate::travel::recover_returns(connection, sample.utc, random)?;
         let context = crate::persona::context(connection, revision)?;
-        let (name, library): (String, Option<String>) = connection.query_row(
-            "SELECT name,expressions FROM personas WHERE id=?1",
+        let (name, library,art_revision): (String, Option<String>,i64) = connection.query_row(
+            "SELECT name,expressions,pet_image_revision FROM personas WHERE id=?1",
             [&context.persona_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?,r.get(2)?)),
         )?;
         let same = self.anchor.as_ref().is_some_and(|a| {
             a.persona_id == context.persona_id
@@ -315,14 +315,14 @@ impl Controller {
         if away {
             activity = Activity::Away;
         }
-        let key = (context.persona_id.clone(), activity, library.clone());
+        let key = (context.persona_id.clone(), activity, Some(format!("{}:{art_revision}",library.as_deref().unwrap_or(""))));
         if self.expression_key.as_ref() != Some(&key)
             && !matches!(
                 activity,
                 Activity::Eating | Activity::Interacting | Activity::Speaking | Activity::Away
             )
         {
-            self.expression = pick_expression(library.as_deref(), activity, random)?;
+            self.expression = pick_expression(connection,parse_id(&context.persona_id)?,library.as_deref(), activity, random)?;
             self.expression_key = Some(key);
         }
         let expression = if away {
@@ -341,6 +341,7 @@ impl Controller {
         } else {
             self.expression.clone()
         };
+        let expression=if !away {crate::pet_creation::select(connection,parse_id(&context.persona_id)?,image_category(activity),Some(&expression),random)?.unwrap_or_else(||if expression.starts_with("@pet-image:"){"(・ω・)".into()}else{expression})}else{expression};
         let mut view = View {
             persona_id: context.persona_id,
             session_id: context.session_id,
@@ -400,7 +401,7 @@ impl Controller {
             [&input.persona_id],
             |r| r.get(0),
         )?;
-        let expression = pick_expression(library.as_deref(), activity, random)?;
+        let expression = pick_expression(connection,parse_id(&input.persona_id)?,library.as_deref(), activity, random)?;
         super::interact(
             connection,
             revision,
@@ -427,10 +428,12 @@ impl Controller {
 }
 
 fn pick_expression(
+    connection: &Connection, persona:i64,
     raw: Option<&str>,
     activity: Activity,
     random: &mut dyn RandomSource,
 ) -> AppResult<String> {
+    if let Some(image)=crate::pet_creation::select(connection,persona,image_category(activity),None,random)? {return Ok(image);}
     let fallback = match activity {
         Activity::Sleeping => "(-_-) zZ",
         Activity::Bored => "(._.)",
@@ -463,3 +466,5 @@ fn pick_expression(
     let index = random.below(choices.len() as u64)? as usize;
     choices.get(index).cloned().ok_or_else(AppError::storage)
 }
+
+fn image_category(activity:Activity)->&'static str {match activity {Activity::Sleeping=>"sleepy",Activity::Bored=>"bored",Activity::Hungry=>"hungry",Activity::Eating=>"eating",Activity::Thinking=>"thinking",Activity::Interacting=>"click",Activity::Speaking=>"chat",_=>"normal"}}

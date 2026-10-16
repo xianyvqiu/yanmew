@@ -100,7 +100,7 @@ fn new_letter_does_not_invalidate_optional_snapshot_but_removed_used_letter_does
 fn changed_persona_provider_range_or_cancellation_does_not_commit_old_output() {
     for change in [
         "UPDATE personas SET prompt='新的设定' WHERE id=1",
-        "UPDATE providers SET model='new' WHERE is_active=1",
+        "UPDATE provider_models SET model='new' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
         "UPDATE settings SET value='3' WHERE key='travel_journal_min_chars'",
     ] {
         let r = runtime("http://localhost");
@@ -130,7 +130,7 @@ fn budget_removes_only_optional_old_letters_and_keeps_database_content() {
     add_letter(&r, "新信");
     r.read(|s, _| {
         s.connection.execute(
-            "UPDATE providers SET context_window_override=6000 WHERE is_active=1",
+            "UPDATE provider_models SET context_window_override=6000 WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
             [],
         )?;
         Ok(())

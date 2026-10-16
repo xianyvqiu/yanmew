@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { useAccessories } from "../hooks/useAccessories";
 import type { CurrentContext } from "../types";
 import AccessoryImage from "./AccessoryVisual";
 
-/** 绝对定位在颜文字上方；不把饰品宽度加入颜文字排版。 */
+/** 饰品不参与本体排版；默认头顶或用户保存的相对位置共用此层。 */
 export default function AccessoryLayer({ context, face, canvas }: { context: CurrentContext; face: RefObject<HTMLDivElement>; canvas: RefObject<HTMLDivElement> }) {
   const list = useAccessories(context, true);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const layer = useRef<HTMLDivElement>(null);
+  const item = list.items[0];
+  const [size, setSize] = useState<{width:number;height:number;left?:number;top?:number;canvasTop?:number}>({ width: 0, height: 0 });
   useEffect(() => {
     let frame = 0;
     const measure = () => {
@@ -15,10 +15,22 @@ export default function AccessoryLayer({ context, face, canvas }: { context: Cur
       const expression = face.current?.querySelector<HTMLElement>(".pet-expression");
       if (!expression || !canvas.current) return;
       const r = expression.getBoundingClientRect(); const c = canvas.current.getBoundingClientRect();
+      const warning=(item?.positionX!=null||expression.classList.contains("pet-expression-image"))?canvas.current.querySelector<HTMLElement>(".pet-error"):null;
+      const safeTop=warning?Math.max(48,warning.getBoundingClientRect().bottom-c.top+8):44;
+      if(item?.positionX!=null&&item.positionY!=null){
+        const image=expression.classList.contains("pet-expression-image"); const rw=image?r.width:120,rh=image?r.height:56;
+        const side=Math.max(0,Math.min(144,48*(item.scale??1000)/1000,c.width-8,c.height-safeTop-4));
+        const x=Math.max(c.left+4+side/2,Math.min(c.right-4-side/2,r.left+r.width/2+item.positionX*rw/1000));
+        const y=Math.max(c.top+safeTop+side/2,Math.min(c.bottom-4-side/2,r.top+r.height/2+item.positionY*rh/1000));
+        const parent=face.current!.getBoundingClientRect();
+        const left=x-parent.left,top=y-parent.top;
+        setSize(old=>old.width===side&&old.height===side&&old.left===left&&old.top===top&&old.canvasTop===y-c.top-side/2?old:{width:side,height:side,left,top,canvasTop:y-c.top-side/2});return;
+      }
       const font = parseFloat(getComputedStyle(face.current!).fontSize) || 32;
-      const width = Math.max(0, Math.min(r.width, c.width - 8));
-      const height = Math.max(0, Math.min(font * 1.2, r.top - c.top - 44 - 4));
-      setSize(old => old.width === width && old.height === height ? old : { width, height });
+      const width = Math.max(0, Math.min(r.width*(item?.scale??1000)/1000, c.width - 8));
+      const height = Math.max(0, Math.min(font * 1.2*(item?.scale??1000)/1000, r.top - c.top - safeTop - 4));
+      const canvasTop=r.top-c.top-height-4;
+      setSize(old => old.width === width && old.height === height && old.left==null && old.canvasTop===canvasTop ? old : { width, height,canvasTop });
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
@@ -26,14 +38,14 @@ export default function AccessoryLayer({ context, face, canvas }: { context: Cur
     if (face.current) observer.observe(face.current);
     const mutation = new MutationObserver(schedule);
     // 游走只改画布偏移；观察该属性即可随剩余顶部空间缩小，不制造循环布局监听。
-    if (canvas.current) mutation.observe(canvas.current, { attributes: true, attributeFilter: ["style"] });
+    if (canvas.current) mutation.observe(canvas.current, { attributes: true, attributeFilter: ["style"], childList:true });
     window.addEventListener("resize", schedule); document.fonts?.addEventListener("loadingdone", schedule);
     schedule();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener("resize", schedule); document.fonts?.removeEventListener("loadingdone", schedule); };
-  }, [face, canvas, context.contextRevision]);
-  const item = list.items[0];
+  }, [face, canvas, context.contextRevision,item]);
+  useEffect(()=>{const node=canvas.current;if(!node)return;if(item&&size.canvasTop!=null)node.style.setProperty("--ym-accessory-top",`${size.canvasTop}px`);else node.style.removeProperty("--ym-accessory-top");return()=>{node.style.removeProperty("--ym-accessory-top");};},[canvas,item?.positionX,size.canvasTop]);
   if (!item || !size.width || !size.height) return null;
-  return <div ref={layer} className="pet-accessory-layer" data-pet-interactive style={{ width: size.width, height: size.height }} title={`${item.name}${list.error ? ` · ${list.error}` : ""}`}>
+  return <div className="pet-accessory-layer" data-positioned={item.positionX!=null} data-pet-interactive style={{ width: size.width, height: size.height, ...(size.left!=null?{left:size.left,top:size.top,bottom:"auto",transform:"translate(-50%,-50%)"}:{}) }} title={`${item.name}${list.error ? ` · ${list.error}` : ""}`}>
     <AccessoryImage key={item.id} context={context} accessory={item} compact />
   </div>;
 }

@@ -1,4 +1,5 @@
 use super::*;
+use rusqlite::params;
 use crate::platform::contracts::{AppPaths, FileTransferPort};
 use std::{
     fs,
@@ -7,6 +8,61 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 const NOW: &str = "2026-10-13T00:00:00Z";
+#[test]
+fn session_pinning_backup_roundtrip_and_v10_defaults() {
+    for legacy in [false,true] {
+        let source_dir=Directory::new(); let target_dir=Directory::new();
+        let source=fixture(&source_dir.0); let target=fixture(&target_dir.0);
+        source.read(|s,_| {s.connection.execute("UPDATE sessions SET is_pinned=1 WHERE id=2",[])?;Ok(())}).unwrap();
+        let transfer=make(&source,&source_dir.0,PackageKind::Session,&["2"],false);
+        if legacy {rewrite(&transfer.0,|manifest,data| {
+            manifest.schema_version=10;
+            for row in data["sessions"].as_array_mut().unwrap() {row.as_object_mut().unwrap().remove("is_pinned");}
+        });}
+        let prepared=prepare(&target,&transfer).unwrap().unwrap();
+        let mut choice=input(&prepared); choice.personas[0].target_id=None;
+        confirm(&target,choice).unwrap();
+        let pinned=target.read(|s,_|Ok(s.connection.query_row("SELECT is_pinned FROM sessions ORDER BY id DESC LIMIT 1",[],|r|r.get::<_,bool>(0))?)).unwrap();
+        assert_eq!(pinned,!legacy);
+    }
+}
+
+#[test]
+fn chat_appearance_backup_roundtrip_and_v9_defaults() {
+    for legacy in [false,true] {
+        let source_dir=Directory::new(); let source=fixture(&source_dir.0);
+        let target_dir=Directory::new(); let target=fixture(&target_dir.0);
+        source.read(|s,_| { s.connection.execute("UPDATE personas SET chat_bubble_style='outline',chat_user_text_color='#123456',chat_assistant_text_color='#abcdef' WHERE id=2",[])?;Ok(()) }).unwrap();
+        let transfer=make(&source,&source_dir.0,PackageKind::PersonaFull,&["2"],false);
+        if legacy { rewrite(&transfer.0,|manifest,data| {
+            manifest.schema_version=9;
+            for row in data["personas"].as_array_mut().unwrap() { for key in ["chat_bubble_style","chat_user_text_color","chat_assistant_text_color"] { row.as_object_mut().unwrap().remove(key); } }
+        }); }
+        let p=prepare(&target,&transfer).unwrap().unwrap();
+        let mut choice=input(&p); choice.personas[0].target_id=None;
+        confirm(&target,choice).unwrap();
+        target.read(|s,_| {
+            let personas=crate::persona::list(&s.connection)?;
+            let restored=&personas.iter().max_by_key(|p|p.id.parse::<i64>().unwrap()).unwrap().chat_appearance;
+            if legacy { assert_eq!(restored,&crate::persona::background::Appearance::default()); }
+            else { assert_eq!(restored.bubble_style,"outline");assert_eq!(restored.user_text_color.as_deref(),Some("#123456"));assert_eq!(restored.assistant_text_color.as_deref(),Some("#abcdef")); }
+            Ok(())
+        }).unwrap();
+    }
+}
+#[test]
+fn settings_redesign_chat_image_backup_remaps_messages_and_preserves_files() {
+    for kind in [PackageKind::Full,PackageKind::Session] {
+        let source_dir=Directory::new();let target_dir=Directory::new();let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+        let mut png=std::io::Cursor::new(vec![]);image::DynamicImage::new_rgb8(2,2).write_to(&mut png,image::ImageFormat::Png).unwrap();
+        let image=crate::chat_images::publish(source.paths.as_ref().unwrap(),png.get_ref(),"相片.png").unwrap();
+        source.read(|s,_|{s.connection.execute("INSERT INTO message_images(message_id,filename,image_file,media_type,caption,created_at) VALUES(10,'相片.png',?1,'image/png','图片理解',?2)",rusqlite::params![image,NOW])?;Ok(())}).unwrap();
+        let ids:&[&str]=if kind==PackageKind::Full{&[]}else{&["2"]};
+        let transfer=make(&source,&source_dir.0,kind,ids,false);let preview=prepare(&target,&transfer).unwrap().unwrap();let confirmed=input(&preview);confirm(&target,confirmed).unwrap();
+        let attachment=target.read(|s,_|{let message:i64=s.connection.query_row("SELECT message_id FROM message_images WHERE filename='相片.png'",[],|r|r.get(0))?;assert_ne!(message,10);Ok(crate::chat_images::list(&s.connection,message)?.remove(0))}).unwrap();
+        let restored=std::fs::read(crate::chat_images::managed_file(target.paths.as_ref().unwrap(),&attachment.image_file).unwrap()).unwrap();assert_eq!(restored,png.into_inner());assert_eq!(attachment.caption.as_deref(),Some("图片理解"));
+    }
+}
 #[path = "festival_tests.rs"]
 mod festival_tests;
 
@@ -84,9 +140,7 @@ impl FileTransferPort for Transfer {
 }
 fn fixture(root: &Path) -> Runtime {
     let mut runtime = super::super::tests::runtime();
-    runtime.paths = Ok(AppPaths {
-        data_root: root.into(),
-    });
+    runtime.paths = Ok(AppPaths::portable(root.into()));
     runtime.read(|s,_| {
         s.connection.execute("UPDATE sessions SET created_at=?1,updated_at=?1 WHERE id=1",[NOW])?;
         s.connection.execute("UPDATE session_pet_states SET updated_at=?1",[NOW])?;
@@ -305,6 +359,7 @@ fn rewrite(path: &Path, change: impl FnOnce(&mut Manifest, &mut Value)) {
     }
     drop(zip);
     change(&mut manifest, &mut data);
+    if manifest.schema_version<12 {let tables=data.as_object_mut().unwrap();tables.remove("pet_artworks");if let Some(rows)=tables.get_mut("personas").and_then(Value::as_array_mut){for row in rows{for key in ["pet_image_enabled","pet_image_revision"]{row.as_object_mut().unwrap().remove(key);}}}if let Some(rows)=tables.get_mut("accessories").and_then(Value::as_array_mut){for row in rows{for key in ["position_x","position_y","scale"]{row.as_object_mut().unwrap().remove(key);}}}}
     let raw = serde_json::to_vec(&data).unwrap();
     manifest.data_size = raw.len() as u64;
     manifest.data_sha256 = super::super::archive::hash(&raw);
@@ -325,6 +380,49 @@ fn rewrite(path: &Path, change: impl FnOnce(&mut Manifest, &mut Value)) {
         out.write_all(&bytes).unwrap();
     }
     out.finish().unwrap();
+}
+#[test]
+fn legacy_full_backup_restores_provider_models_and_budget() {
+    for version in [6,7] {
+    let source_dir=Directory::new();let target_dir=Directory::new();
+    let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+    source.read(|s,_|{s.connection.execute("UPDATE provider_models SET max_output_tokens=4096,context_window_override=64000 WHERE purpose='chat'",[])?;s.connection.execute_batch("INSERT INTO providers(name) VALUES('未选中连接'); INSERT INTO provider_models(provider_id,purpose,model,max_output_tokens,context_window_override) VALUES(2,'chat','other-model',2048,32000);")?;Ok(())}).unwrap();
+    let archive=make(&source,&source_dir.0,PackageKind::Full,&[],false);
+    rewrite(&archive.0,|manifest,data|{
+        manifest.schema_version=version;
+        let models=data.as_object_mut().unwrap().remove("provider_models").unwrap();
+        for role in data["provider_roles"].as_array_mut().unwrap(){
+            role["model"]=models.as_array().unwrap().iter().find(|m|m["provider_id"]==role["provider_id"]&&m["purpose"]==role["purpose"]).unwrap()["model"].clone();
+        }
+        let roles=data["provider_roles"].as_array().unwrap().clone();
+        for provider in data["providers"].as_array_mut().unwrap(){
+            let id=provider["id"].as_str().unwrap().to_owned();
+            let model=models.as_array().unwrap().iter().find(|m|m["provider_id"]==id&&m["purpose"]=="chat").unwrap();
+            provider["model"]=model["model"].clone();
+            provider["max_output_tokens"]=model["max_output_tokens"].clone();
+            provider["context_window_override"]=model["context_window_override"].clone();
+            provider["is_active"]=Value::from(i64::from(roles.iter().any(|r|r["purpose"]=="chat"&&r["provider_id"]==id)));
+            provider["memory_is_active"]=Value::from(i64::from(roles.iter().any(|r|r["purpose"]=="memory"&&r["provider_id"]==id)));
+        }
+        if version==6 {
+            data.as_object_mut().unwrap().remove("provider_roles");
+            data.as_object_mut().unwrap().remove("message_images");
+            for table in ["providers","personas"] {for row in data[table].as_array_mut().unwrap(){row.as_object_mut().unwrap().remove("created_at");row.as_object_mut().unwrap().remove("updated_at");}}
+        }
+    });
+    let preview=prepare(&target,&archive).unwrap().unwrap();
+    confirm(&target,input(&preview)).unwrap();
+    target.read(|s,_|{
+        let restored=crate::providers::list(&s.connection)?;
+        assert_eq!(restored[0].max_output_tokens,4096);
+        assert_eq!(restored[0].context_window_override,Some(64000));
+        assert!(restored[0].is_active);
+        assert_eq!(restored[1].max_output_tokens,2048);
+        assert_eq!(restored[1].context_window_override,Some(32000));
+        assert!(!restored[1].is_active);
+        Ok(())
+    }).unwrap();
+    }
 }
 #[test]
 fn invalid_versions_scope_references_and_file_paths_do_not_touch_target() {
@@ -769,3 +867,45 @@ fn failed_full_import_keeps_chat_running_then_success_saves_partial_once() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn reminder_email_import_is_disabled_unverified_and_does_not_replay_outbox() {
+    let source_dir=Directory::new();let target_dir=Directory::new();
+    let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+    for runtime in [&source,&target] {
+        runtime.read(|s,p| {
+            let connection=crate::reminder_email::ConnectionConfig {email:"u@qq.com".into(),host:"smtp.qq.com".into(),port:465,encryption:"tls".into(),username:"u@qq.com".into(),from:"u@qq.com".into(),to:"u@qq.com".into()};
+            crate::reminder_email::save(&mut s.connection,p,crate::reminder_email::Input {connection,revision:0,secret:crate::crypto::SecretUpdate::Set {value:"DO-NOT-RESTORE-EMAIL-CREDENTIAL".into()}})?;
+            s.connection.execute("INSERT INTO reminder_email_deliveries(kind,recipient,subject,body,config_revision,state,created_at) VALUES('due','u@qq.com','existing task','body',1,'pending',?1)",[NOW])?;Ok(())
+        }).unwrap();
+    }
+    let archive=make(&source,&source_dir.0,PackageKind::Full,&[],false);
+    // v8备份仍可读取；外部包试图开启邮箱或伪造已验证也必须在stage阶段重置。
+    rewrite(&archive.0,|manifest,data| {
+        manifest.schema_version=8;
+        for row in data["settings"].as_array_mut().unwrap() {
+            if row["key"]=="reminder_email_config" {
+                let mut value:Value=serde_json::from_str(row["value"].as_str().unwrap()).unwrap();
+                value["enabled"]=Value::Bool(true);value["verified"]=Value::Bool(true);value["revision"]=Value::from(99);
+                row["value"]=Value::String(value.to_string());
+            }
+        }
+    });
+    let preview=prepare(&target,&archive).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();
+    target.read(|s,_| {
+        let email=crate::reminder_email::view(&s.connection)?;
+        assert!(!email.enabled);assert!(!email.verified);assert!(!email.has_secret);assert_eq!(email.revision,0);assert!(email.deliveries.is_empty());assert_eq!(email.connection.host,"smtp.qq.com");
+        assert_eq!(count(&s.connection,"reminder_email_items"),0);Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn pet_creation_backup_keeps_formal_preview_and_accessory_placement(){
+ let source_dir=Directory::new();let source=fixture(&source_dir.0);let target_dir=Directory::new();let target=fixture(&target_dir.0);
+ let mut image=image::RgbaImage::new(8,8);image.put_pixel(3,3,image::Rgba([120,0,0,255]));let mut cursor=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(image).write_to(&mut cursor,image::ImageFormat::Png).unwrap();let png=crate::pet_creation::normalize(&cursor.into_inner()).unwrap();let file=crate::accessories::images::publish(source.paths.as_ref().unwrap(),&png).unwrap();
+ source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,description,category,image_file,preview_file,created_at,updated_at) VALUES(2,'base','初始猫','','默认','normal',?1,?1,?2,?2)",params![file,NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;s.connection.execute("UPDATE accessories SET position_x=125,position_y=-500,scale=1500 WHERE session_id=2",[])?;Ok(())}).unwrap();
+ for kind in [PackageKind::PersonaFull,PackageKind::PersonaProfile,PackageKind::Session] {let backup=make(&source,&source_dir.0,kind,&["2"],false);let p=prepare(&target,&backup).unwrap().unwrap();let mut choice=input(&p);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id:i64=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let lib=crate::pet_creation::library(&s.connection,id)?;assert!(lib.enabled);assert_eq!(lib.items.len(),1);assert!(lib.items[0].image_file.is_some());assert!(lib.items[0].preview_file.is_some());let a=&lib.items[0];assert!(crate::accessories::images::read(target.paths.as_ref().unwrap(),a.image_file.as_ref().unwrap()).is_ok());if kind!=PackageKind::PersonaProfile {let (x,y,scale):(Option<i32>,Option<i32>,i32)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!((x,y,scale),(Some(125),Some(-500),1500));}Ok(())}).unwrap();}
+}
+
+#[test]
+fn pet_creation_missing_image_backup_continues_without_changing_source(){let source_dir=Directory::new();let source=fixture(&source_dir.0);let target_dir=Directory::new();let target=fixture(&target_dir.0);source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,image_file,created_at,updated_at) VALUES(2,'base','初始猫','保留要求','assets/accessories/accessory-1-1-1.png',?1,?1)",[NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;Ok(())}).unwrap();let backup=make(&source,&source_dir.0,PackageKind::PersonaProfile,&["2"],false);let preview=prepare(&target,&backup).unwrap().unwrap();assert!(!preview.warnings.is_empty());let mut choice=input(&preview);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let l=crate::pet_creation::library(&s.connection,id)?;assert!(!l.enabled);assert_eq!(l.items[0].prompt,"保留要求");assert!(l.items[0].image_file.is_none());Ok(())}).unwrap();source.read(|s,_|{assert!(crate::pet_creation::library(&s.connection,2)?.enabled);assert!(crate::pet_creation::library(&s.connection,2)?.items[0].image_file.is_some());Ok(())}).unwrap();}

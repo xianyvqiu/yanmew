@@ -138,9 +138,9 @@ fn letters(c: &Connection, session: i64, travel: i64) -> AppResult<Vec<EvidenceL
 fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
     runtime.read(|store,secrets|{
         runtime.jobs_cancel.check()?;let source=source(&store.connection,id)?;
-        let provider=store.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成旅行游记"))?;
+        let provider=store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成旅行游记"))?;
         let target=providers::connection_test_config(&store.connection,provider,secrets)?;
-        let (configured,manual):(u32,Option<u32>)=store.connection.query_row("SELECT max_output_tokens,context_window_override FROM providers WHERE id=?1",[provider],|r|Ok((r.get(0)?,r.get(1)?)))?;
+        let (configured,manual):(u32,Option<u32>)=store.connection.query_row("SELECT max_output_tokens,context_window_override FROM provider_effective WHERE id=?1",[provider],|r|Ok((r.get(0)?,r.get(1)?)))?;
         let capacity=crate::chat_capacity::resolve(&target.base_url,&target.model,manual);
         let maximum_output=configured.min(capacity.max_output_tokens.unwrap_or(u32::MAX));
         let start=DateTime::parse_from_rfc3339(&source.started).map_err(|_|AppError::storage())?;
@@ -182,7 +182,7 @@ fn require_snapshot(
     let current = source(&store.connection, s.id)?;
     let provider = store
         .connection
-        .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+        .query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| {
             r.get::<_, i64>(0)
         })
         .optional()?;
@@ -335,7 +335,7 @@ impl Worker {
         let pending=runtime.read(|store,_|{
             let mut q=store.connection.prepare("SELECT id,session_id FROM travels WHERE status='returned' AND facts_state='ready' AND gift_state='done' AND journal_state='pending' ORDER BY id")?;
             let rows=q.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
-            let provider:String=store.connection.query_row("SELECT json_array(id,base_url,model,api_key_encrypted,max_output_tokens,context_window_override) FROM providers WHERE is_active=1",[],|r|r.get(0)).optional()?.unwrap_or_default();
+            let provider:String=store.connection.query_row("SELECT json_array(id,base_url,model,api_key_encrypted,max_output_tokens,context_window_override) FROM provider_effective WHERE is_active=1",[],|r|r.get(0)).optional()?.unwrap_or_default();
             let settings=crate::config::get(&store.connection)?;
             let stamp=format!("{provider}:{}:{}",settings["travel_journal_min_chars"],settings["travel_journal_max_chars"]);Ok((rows,stamp))
         });

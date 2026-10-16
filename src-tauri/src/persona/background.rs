@@ -15,6 +15,33 @@ use std::{
 pub const MAX_BYTES: usize = 10 * 1024 * 1024;
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
+/// 外观只影响聊天记录正文，不改变人设提示词、宠物或提醒气泡。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Appearance {
+    pub bubble_style: String,
+    pub user_text_color: Option<String>,
+    pub assistant_text_color: Option<String>,
+}
+impl Default for Appearance {
+    fn default() -> Self {
+        Self { bubble_style: "solid".into(), user_text_color: None, assistant_text_color: None }
+    }
+}
+impl Appearance {
+    fn validate(&self) -> AppResult<()> {
+        if !["solid", "transparent", "outline", "frosted"].contains(&self.bubble_style.as_str()) {
+            return Err(AppError::validation("bubbleStyle", "请选择有效的聊天气泡样式"));
+        }
+        for color in [&self.user_text_color, &self.assistant_text_color].into_iter().flatten() {
+            if color.len() != 7 || !color.starts_with('#') || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit) {
+                return Err(AppError::validation("textColor", "文字颜色须为 #RRGGBB，或留空跟随主题"));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Background {
@@ -22,6 +49,8 @@ pub struct Background {
     pub file: Option<String>,
     pub opacity: i64,
     pub blur: i64,
+    #[serde(default)]
+    pub appearance: Appearance,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,10 +73,13 @@ pub struct Input {
     pub blur: i64,
     pub image: Option<Upload>,
     pub reset: bool,
+    /// 不提交时保留原样式；恢复默认背景不会重置消息外观。
+    #[serde(default)]
+    pub appearance: Option<Appearance>,
 }
 
 fn conflict() -> AppError {
-    AppError::new("CONFLICT", "背景已在其他窗口修改，请重新读取后再保存")
+    AppError::new("CONFLICT", "聊天外观已在其他窗口修改，请重新读取后再保存")
 }
 fn snapshot(store: &Store, id: i64, revision: Option<u64>) -> AppResult<Background> {
     if let Some(revision) = revision {
@@ -63,7 +95,7 @@ fn snapshot(store: &Store, id: i64, revision: Option<u64>) -> AppResult<Backgrou
     store
         .connection
         .query_row(
-            "SELECT chat_bg_file,chat_bg_opacity,chat_bg_blur FROM personas WHERE id=?1",
+            "SELECT chat_bg_file,chat_bg_opacity,chat_bg_blur,chat_bubble_style,chat_user_text_color,chat_assistant_text_color FROM personas WHERE id=?1",
             [id],
             |row| {
                 Ok(Background {
@@ -71,6 +103,7 @@ fn snapshot(store: &Store, id: i64, revision: Option<u64>) -> AppResult<Backgrou
                     file: row.get(0)?,
                     opacity: row.get(1)?,
                     blur: row.get(2)?,
+                    appearance: Appearance { bubble_style: row.get(3)?, user_text_color: row.get(4)?, assistant_text_color: row.get(5)? },
                 })
             },
         )
@@ -248,6 +281,7 @@ pub fn save(
     revision: Option<u64>,
     input: Input,
 ) -> AppResult<Background> {
+    if let Some(appearance) = &input.appearance { appearance.validate()?; }
     if input.expected.persona_id != id.to_string() {
         return Err(AppError::validation("personaId", "背景不属于目标人设"));
     }
@@ -293,10 +327,11 @@ pub fn save(
         };
         let opacity = if input.reset { 85 } else { input.opacity };
         let blur = if input.reset { 0 } else { input.blur };
+        let appearance = input.appearance.clone().unwrap_or_else(|| input.expected.appearance.clone());
         let tx = store.connection.transaction()?;
         tx.execute(
-            "UPDATE personas SET chat_bg_file=?1,chat_bg_opacity=?2,chat_bg_blur=?3 WHERE id=?4",
-            params![file, opacity, blur, id],
+            "UPDATE personas SET chat_bg_file=?1,chat_bg_opacity=?2,chat_bg_blur=?3,chat_bubble_style=?5,chat_user_text_color=?6,chat_assistant_text_color=?7 WHERE id=?4",
+            params![file, opacity, blur, id, appearance.bubble_style, appearance.user_text_color, appearance.assistant_text_color],
         )?;
         tx.commit()?;
         Ok(Background {
@@ -304,6 +339,7 @@ pub fn save(
             file,
             opacity,
             blur,
+            appearance,
         })
     });
     if result.is_err() {

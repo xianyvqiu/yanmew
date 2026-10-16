@@ -70,7 +70,7 @@ fn capture(
         if first_complete != Some(round_id) { return Ok(None); }
         let first_user: Option<(i64,String)> = store.connection.query_row("SELECT id,content FROM messages WHERE session_id=?1 AND role='user' ORDER BY id LIMIT 1",[session_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         let Some((user_id,user_content)) = first_user else { return Ok(None); };
-        let provider_id = store.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get(0))?;
+        let provider_id = store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1",[],|r|r.get(0))?;
         let target = providers::connection_test_config(&store.connection,provider_id,secrets)?;
         let lease = runtime.requests.start(format!("session-title:{session_id}"), persona_id)?;
         Ok(Some((Snapshot {persona_id,session_id,context_revision:revision,round_id,title:title.unwrap(),user_id,user_content,provider_id,target},lease)))
@@ -89,7 +89,7 @@ fn commit(
         let context = crate::persona::context(&store.connection,store.context_revision)?;
         if context.persona_id != snapshot.persona_id.to_string() || context.session_id != Some(snapshot.session_id.to_string())
             || context.context_revision != snapshot.context_revision { return Ok(false); }
-        let active_provider = store.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?;
+        let active_provider = store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?;
         if active_provider != Some(snapshot.provider_id) { return Ok(false); }
         let current = providers::connection_test_config(&store.connection,snapshot.provider_id,secrets)?;
         if current.base_url != snapshot.target.base_url || current.model != snapshot.target.model

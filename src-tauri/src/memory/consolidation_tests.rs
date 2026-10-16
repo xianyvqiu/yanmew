@@ -84,6 +84,16 @@ fn save(runtime: &Runtime, key: WorkKey) {
         Outcome::AlreadySaved
     );
 }
+#[test]
+fn consolidation_uses_memory_model_when_connection_is_shared_with_chat() {
+    let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");
+    set_k(&runtime,2);
+    runtime.read(|s,_|{let revision=crate::provider_roles::revision(&s.connection)?;crate::provider_roles::save(&mut s.connection,"memory",Some("1"),"memory-model",true,revision,None,None)?;Ok(())}).unwrap();
+    complete(&runtime,1);complete(&runtime,1);let trigger=complete(&runtime,1);
+    let (snapshot,_)=capture(&runtime,trigger).unwrap().unwrap();
+    assert_eq!(snapshot.target.model,"memory-model");
+    assert_eq!(snapshot.configuration.provider.as_ref().unwrap().model,"memory-model");
+}
 fn memories(runtime: &Runtime, session: i64) -> Vec<LongMemory> {
     runtime
         .read(|store, _| list_long(&store.connection, session))
@@ -188,7 +198,7 @@ fn merge_commit_rejects_changed_source_k_provider_revision_and_cancel() {
     for sql in [
         "UPDATE short_memories SET content=content||'来源已更新' WHERE round_id=(SELECT MIN(round_id) FROM short_memories)",
         "UPDATE settings SET value='3' WHERE key='memory_merge_count'",
-        "UPDATE providers SET model='新模型' WHERE is_active=1",
+        "UPDATE provider_models SET model='新模型' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
         "UPDATE sessions SET memory_revision=memory_revision+1 WHERE id=1",
     ] {
         set_k(&runtime, 2);

@@ -15,6 +15,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
   const id = useId();
   const [name, setName] = useState(persona?.name ?? "");
   const [prompt, setPrompt] = useState(persona?.prompt ?? "");
+  const [initialPrompt, setInitialPrompt] = useState(persona?.initialPrompt ?? "");
   const [color, setColor] = useState(persona?.color ?? "#ffb6c1");
   const [selfEvolveEnabled, setSelfEvolveEnabled] = useState(persona?.selfEvolveEnabled ?? true);
   const [validationErrors, setValidationErrors] = useState<Partial<Record<"name" | "prompt" | "color", string>>>({});
@@ -36,6 +37,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
     if (!colorPattern.test(color)) nextErrors.color = "颜色必须为 #RRGGBB 格式";
     setValidationErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
+    if (persona && !initialPrompt.trim()) return;
 
     await onSave({
       name: name.trim(),
@@ -45,6 +47,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
       chatBgOpacity: persona?.chatBgOpacity ?? 85,
       chatBgBlur: persona?.chatBgBlur ?? 0,
       saveAsInitial: false,
+      initialPrompt: persona ? initialPrompt : prompt,
     });
   };
 
@@ -86,6 +89,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
         {promptError && <span id={`${id}-prompt-error`} role="alert">{promptError}</span>}
       </label>
 
+      {persona && <label className="ym-field">初始设定<textarea aria-label="初始设定" required value={initialPrompt} onChange={event=>setInitialPrompt(event.target.value)} /><span className="ym-page-note">分别保存初始与当前设定；编辑初始设定不会自动覆盖当前内容。</span></label>}
       <div className="ym-field">
         <label htmlFor={`${id}-color`}>人设颜色（#RRGGBB）</label>
         <div className="ym-inline-form">

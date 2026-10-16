@@ -1,0 +1,19 @@
+.ym-calendar-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; }
+.ym-calendar-month { white-space:nowrap; min-width:0; display:flex; align-items:center; gap:8px; color:var(--ym-text-secondary); }
+.ym-calendar-month input { width:auto; min-width:0; background:var(--ym-surface-muted); color:var(--ym-text); border:1px solid var(--ym-border); border-radius:10px; padding:8px; }
+.ym-calendar-week,.ym-calendar-days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+.ym-calendar-week { margin-bottom:8px; text-align:center; color:var(--ym-text-muted); font-size:12px; }
+.ym-calendar-day { min-width:0; min-height:76px; border:1px solid transparent; background:transparent; border-radius:12px; color:var(--ym-text); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; cursor:pointer; }
+.ym-calendar-number { display:grid; place-items:center; width:30px; height:30px; border:1px solid transparent; border-radius:50%; font-size:16px; }
+.ym-calendar-day[data-today="true"] .ym-calendar-number { border-color:var(--ym-focus); color:var(--ym-accent-strong); font-weight:650; }
+.ym-calendar-day[aria-pressed="true"] { background:var(--ym-accent-subtle); border-color:var(--ym-border-strong); }
+.ym-calendar-day:hover { background:var(--ym-surface-muted); }
+.ym-calendar-day:focus-visible { outline:2px solid var(--ym-focus); outline-offset:1px; }
+.ym-calendar-lunar { max-width:100%; font-size:12px; color:var(--ym-text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ym-calendar-marker { max-width:100%; padding:1px 5px; border-radius:6px; background:var(--ym-accent-subtle); color:var(--ym-accent-strong); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ym-calendar-detail { margin-top:20px; padding-top:16px; border-top:1px solid var(--ym-border); }
+.ym-calendar-detail h3 { font-size:14px; margin:0; }
+.ym-calendar-event { padding:12px 0; border-bottom:1px solid var(--ym-border); }
+.ym-calendar-event>span { margin-left:10px; }
+.ym-calendar-event p { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:440px) { .ym-calendar-day { min-height:64px; } .ym-calendar-lunar { font-size:11px; } .ym-calendar-marker { font-size:9px; } .ym-calendar-number { width:26px;height:26px; } }

@@ -154,7 +154,7 @@ fn late_title_cannot_overwrite_renamed_changed_deleted_or_switched_sources() {
                     }
                     "provider" => {
                         s.connection
-                            .execute("UPDATE providers SET model='changed-model'", [])?;
+                            .execute("UPDATE provider_models SET model='changed-model' WHERE purpose='chat'", [])?;
                     }
                     _ => unreachable!(),
                 }

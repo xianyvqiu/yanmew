@@ -9,10 +9,10 @@ pub(crate) fn prepare_proactive(runtime: &Runtime, store: &mut crate::runtime::S
     let health = store.pet.health(&store.connection, secrets)?;
     store.pet.require_ai()?;
     let prompt: String = store.connection.query_row("SELECT prompt FROM personas WHERE id=?1", [persona_id], |r|r.get(0))?;
-    let provider = store.connection.query_row("SELECT id FROM providers WHERE is_active=1", [], |r|r.get(0))?;
+    let provider = store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r|r.get(0))?;
     let config = providers::connection_test_config(&store.connection, provider, secrets)?;
     let context = context::Context::proactive(store, runtime, session_id, provider, &prompt, INSTRUCTION)?;
-    Ok(PreparedReply { persona_id, session_id, context_revision: store.context_revision, prompt, config,
+    Ok(PreparedReply { image_message:None, image_description:Arc::new(Mutex::new(None)), persona_id, session_id, context_revision: store.context_revision, prompt, config,
         messages: vec![Message::new("system", INSTRUCTION)], context, continuation:false, regenerating:false,
         proactive:true, evolution:None, lease, runtime:runtime.clone(), health, tool_events:None })
 }

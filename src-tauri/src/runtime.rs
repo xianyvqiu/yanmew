@@ -21,6 +21,7 @@ pub struct Runtime {
     pub paths: AppResult<AppPaths>,
     pub(crate) backups: Arc<crate::import_export::restore::State>,
     pub(crate) reminder_polish: Arc<crate::reminders::polish::Service>,
+    pub(crate) reminder_email: Arc<crate::reminder_email::Service>,
     /// 仅表示本次全新库初始化成功；窗口层首次展示使用，不写入设置或备份。
     pub initial_session_created: bool,
     pub store: Arc<Mutex<AppResult<Store>>>,
@@ -66,6 +67,7 @@ impl Runtime {
             initial_session_created,
             backups: Default::default(),
             reminder_polish: Default::default(),
+            reminder_email: Default::default(),
             store: Arc::new(Mutex::new(store)),
             secrets,
             ai: crate::ai::client::AiClient::new(Default::default()),
@@ -84,6 +86,7 @@ impl Runtime {
         // 只清理本程序生成且数据库确认未引用的背景文件；清理失败不阻塞启动。
         crate::persona::background::cleanup_unused(&runtime);
         crate::accessories::images::cleanup_startup(&runtime);
+        crate::chat_images::cleanup_unused(&runtime);
         runtime
     }
 
@@ -217,10 +220,11 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
     let connection = crate::db::test_database();
     connection
         .execute(
-            "INSERT INTO providers(name,base_url,model,is_active) VALUES('test',?1,'fake-model',1)",
+            "INSERT INTO providers(name,base_url) VALUES('test',?1)",
             [url],
         )
         .unwrap();
+    connection.execute_batch("INSERT INTO provider_models(provider_id,purpose,model) VALUES(1,'chat','fake-model'); INSERT INTO provider_roles(purpose,provider_id) VALUES('chat',1);").unwrap();
     connection.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'测试','a','a')",[]).unwrap();
     connection
         .execute("INSERT INTO settings VALUES('current_session_id','1')", [])
@@ -230,6 +234,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         initial_session_created: false,
         backups: Default::default(),
         reminder_polish: Default::default(),
+            reminder_email: Default::default(),
         store: Arc::new(Mutex::new(Ok(Store {
             accessory_crafts: Default::default(),
             weather: Default::default(),

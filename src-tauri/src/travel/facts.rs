@@ -45,10 +45,10 @@ fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
         let (session, persona, prompt, started, planned): (i64,i64,String,String,String) = store.connection.query_row(
             "SELECT t.session_id,s.persona_id,p.prompt,t.started_at,t.planned_return_at FROM travels t JOIN sessions s ON s.id=t.session_id JOIN personas p ON p.id=s.persona_id WHERE t.id=?1 AND t.facts_state='pending' AND t.status IN ('away','returned')",
             [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?.ok_or_else(AppError::not_found)?;
-        let provider = store.connection.query_row("SELECT id FROM providers WHERE is_active=1", [], |r| r.get::<_,i64>(0)).optional()?
+        let provider = store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| r.get::<_,i64>(0)).optional()?
             .ok_or_else(|| AppError::new("PROVIDER_UNAVAILABLE", "尚无可用聊天提供商，旅行事实等待生成"))?;
         let target = providers::connection_test_config(&store.connection,provider,secrets)?;
-        let max_tokens = store.connection.query_row("SELECT max_output_tokens FROM providers WHERE id=?1",[provider],|r|r.get::<_,u32>(0))?.min(4096);
+        let max_tokens = store.connection.query_row("SELECT max_output_tokens FROM provider_effective WHERE id=?1",[provider],|r|r.get::<_,u32>(0))?.min(4096);
         let start = DateTime::parse_from_rfc3339(&started).map_err(|_|AppError::storage())?;
         let end = DateTime::parse_from_rfc3339(&planned).map_err(|_|AppError::storage())?;
         let duration_minutes = end.signed_duration_since(start).num_minutes();
@@ -82,7 +82,7 @@ fn commit(
         )?;
         let provider = store
             .connection
-            .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+            .query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| {
                 r.get::<_, i64>(0)
             })
             .optional()?;

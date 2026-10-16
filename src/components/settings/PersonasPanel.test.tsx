@@ -17,6 +17,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../api", () => ({ configurationApi: api, backgroundApi: { get: vi.fn(), save: vi.fn() }, errorMessage: (error: { message: string }) => error.message }));
 
+vi.mock("../ChatBackgroundSettings",()=>({default:()=>null}));
+
 const systemPersona: Persona = {
   id: "system-1",
   name: "喵喵桌宠",
@@ -49,6 +51,12 @@ const currentPersona: Persona = {
 const otherPersona: Persona = { ...systemPersona, id: "persona-2", name: "另一只猫" };
 
 let rows: Persona[];
+it("详情导航直接展开指定人设，不要求先从卡片列表选择", async () => {
+  render(<PersonasPanel detailRequest={{ page:"persona",id:currentPersona.id }} />);
+  expect(await screen.findByRole("button",{name:"返回人设列表"})).toBeTruthy();
+  expect(screen.getByRole("button",{name:`编辑 ${currentPersona.name}`})).toBeTruthy();
+  expect(screen.queryByRole("article",{name:otherPersona.name})).toBeNull();
+});
 let expressionFailure: ((event: { personaId: string; error: { message: string } }) => void) | undefined;
 
 beforeEach(() => {
@@ -77,6 +85,7 @@ afterEach(cleanup);
 async function loadPanel() {
   render(<PersonasPanel />);
   await screen.findByRole("article", { name: currentPersona.name });
+  fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
 }
 
 describe("PersonasPanel", () => {
@@ -119,6 +128,8 @@ describe("PersonasPanel", () => {
   it("系统内置人设不显示删除按钮", async () => {
     await loadPanel();
 
+    fireEvent.click(screen.getByRole("button",{name:"返回人设列表"}));
+    fireEvent.click(screen.getByRole("button",{name:systemPersona.name}));
     const card = within(screen.getByRole("article", { name: systemPersona.name }));
     expect(card.queryByRole("button", { name: `删除 ${systemPersona.name}` })).toBeNull();
     expect(card.getByText("系统默认人设不能删除。")).toBeTruthy();
@@ -141,7 +152,7 @@ describe("PersonasPanel", () => {
     fireEvent.click(modal.getByRole("button", { name: "确认" }));
     await waitFor(() => expect(api.deletePersona).toHaveBeenCalledWith(currentPersona.id));
     await waitFor(() => expect(api.listPersonas.mock.calls.length).toBeGreaterThan(refreshCount));
-    expect(await within(screen.getByRole("article", { name: systemPersona.name })).findByText(/当前使用 · 系统默认/)).toBeTruthy();
+    expect(await within(screen.getByRole("article", { name: systemPersona.name })).findByText(/系统默认人设 · 当前使用/)).toBeTruthy();
   });
 
   it("切换人设后使用重新读取的后端 active 状态", async () => {
@@ -150,7 +161,8 @@ describe("PersonasPanel", () => {
     });
     await loadPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: `切换为 ${otherPersona.name}` }));
+    fireEvent.click(screen.getByRole("button",{name:"返回人设列表"}));
+    fireEvent.click(within(screen.getByRole("article",{name:otherPersona.name})).getByRole("button",{name:"切换"}));
 
     await waitFor(() => expect(api.setPersona).toHaveBeenCalledWith(otherPersona.id));
     await waitFor(() => expect(screen.getByRole("article", { name: otherPersona.name }).textContent).toContain("当前使用"));
@@ -218,6 +230,7 @@ describe("PersonasPanel", () => {
     api.generateExpressions.mockImplementation(() => new Promise<void>(() => {}));
     const view = render(<PersonasPanel />);
     await screen.findByRole("article", { name: currentPersona.name });
+    fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
     fireEvent.click(screen.getByRole("button", { name: `重新生成 ${currentPersona.name} 表情库` }));
     await screen.findByRole("button", { name: "取消生成" });
 

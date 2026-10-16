@@ -7,6 +7,8 @@
   color-scheme: light;
 
   --ym-canvas: #f2f0eb;
+  --ym-weather-day-bg:#f6eee1; --ym-weather-day-text:#4b4037;
+  --ym-weather-night-bg:#262a3b; --ym-weather-night-text:#eeeaf6;
   --ym-surface: #fffefa;
   --ym-surface-muted: #f8f6f1;
   --ym-surface-raised: #ffffff;
@@ -43,6 +45,8 @@
   color-scheme: dark;
 
   --ym-canvas: #111115;
+  --ym-weather-day-bg:#343025; --ym-weather-day-text:#eee4d2;
+  --ym-weather-night-bg:#232435; --ym-weather-night-text:#e9e7f6;
   --ym-surface: #1b1a1f;
   --ym-surface-muted: #242329;
   --ym-surface-raised: #29282e;

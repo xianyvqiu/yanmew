@@ -18,6 +18,7 @@ mod db;
 mod error;
 mod events;
 mod expressions;
+mod pet_creation;
 pub mod embedding;
 mod embedding_providers;
 pub mod memory_index;
@@ -44,7 +45,11 @@ mod pet_position;
 pub mod pet_store;
 mod platform;
 mod providers;
+mod provider_roles;
+mod chat_images;
+mod card_browser;
 pub mod reminders;
+mod reminder_email;
 pub mod reminder_extract;
 mod runtime;
 pub mod sessions;
@@ -116,12 +121,23 @@ pub fn run() {
             commands::cancel_accessory_craft,
             commands::list_accessories,
             commands::get_accessory_image,
+            commands::save_accessory_placement,
+            commands::get_pet_creation,
+            commands::save_pet_artwork,
+            commands::set_pet_creation_enabled,
+            commands::get_pet_artwork_image,
+            commands::upload_pet_artwork,
+            commands::finish_pet_artwork,
+            commands::generate_pet_artwork,
+            commands::cancel_pet_artwork,
             commands::wear_accessory,
             commands::unwear_accessory,
             commands::sell_accessory,
             commands::delete_accessory,
             commands::list_travels,
             commands::list_festival_catalog,
+            commands::get_calendar_month,
+            commands::browse_cards,
             commands::list_session_festivals,
             commands::get_session_festival,
             commands::create_session_festival,
@@ -196,6 +212,7 @@ pub fn run() {
             commands::take_reminder_navigation,
             commands::take_settings_navigation,
             commands::submit_chat,
+            commands::get_chat_image,
             commands::get_last_chat_round,
             commands::chat_continue_reply,
             commands::get_chat_request,
@@ -205,6 +222,12 @@ pub fn run() {
             commands::polish_reminder_occurrence,
             commands::get_app_info,
             commands::request_app_exit,
+            commands::get_reminder_email,
+            commands::save_reminder_email,
+            commands::send_reminder_email_code,
+            commands::verify_reminder_email,
+            commands::set_reminder_email_enabled,
+            commands::retry_reminder_email,
             commands::list_reminders,
             commands::create_reminder,
             commands::update_reminder,
@@ -220,6 +243,7 @@ pub fn run() {
             commands::set_pet_dragging,
             commands::refresh_pet_provider,
             commands::set_pet_hidden,
+            commands::set_pet_chat_open,
             commands::update_pet_regions,
             commands::get_configuration_status,
             commands::get_current_context,
@@ -236,6 +260,7 @@ pub fn run() {
             commands::create_session,
             commands::set_active_session,
             commands::rename_session,
+            commands::set_session_pinned,
             commands::delete_session,
             commands::update_chat_message,
             commands::delete_tail_message,
@@ -250,6 +275,8 @@ pub fn run() {
             commands::save_weather_settings,
             commands::save_settings,
             commands::list_providers,
+            commands::get_provider_roles,
+            commands::save_provider_role,
             commands::test_provider_connection,
             commands::create_provider,
             commands::update_provider,

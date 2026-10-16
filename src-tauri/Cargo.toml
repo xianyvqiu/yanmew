@@ -29,6 +29,7 @@ image = { version = "=0.25.10", default-features = false, features = ["jpeg", "p
 scraper = { version = "=0.27.0", default-features = false }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 semver = "=1.0.28"
+lettre = { version = "=0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-autostart = "=2.5.1"

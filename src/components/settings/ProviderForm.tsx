@@ -8,9 +8,10 @@ type ProviderFormProps = {
   onSave: (input: ProviderInput) => Promise<void>;
   onCancel: () => void;
   embedding?: boolean;
+  connectionOnly?:boolean;
 };
 
-export default function ProviderForm({ provider, busy, error, onSave, onCancel, embedding = false }: ProviderFormProps) {
+export default function ProviderForm({ provider, busy, error, onSave, onCancel, embedding = false, connectionOnly=false }: ProviderFormProps) {
   const id = useId();
   const [name, setName] = useState(provider?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
@@ -34,7 +35,7 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
-    if (!embedding) {
+    if (!embedding && !connectionOnly) {
       const valid = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
       if (!valid(maxOutputTokens) || (contextWindow !== "" && !valid(contextWindow))) {
         setLocalError(!valid(maxOutputTokens)
@@ -48,9 +49,9 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
     await onSave({
       name: name.trim(),
       baseUrl: baseUrl.trim() || null,
-      model: model.trim(),
       apiKey: apiKeyUpdate,
-      ...(!embedding ? { maxOutputTokens: Number(maxOutputTokens), contextWindowOverride: contextWindow === "" ? null : Number(contextWindow) } : {}),
+      ...(!connectionOnly ? {model:model.trim()} : {}),
+      ...(!embedding && !connectionOnly ? { maxOutputTokens: Number(maxOutputTokens), contextWindowOverride: contextWindow === "" ? null : Number(contextWindow) } : {}),
     });
   };
 
@@ -84,12 +85,12 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
           onChange={event => setBaseUrl(event.target.value)}
         />
         <span id={`${id}-base-url-note`} className="ym-page-note">
-          {embedding ? "填写服务的 Base URL，例如 https://api.openai.com/v1；提交时补上 /embeddings。" : "留空使用 https://api.openai.com/v1；提交时会自动补上 /chat/completions。"}
+          {embedding ? "填写服务的 Base URL，例如 https://api.openai.com/v1；提交时补上 /embeddings。" : "留空使用 https://api.openai.com/v1；各用途按接口类型追加路径，不填写完整调用路径。"}
         </span>
         {baseUrlError && <span id={`${id}-base-url-error`} role="alert">{baseUrlError}</span>}
       </label>
 
-      <label className="ym-field" htmlFor={`${id}-model`}>
+      {!connectionOnly&&<label className="ym-field" htmlFor={`${id}-model`}>
         模型名称
         <input
           id={`${id}-model`}
@@ -101,7 +102,7 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
           onChange={event => setModel(event.target.value)}
         />
         {modelError && <span id={`${id}-model-error`} role="alert">{modelError}</span>}
-      </label>
+      </label>}
 
       <div className="ym-field">
         <label htmlFor={`${id}-api-key`}>API Key</label>
@@ -142,7 +143,7 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
         {apiKeyError && <span id={`${id}-api-key-error`} role="alert">{apiKeyError}</span>}
       </div>
 
-      {!embedding && <details open={advancedOpen || Boolean(maxOutputError || contextWindowError)} onToggle={event => setAdvancedOpen(event.currentTarget.open)}>
+      {!embedding && !connectionOnly && <details open={advancedOpen || Boolean(maxOutputError || contextWindowError)} onToggle={event => setAdvancedOpen(event.currentTarget.open)}>
         <summary>高级设置</summary>
         <label className="ym-field" htmlFor={`${id}-max-output`}>
           最大输出（tokens）

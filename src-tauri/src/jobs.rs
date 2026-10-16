@@ -78,6 +78,7 @@ pub async fn run(
                 reminder_error = Some(error.message);
             }
         }
+        crate::reminder_email::tick(&runtime);
         let worker = runtime.clone();
         let result = tauri::async_runtime::spawn_blocking(move || worker.pet_view())
             .await

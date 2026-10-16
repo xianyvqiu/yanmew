@@ -46,7 +46,7 @@ export default function EmbeddingProvidersPanel() {
     finally { locked.current = false; if (mounted.current) setBusy(false); }
   };
   const save = async (input: ProviderInput) => {
-    if (await run(() => embeddingApi.save(editing?.id ?? null,input), "Embedding 提供商已保存")) {
+    if (await run(() => embeddingApi.save(editing?.id ?? null,{...input,model:input.model??""}), "Embedding 提供商已保存")) {
       if (mounted.current) setEditing(undefined);
     }
   };

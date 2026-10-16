@@ -1,5 +1,5 @@
 # 构建并组装 Windows x64 便携版。仅复制程序资源，不复制运行数据。
-param([switch]$SkipBuild)
+param([switch]$SkipBuild, [switch]$PassThru)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $projectRoot
@@ -102,6 +102,7 @@ try {
     Write-Output "便携目录：$portable"
     Write-Output "便携 ZIP：$archive"
     Write-Output "SHA-256：$hash"
+    if ($PassThru) { Write-Output ([pscustomobject]@{ ReleaseDirectory = $releaseRoot; PortableDirectory = $portable; Archive = $archive }) }
 } finally {
     Pop-Location
 }

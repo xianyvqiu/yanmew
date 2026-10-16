@@ -36,7 +36,7 @@ pub(crate) fn require_current(
     Ok(())
 }
 
-const COLUMNS: &str = "id,session_id,name,display_text,image_file,description,cost,source,travel_id,is_worn,created_at";
+const COLUMNS: &str = "id,session_id,name,display_text,image_file,description,cost,source,travel_id,is_worn,created_at,position_x,position_y,scale";
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Accessory> {
     Ok(Accessory {
         id: row.get::<_, i64>(0)?.to_string(),
@@ -51,6 +51,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Accessory> {
         travel_id: row.get::<_, Option<i64>>(8)?.map(|id| id.to_string()),
         is_worn: row.get(9)?,
         created_at: row.get(10)?,
+        position_x: row.get(11)?, position_y: row.get(12)?, scale: row.get(13)?,
     })
 }
 pub(crate) fn get(connection: &Connection, session: i64, id: i64) -> AppResult<Accessory> {
@@ -169,3 +170,6 @@ pub(crate) fn sell(
         accessory.image_file,
     ))
 }
+
+/// 显式保存相对桌宠的千分比坐标，不改变佩戴、币或制作资格。
+pub(crate) fn placement(c:&Connection,session:i64,id:i64,x:Option<i32>,y:Option<i32>,scale:i32)->AppResult<Accessory>{get(c,session,id)?;if x.is_some()!=y.is_some()||x.is_some_and(|n|!(-1500..=1500).contains(&n))||y.is_some_and(|n|!(-1500..=1500).contains(&n))||!(200..=3000).contains(&scale){return Err(AppError::validation("position","位置须在相对范围内，大小为20%–300%"));}c.execute("UPDATE accessories SET position_x=?1,position_y=?2,scale=?3 WHERE id=?4 AND session_id=?5",params![x,y,scale,id,session])?;get(c,session,id)}

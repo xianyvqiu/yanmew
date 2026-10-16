@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { configurationApi, errorMessage, weatherApi } from "../../api";
 import type { AppError, SecretUpdate, WeatherInput, WeatherSettings, WeatherView } from "../../types";
 import "./WeatherPanel.css";
+import WeatherCard from "./WeatherCard";
 
 type WeatherPanelProps = { contextRevision: number };
 
@@ -232,7 +233,8 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
     <p className="ym-page-note">打开页面只读取已有缓存，不会自动请求定位。点击“刷新天气”后才会获取当前位置和天气。</p>
     {loading && <p role="status">正在读取天气缓存…</p>}
     {weatherError && <div className="ym-page-error" role="alert">{weatherError}</div>}
-    {weather && <section aria-label="天气结果">
+    {weather && <WeatherCard weather={weather} />}
+    {weather && <details><summary>天气数据详情</summary><section aria-label="天气结果">
       <p role="status">状态：{availabilityLabels[weather.availability]}</p>
       {weather.data ? <dl>
         <dt>天气</dt><dd>{weather.data.observation.description}</dd>
@@ -245,7 +247,7 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
       </dl> : <p className="ym-page-note">当前没有可显示的天气缓存。</p>}
       {weather.availability === "stale" && <p className="ym-page-note">当前显示的是过期缓存，刷新失败时仍保留上次位置和天气。</p>}
       {weather.availability === "unavailable" && weather.error && <p className="ym-page-note">定位或天气服务当前不可用；如有旧缓存，仍会保留显示。</p>}
-    </section>}
+    </section></details>}
     <div className="ym-inline-form">
       <button className="ym-button" disabled={weatherBusy} onClick={() => { void refreshWeather(); }}>{refreshing ? "正在刷新…" : "刷新天气"}</button>
       {refreshing && <button className="ym-button" disabled={canceling} onClick={() => { void cancelRefresh(); }}>{canceling ? "正在取消…" : "取消刷新"}</button>}

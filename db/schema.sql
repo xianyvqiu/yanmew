@@ -1,6 +1,7 @@
 -- ============================================================
 -- 颜喵 YanMew 数据库结构（SQLite）
 -- 运行库文件：可执行文件所在目录的 data/yanwenzi.db（便携版 data 子目录）
+-- 安装版运行库：当前用户 LocalAppData/YanMew/data/yanwenzi.db；由平台路径适配选择，结构与便携版相同。
 -- 本文件是最新完整建库脚本，仅描述结构，不包含运行期数据。
 -- 新库由 Rust 在事务中执行本文件；旧库通过版本化迁移升级，不靠 IF NOT EXISTS 更新旧表。
 -- 当前包含已确定的完整 V1 业务表（含小游戏插件）；语音表在后续扩展阶段加入。
@@ -33,6 +34,8 @@
 --   festival_catalog   系统内置节日母表，独立，不随任何业务数据删除
 --   reminders          全局提醒规则
 --   reminder_occurrences → reminders.id，删除规则级联删除每次触发记录
+--   reminder_email_deliveries 全局本机邮件任务，不进入备份
+--   reminder_email_items → 邮件任务与触发记录，两个外键均级联删除，occurrence_id唯一
 --
 -- 会话级（都由 sessions 派生，删除会话时级联删除）：
 --   sessions           主表
@@ -80,11 +83,8 @@ CREATE TABLE IF NOT EXISTS providers (
     name              TEXT    NOT NULL,                    -- 显示名称，用户自定义
     base_url          TEXT,                                -- 自定义接口地址；官方 OpenAI 为 NULL
     api_key_encrypted TEXT,                                -- DPAPI Base64；未配置或导入后 NULL，不存明文
-    model             TEXT    NOT NULL,                    -- 模型名，如 gpt-4o-mini / deepseek-chat
-    is_active         INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 1=聊天当前提供商（全局唯一），0=非当前聊天提供商
-    memory_is_active  INTEGER NOT NULL DEFAULT 0 CHECK (memory_is_active IN (0, 1)),           -- 1=记忆整合专用当前项，0=非当前项；全表无 1 时跟随聊天提供商
-    max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK (max_output_tokens > 0), -- 单次聊天最大输出，实际预算不回写此配置
-    context_window_override INTEGER CHECK (context_window_override > 0) -- NULL=自动解析或未知；正整数=用户手动容量
+    created_at TEXT, -- 创建UTC时间；升级前未知时间保留NULL
+    updated_at TEXT -- 最近编辑UTC时间；升级前未知时间保留NULL
 );
 
 -- Embedding 提供商与聊天/记忆整合提供商分开管理。
@@ -126,7 +126,14 @@ CREATE TABLE IF NOT EXISTS personas (
     chat_bg_blur        INTEGER NOT NULL DEFAULT 0 CHECK (chat_bg_blur BETWEEN 0 AND 40),          -- 聊天窗背景模糊像素 0–40
     is_active           INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 1=当前使用人设（全局唯一），0=非当前人设
     is_builtin          INTEGER NOT NULL DEFAULT 0 CHECK (is_builtin IN (0, 1)),         -- 1=系统内置默认人设且不可删除，0=用户人设
-    expressions         TEXT                                 -- 分类表情库 JSON；未生成时为 NULL
+    expressions         TEXT,                                -- 分类表情库 JSON；未生成时为 NULL
+    created_at TEXT, -- 创建UTC时间；升级前未知时间保留NULL
+    updated_at TEXT, -- 最近编辑UTC时间；升级前未知时间保留NULL
+    chat_bubble_style TEXT NOT NULL DEFAULT 'solid' CHECK (chat_bubble_style IN ('solid','transparent','outline','frosted')), -- 人设级消息气泡：solid默认；transparent透明；outline仅描边；frosted毛玻璃。
+    chat_user_text_color TEXT CHECK (chat_user_text_color IS NULL OR (length(chat_user_text_color)=7 AND substr(chat_user_text_color,1,1)='#' AND substr(chat_user_text_color,2) NOT GLOB '*[^0-9A-Fa-f]*')), -- 用户正文颜色，#RRGGBB；NULL跟随主题。
+    chat_assistant_text_color TEXT CHECK (chat_assistant_text_color IS NULL OR (length(chat_assistant_text_color)=7 AND substr(chat_assistant_text_color,1,1)='#' AND substr(chat_assistant_text_color,2) NOT GLOB '*[^0-9A-Fa-f]*')), -- AI正文颜色，#RRGGBB；NULL跟随主题。
+    pet_image_enabled INTEGER NOT NULL DEFAULT 0 CHECK(pet_image_enabled IN (0,1)), -- 0颜文字/1图片模式，开启前要求正式初始图
+    pet_image_revision INTEGER NOT NULL DEFAULT 0 CHECK(pet_image_revision>=0) -- 创作库版本，淘汰旧请求
 );
 
 -- ------------------------------------------------------------
@@ -161,6 +168,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     intimacy                      INTEGER NOT NULL DEFAULT 0 CHECK (intimacy >= 0),          -- 当前会话亲密度，整数 0–999；上下限及整数类型由下方触发器共同保护
     last_return_at                TEXT,                                -- 最近一次旅行回来时间 RFC3339，可空
     travel_trigger_remaining_seconds INTEGER CHECK (travel_trigger_remaining_seconds > 0), -- 下次出行剩余的有效在线秒数；出门中可空
+    is_pinned                     INTEGER NOT NULL DEFAULT 0 CHECK (is_pinned IN (0, 1)), -- 会话列表置顶：0=普通，1=置顶；不改变更新时间或当前会话
     FOREIGN KEY (persona_id) REFERENCES personas(id) ON DELETE CASCADE,
     FOREIGN KEY (user_profile_id) REFERENCES user_profiles(id) ON DELETE SET NULL
 );
@@ -245,6 +253,14 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 -- ------------------------------------------------------------
+-- 邮件设置键（不属于模型提供商）：
+-- reminder_email_config：JSON，version=1；connection={email,host,port,encryption,username,from,to}。
+--   email=基础发信邮箱；host=SMTP主机；port=端口，默认465；encryption=tls隐式TLS/starttls强制升级，默认tls。
+--   username=SMTP登录账号、from=实际发件地址，默认同email；to=收信地址，新表单为空须单独填写，不自动代填；未知邮箱host不猜测。
+--   revision=整数，默认0，连接/密钥/开关变动时递增；enabled=false、verified=false；
+--   enabledSince=null或UTC ISO8601，仅登记启用后触发的提醒；导入重置revision/开关/绑定/启用时间。
+-- reminder_email_secret：Windows DPAPI加密授权码字符串，默认无此键；不回显、不导出。
+-- 验证码摘要、10分钟期限、5次错误及60秒重发冷却只在内存，不写入settings或备份。
 -- 5. 全局设置（键值对）
 -- 下列是当前 V1 完整键目录；值的格式、默认值、范围和成对校验同时登记在《数据库与持久化设计》2.7 节。
 --   hungry_minutes                    饥饿触发分钟数，默认 120
@@ -287,6 +303,8 @@ CREATE TABLE IF NOT EXISTS messages (
 --   window_pos_y                      主宠窗左上角物理像素 Y，规范有符号 i32 文本；缺失/残缺/无效坐标回退当前工作区右下角
 --   窗口位置只由原生拖动服务写入，不能经通用 save_settings 修改；显示器/DPI 临时回位不覆盖用户首选位置
 --   theme_mode                       主程序主题：system / light / dark，默认 system；不传递给小游戏插件
+--   provider_roles_revision          通用用途配置冲突版本；未登记为0，每次连接或用途保存递增
+--   image_generation_shared_revision 生图配置版本；只在生图用途或其连接变更时递增
 --   image_generation_config          生图专用版本化JSON；默认version=1/revision=0/nextId=1/enabled=false/activeId=null/providers=[]
 --                                    providers=[{id,name,protocol,baseUrl,model}]，protocol仅openai-compatible，baseUrl为HTTPS根地址；按根地址追加/images/generations
 --                                    revision每次保存/选择/开关/删除递增，写入必须匹配expectedRevision；nextId递增不复用，ID及公开nextId用十进制字符串
@@ -678,7 +696,7 @@ CREATE TABLE IF NOT EXISTS travel_journals (
 -- ------------------------------------------------------------
 -- 15. 饰品
 -- 每个饰品属于一个会话；source: crafted=制作，travel=旅行带回。
--- v1 只有头顶装饰槽；is_worn=1 表示当前佩戴。
+-- 同时最多佩戴一件；is_worn=1表示当前佩戴。NULL坐标沿用头顶，非NULL坐标为相对桌宠的位置。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS accessories (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
@@ -692,6 +710,9 @@ CREATE TABLE IF NOT EXISTS accessories (
     is_worn      INTEGER NOT NULL DEFAULT 0 CHECK (is_worn IN (0, 1)),          -- 是否佩戴：1 佩戴，0 未佩戴
     created_at   TEXT    NOT NULL,                    -- 创建时间 RFC3339
     image_file   TEXT,                                -- 可选透明饰品PNG受管相对路径；NULL显示display_text，不存远程URL或绝对路径
+    position_x INTEGER CHECK(position_x BETWEEN -1500 AND 1500), -- 饰品中心相对桌宠中心X，宽度千分比；NULL默认头顶
+    position_y INTEGER CHECK(position_y BETWEEN -1500 AND 1500), -- 饰品中心相对桌宠中心Y，高度千分比；NULL默认头顶
+    scale INTEGER NOT NULL DEFAULT 1000 CHECK(scale BETWEEN 200 AND 3000), -- 饰品缩放千分比，1000默认
     FOREIGN KEY (travel_id, session_id) REFERENCES travels(id, session_id) ON DELETE NO ACTION,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (travel_id)  REFERENCES travels(id)   ON DELETE SET NULL
@@ -827,8 +848,6 @@ CREATE INDEX IF NOT EXISTS idx_souvenirs_session       ON souvenirs (session_id)
 CREATE INDEX IF NOT EXISTS idx_session_festivals_session ON session_festivals (session_id);
 
 -- 全局当前项最多一个；允许无提供商或无显式记忆提供商。
-CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_one_active ON providers(is_active) WHERE is_active = 1;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_providers_one_memory_active ON providers(memory_is_active) WHERE memory_is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_active ON embedding_providers(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_one_active ON personas(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_one_builtin ON personas(is_builtin) WHERE is_builtin = 1;
@@ -860,3 +879,82 @@ CREATE INDEX IF NOT EXISTS idx_letters_travel_session ON letters(travel_id, sess
 CREATE INDEX IF NOT EXISTS idx_travels_pending_facts ON travels(status, id) WHERE facts_state = 'pending';
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_builtin ON embedding_providers(is_builtin) WHERE is_builtin = 1;
+
+-- 各连接的模型设置独立保存；切换当前项不会清除之前的模型与聊天预算。
+CREATE TABLE IF NOT EXISTS provider_models (
+    provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE, -- 所属通用连接
+    purpose TEXT NOT NULL CHECK (purpose IN ('chat','memory','image','vision')), -- chat聊天 / memory记忆 / image生图 / vision识图
+    model TEXT NOT NULL CHECK (length(trim(model))>0), -- 该连接在此用途的模型名称
+    max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK (max_output_tokens>0), -- 聊天默认32768；其他用途保留默认值
+    context_window_override INTEGER CHECK (context_window_override>0), -- NULL自动解析；聊天可手动覆盖
+    PRIMARY KEY(provider_id,purpose)
+);
+-- 当前用途选择；模型与预算只存provider_models，不在此重复存储。
+CREATE TABLE IF NOT EXISTS provider_roles (
+    purpose TEXT PRIMARY KEY CHECK (purpose IN ('chat','memory','image','vision')), -- chat聊天 / memory记忆 / image生图 / vision识图；记忆/识图无行时跟随聊天
+    provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE RESTRICT, -- 当前连接；被用途引用时禁止删除
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)), -- 生图0关闭/1开启；其他用途保持1
+    FOREIGN KEY(provider_id,purpose) REFERENCES provider_models(provider_id,purpose) ON DELETE RESTRICT
+);
+-- 只供原有内部查询读取；字段均从连接和模型配置计算，不重复持久化。
+CREATE VIEW IF NOT EXISTS provider_effective AS
+SELECT p.id,p.name,p.base_url,p.api_key_encrypted,
+       COALESCE(m.model,'未配置') AS model,
+       EXISTS(SELECT 1 FROM provider_roles r WHERE r.purpose='chat' AND r.provider_id=p.id) AS is_active,
+       EXISTS(SELECT 1 FROM provider_roles r WHERE r.purpose='memory' AND r.provider_id=p.id) AS memory_is_active,
+       COALESCE(m.max_output_tokens,32768) AS max_output_tokens,
+       m.context_window_override,p.created_at,p.updated_at
+FROM providers p LEFT JOIN provider_models m ON m.provider_id=p.id AND m.purpose='chat';
+CREATE TABLE IF NOT EXISTS message_images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- 附件主键
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, -- 所属用户消息；删除消息级联清引用
+    filename TEXT NOT NULL, -- 用户原文件名，仅用于展示，不作为文件路径
+    image_file TEXT NOT NULL, -- chat_images目录内的受管文件名
+    media_type TEXT NOT NULL CHECK (media_type IN ('image/png','image/jpeg','image/webp')), -- 实际格式：image/png / image/jpeg / image/webp
+    caption TEXT, -- 已生成的图片理解事实；NULL表示尚无理解结果
+    created_at TEXT NOT NULL -- 保存UTC时间
+);
+CREATE INDEX idx_message_images_message ON message_images(message_id,id);
+
+-- 邮件队列是本机运行数据，不导出；旧版升级不补登记历史提醒。
+CREATE TABLE IF NOT EXISTS reminder_email_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- 本机邮件任务ID。
+    kind TEXT NOT NULL CHECK(kind IN ('due','offline_summary')), -- due到点；offline_summary离线汇总。
+    recipient TEXT NOT NULL, -- 登记时的收件地址，发送前复核配置版本。
+    subject TEXT NOT NULL, -- 原始提醒生成的主题快照，不经过AI润色。
+    body TEXT NOT NULL, -- 原始提醒正文快照；发送前剔除已删除的提醒。
+    config_revision INTEGER NOT NULL, -- 创建任务时SMTP配置修订号。
+    state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','sending','retry_wait','sent','failed','uncertain','cancelled')), -- pending待发送；sending发送中；retry_wait等待重试；sent已发送；failed失败；uncertain结果不确定；cancelled取消。
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0), -- 已开始发送次数；自动最多3次。
+    next_retry_at TEXT, -- UTC ISO8601重试时间；非retry_wait时为空。
+    error TEXT, -- 可展示的中文错误，不含授权码和SMTP原始响应。
+    created_at TEXT NOT NULL, -- UTC ISO8601登记时间。
+    sent_at TEXT -- SMTP确认成功的UTC时间；失败或不确定为空。
+);
+CREATE INDEX IF NOT EXISTS idx_reminder_email_queue ON reminder_email_deliveries(state,next_retry_at,id);
+CREATE TABLE IF NOT EXISTS reminder_email_items (
+    delivery_id INTEGER NOT NULL REFERENCES reminder_email_deliveries(id) ON DELETE CASCADE, -- 所属邮件任务。
+    occurrence_id INTEGER NOT NULL UNIQUE REFERENCES reminder_occurrences(id) ON DELETE CASCADE, -- 真实提醒触发ID；唯一约束防止重复登记。
+    name TEXT NOT NULL, -- 触发时的提醒名称快照。
+    content TEXT NOT NULL, -- 触发时的提醒详情快照。
+    scheduled_time TEXT NOT NULL, -- 触发时转换为电脑当地时区的可读时间快照。
+    PRIMARY KEY(delivery_id,occurrence_id)
+);
+
+CREATE TABLE IF NOT EXISTS pet_artworks (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 创作条目主键，AI仅能选择已有正式条目
+ persona_id INTEGER NOT NULL REFERENCES personas(id) ON DELETE CASCADE, -- 所属人设，删除人设级联删除条目
+ kind TEXT NOT NULL CHECK(kind IN ('base','expression')), -- base唯一初始形象/expression表情
+ name TEXT NOT NULL CHECK(length(trim(name))>0), -- 用户可编辑名称
+ prompt TEXT NOT NULL DEFAULT '', -- 用户自由填写的图像生成要求
+ description TEXT NOT NULL DEFAULT '', -- 给AI参考的使用时机，不作为指令
+ category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','click','hungry','eating','sleepy','bored','thinking','chat')), -- 状态或聊天分类
+ enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), -- 0不参与表情选择/1允许选择
+ image_file TEXT, -- 已接受正式透明PNG受管相对路径，NULL尚无正式图
+ preview_file TEXT, -- 尚待用户接受的透明PNG；重新生成失败保留旧预览
+ revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0), -- 本条内容版本，修改后拒绝迟到生成和旧保存
+ created_at TEXT NOT NULL, -- 创建时间RFC3339
+ updated_at TEXT NOT NULL -- 最近修改时间RFC3339
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pet_artworks_base ON pet_artworks(persona_id) WHERE kind='base';
+CREATE INDEX IF NOT EXISTS idx_pet_artworks_persona ON pet_artworks(persona_id,id);

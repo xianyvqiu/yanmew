@@ -16,7 +16,7 @@ export const backupApi = {
   exportPluginData: (ids: string[]) => invoke<BackupArchive | null>("export_game_plugin_data", { ids }),
 };
 import type { GamePlugin, GamePluginDetail, GameInstallPreview, GamePermissionChoice, GameRun, GamePluginLedger, PluginJson } from "./types";
-/** 仅设置窗口可调用管理接口；游戏中心与插件管理共用现有宿主。 */
+/** 仅设置窗口可调用管理接口；小游戏启动与管理共用现有宿主。 */
 export const gamePluginsApi = {
   list: () => invoke<GamePlugin[]>("list_game_plugins"),
   detail: (id: string) => invoke<GamePluginDetail>("get_game_plugin", { id }),
@@ -106,12 +106,13 @@ import type { ChatReplyEvent, ChatRequestSnapshot, RoundSnapshot } from "./types
 import type { Message } from "./types";
 
 export const chatApi = {
+  image:(context:CurrentContext,id:string)=>invoke<string>("get_chat_image",{context,id}),
   edit: (context: CurrentContext, message: Message, content: string) => invoke<Message>("update_chat_message", { context, messageId: message.id, expectedContent: message.content, content }),
   deleteTail: (context: CurrentContext, message: Message) => invoke<void>("delete_tail_message", { context, messageId: message.id, expectedContent: message.content }),
   regenerate: (context: CurrentContext, roundId: RecordId) => invoke<ChatRequestSnapshot>("regenerate_last_reply", { context, roundId }),
   listenMessages: (receive: (change: { sessionId: RecordId }) => void) => listen<{ sessionId: RecordId }>("chat-messages-changed", event => receive(event.payload)),
-  submit: (context: CurrentContext, input: string) => invoke<ChatRequestSnapshot>("submit_chat", {
-    personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision, input,
+  submit: (context: CurrentContext, input: string, images:import("./types").ChatImageInput[]=[]) => invoke<ChatRequestSnapshot>("submit_chat", {
+    personaId: context.personaId, sessionId: context.sessionId, contextRevision: context.contextRevision, input, ...(images.length?{images}:{}),
   }),
   continue: (context: CurrentContext, roundId: RecordId) => invoke<ChatRequestSnapshot>("chat_continue_reply", { context, roundId }),
   lastRound: (context: CurrentContext) => invoke<RoundSnapshot | null>("get_last_chat_round", { context }),
@@ -169,6 +170,8 @@ export const configurationApi = {
   getSettingsDefaults: () => invoke<Settings>("get_settings_defaults"),
   saveSettings: (changes: Partial<Settings>) => invoke<Settings>("save_settings", { changes }),
   listProviders: () => invoke<Provider[]>("list_providers"),
+  roles: () => invoke<import("./types").ProviderRoles>("get_provider_roles"),
+  saveRole: (purpose:import("./types").ProviderRole["purpose"],providerId:string|null,model:string,enabled:boolean,expectedRevision:number,maxOutputTokens?:number,contextWindowOverride?:number|null) => invoke<import("./types").ProviderRoles>("save_provider_role",{purpose,providerId,model,enabled,expectedRevision,maxOutputTokens,contextWindowOverride}),
   testProvider: (id: RecordId) => invoke<void>("test_provider_connection", { id }),
   createProvider: (input: ProviderInput) => invoke<Provider>("create_provider", { input }),
   updateProvider: (id: RecordId, input: ProviderInput) => invoke<Provider>("update_provider", { id, input }),
@@ -224,6 +227,9 @@ export const sessionApi = {
   }),
   rename: (context: CurrentContext, sessionId: RecordId, title: string) => invoke<Session>("rename_session", {
     personaId: context.personaId, sessionId, contextRevision: context.contextRevision, title,
+  }),
+  setPinned: (context: CurrentContext, sessionId: RecordId, isPinned: boolean) => invoke<Session>("set_session_pinned", {
+    personaId: context.personaId, sessionId, contextRevision: context.contextRevision, isPinned,
   }),
   delete: (context: CurrentContext, sessionId: RecordId) => invoke<SessionDeleteResult>("delete_session", {
     personaId: context.personaId, sessionId, contextRevision: context.contextRevision,
@@ -316,6 +322,7 @@ export const travelJournalsApi = {
 import type { FestivalCatalogRecord, SessionFestivalInput, SessionFestivalRecord } from "./types";
 /** 母表只读，子表修改始终携带当前会话和旧记录token。 */
 export const festivalsApi = {
+  month: (year: number, month: number) => invoke<import("./types").CalendarMonth>("get_calendar_month", { year, month }),
   listen: (receive: (event: { sessionId: RecordId | null }) => void) => listen<{ sessionId: RecordId | null }>("festivals-changed", event => receive(event.payload)),
   catalog: () => invoke<FestivalCatalogRecord[]>("list_festival_catalog"),
   list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<SessionFestivalRecord[]>("list_session_festivals", { context, beforeId, limit }),
@@ -324,3 +331,33 @@ export const festivalsApi = {
   update: (context: CurrentContext, id: RecordId, expected: string, input: SessionFestivalInput) => invoke<SessionFestivalRecord>("update_session_festival", { context, id, expected, input }),
   delete: (context: CurrentContext, id: RecordId, expected: string) => invoke<void>("delete_session_festival", { context, id, expected }),
 };
+
+export type CardKind="travels"|"letters"|"journals"|"accessories"|"souvenirs"|"dates";
+export const cardBrowserApi={
+  browse:<T,>(kind:CardKind,context:CurrentContext,search:string,order:"newest"|"oldest",page:number)=>invoke<{items:T[];total:number;page:number;pages:number}>("browse_cards",{input:{kind,context,search,order,page}}),
+  listen:(kind:CardKind,receive:()=>void)=>listen(kind==="accessories"?"accessories-changed":kind==="dates"?"festivals-changed":"travel-changed",receive),
+};
+
+import type { ReminderEmailView, ReminderEmailInput } from "./types";
+export const reminderEmailApi = {
+  get: () => invoke<ReminderEmailView>("get_reminder_email"),
+  save: (input: ReminderEmailInput) => invoke<ReminderEmailView>("save_reminder_email", { input }),
+  sendCode: (input: ReminderEmailInput) => invoke<ReminderEmailView>("send_reminder_email_code", { input }),
+  verify: (code: string, revision: number) => invoke<ReminderEmailView>("verify_reminder_email", { code, revision }),
+  enable: (enabled: boolean, revision: number) => invoke<ReminderEmailView>("set_reminder_email_enabled", { enabled, revision }),
+  retry: (id: string, revision: number, confirmUncertain: boolean) => invoke<ReminderEmailView>("retry_reminder_email", { id, revision, confirmUncertain }),
+};
+
+import type { PetCreation, PetArtwork, PetArtworkInput } from "./types";
+export const petCreationApi = {
+ get:(personaId:string)=>invoke<PetCreation>("get_pet_creation",{personaId}),
+ save:(personaId:string,id:string|null,revision:number|null,input:PetArtworkInput)=>invoke<PetArtwork>("save_pet_artwork",{personaId,id,revision,input}),
+ enable:(personaId:string,enabled:boolean,revision:number)=>invoke<void>("set_pet_creation_enabled",{personaId,enabled,revision}),
+ image:(personaId:string,id:string,preview=false)=>invoke<string>("get_pet_artwork_image",{personaId,id,preview}),
+ upload:(personaId:string,id:string,revision:number,data:string)=>invoke<PetArtwork>("upload_pet_artwork",{personaId,id,revision,data}),
+ finish:(personaId:string,id:string,revision:number,action:"accept"|"discard"|"delete")=>invoke<void>("finish_pet_artwork",{personaId,id,revision,action}),
+ generate:(personaId:string,id:string,revision:number)=>invoke<PetArtwork>("generate_pet_artwork",{personaId,id,revision}),
+ cancel:(personaId:string,id:string)=>invoke<void>("cancel_pet_artwork",{personaId,id}),
+ listen:(receive:()=>void)=>listen("pet_creation_changed",receive),
+};
+export const saveAccessoryPlacement=(context:CurrentContext,id:string,x:number|null,y:number|null,scale:number)=>invoke<Accessory>("save_accessory_placement",{context,id,x,y,scale});

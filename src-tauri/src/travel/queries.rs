@@ -59,6 +59,9 @@ pub(crate) fn current(connection: &Connection, session: i64) -> AppResult<Option
         )
         .optional()?)
 }
+pub(crate) fn get(connection:&Connection,session:i64,id:i64)->AppResult<Travel> {
+    connection.query_row(&format!("SELECT {COLUMNS} FROM travels WHERE session_id=?1 AND id=?2"),params![session,id],row).optional()?.ok_or_else(AppError::not_found)
+}
 pub(crate) fn list(
     connection: &Connection,
     session: i64,

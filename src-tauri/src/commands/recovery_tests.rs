@@ -66,9 +66,10 @@ fn testing_another_provider_does_not_recover_the_current_one() {
     runtime
         .read(|store, _| {
             store.connection.execute(
-                "INSERT INTO providers(id,name,base_url,model) VALUES(2,'另一个',?1,'other-model')",
+                "INSERT INTO providers(id,name,base_url) VALUES(2,'另一个',?1)",
                 [&server.url],
             )?;
+            store.connection.execute("INSERT INTO provider_models(provider_id,purpose,model) VALUES(2,'chat','other-model')",[])?;
             Ok(())
         })
         .unwrap();
@@ -101,7 +102,7 @@ fn late_failed_test_cannot_sleep_a_changed_provider_configuration() {
                 .read(|store, _| {
                     store
                         .connection
-                        .execute("UPDATE providers SET model='new-model' WHERE id=1", [])?;
+                        .execute("UPDATE provider_models SET model='new-model' WHERE purpose='chat' AND provider_id=1", [])?;
                     Ok(())
                 })
                 .unwrap();

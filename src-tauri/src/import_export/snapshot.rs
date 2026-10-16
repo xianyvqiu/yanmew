@@ -26,9 +26,11 @@ impl Scope {
                 "game_plugin_data",
             ]
             .contains(&table),
-            PackageKind::PersonaProfile => table == "personas",
+            PackageKind::PersonaProfile => ["personas","pet_artworks"].contains(&table),
             PackageKind::UserProfile if !self.request.include_sessions => table == "user_profiles",
             _ => ![
+                "provider_roles",
+                "provider_models",
                 "providers",
                 "embedding_providers",
                 "settings",
@@ -82,6 +84,8 @@ impl Scope {
             "user_profiles" => {
                 format!("id IN (SELECT user_profile_id FROM sessions WHERE id IN ({sessions}))")
             }
+            "pet_artworks" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
+            "message_images" => format!("message_id IN (SELECT id FROM messages WHERE session_id IN ({sessions}))"),
             "sessions" => format!("id IN ({sessions})"),
             "long_memory_sources" => format!(
                 "long_memory_id IN (SELECT id FROM long_memories WHERE session_id IN ({sessions}))"
@@ -195,6 +199,9 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
     for (table, column, background) in [
         ("personas", "chat_bg_file", true),
         ("accessories", "image_file", false),
+        ("pet_artworks", "image_file", false),
+        ("pet_artworks", "preview_file", false),
+        ("message_images", "image_file", false),
     ] {
         if !scope.includes(table) {
             continue;
@@ -211,7 +218,7 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
             }
             if name.contains([':', '\\', '\0'])
                 || (background && (name.contains('/') || name == ".."))
-                || (!background
+                || (!background && !name.starts_with("assets/chat_images/img-")
                     && !name.strip_prefix("assets/accessories/").is_some_and(|n| {
                         n.ends_with(".png") && !n.contains('/') && n.len() <= 180 && n.trim() == n
                     }))
@@ -222,7 +229,9 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
                 ));
             }
             let paths = runtime.paths.as_ref().map_err(Clone::clone)?;
-            let folder = paths.data_root.join(if background {
+            let folder = paths.data_root.join(if name.starts_with("assets/chat_images/") {
+                "assets/chat_images"
+            } else if background {
                 "chat_background"
             } else {
                 "assets/accessories"
@@ -233,12 +242,12 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
                 let resolved = if background {
                     crate::persona::background::managed_file(runtime, &name)
                 } else {
-                    crate::accessories::images::managed_file(paths, &name)
+                    if name.starts_with("assets/chat_images/"){crate::chat_images::managed_file(paths,&name)}else{crate::accessories::images::managed_file(paths, &name)}
                 };
                 match resolved {
                     Ok(path) => Some(path),
                     Err(e)
-                        if ["BACKGROUND_MISSING", "ACCESSORY_IMAGE_UNAVAILABLE"]
+                        if ["BACKGROUND_MISSING", "ACCESSORY_IMAGE_UNAVAILABLE","CHAT_IMAGE_MISSING"]
                             .contains(&e.code) =>
                     {
                         None
@@ -341,11 +350,15 @@ pub(super) fn project(
 ) -> AppResult<Option<Record>> {
     match table {
         "settings" => {
-            let key = value(&row, "key")?;
-            if !super::protocol::setting_allowed(key) {
+            let key = value(&row, "key")?.to_owned();
+            if !super::protocol::setting_allowed(&key) {
                 return Ok(None);
             }
-            if ["image_generation_config", "web_search_config"].contains(&key) {
+            if key == "reminder_email_config" {
+                let safe = crate::reminder_email::public_config(value(&row, "value")?)?;
+                row.insert("value".into(), Value::String(safe));
+            }
+            if ["image_generation_config", "web_search_config"].contains(&key.as_str()) {
                 let safe = super::protocol::public_config(
                     value(&row, "value")?,
                     key == "image_generation_config",
@@ -400,15 +413,25 @@ pub(super) fn project(
         }
         _ => {}
     }
+    if table=="personas" && row.get("pet_image_enabled").and_then(Value::as_i64)==Some(1){
+        let base:Option<String>=c.query_row("SELECT image_file FROM pet_artworks WHERE persona_id=?1 AND kind='base'",[value(&row,"id")?],|r|r.get(0)).optional()?.flatten();
+        if base.as_ref().and_then(|file|assets.get(&(false,file.clone()))).is_none_or(Option::is_none){row.insert("pet_image_enabled".into(),Value::from(0));warn(warnings,"MISSING_IMAGE",table,value(&row,"id")?,"初始形象缺失，备份副本关闭图片模式，原库及其他条目保留。");}
+    }
+    if table=="pet_artworks" {for column in ["image_file","preview_file"] {if let Some(name)=row.get(column).and_then(Value::as_str){let reference=assets.get(&(false,name.to_owned())).ok_or_else(invalid)?.clone();if reference.is_none(){warn(warnings,"MISSING_IMAGE",table,value(&row,"id")?,"创作图片缺失，备份副本仅清空失效图片引用，条目要求、其他图片和原库保留。");}row.insert(column.into(),reference.map(Value::String).unwrap_or(Value::Null));}}}
     if let Some((column, background)) = match table {
         "personas" => Some(("chat_bg_file", true)),
         "accessories" => Some(("image_file", false)),
+        "message_images" => Some(("image_file", false)),
         _ => None,
     } {
         if let Some(name) = row.get(column).and_then(Value::as_str) {
             let reference = assets
                 .get(&(background, name.to_owned()))
                 .ok_or_else(invalid)?;
+            if reference.is_none() && table=="message_images" {
+                warn(warnings,"MISSING_IMAGE",table,value(&row,"id")?,"聊天图片缺失，导出副本跳过该附件，原消息和数据库保留。");
+                return Ok(None);
+            }
             if reference.is_none() {
                 warn(
                     warnings,

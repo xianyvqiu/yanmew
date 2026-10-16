@@ -1,0 +1,8 @@
+.ym-placement-editor { min-width:0; }
+.ym-placement-canvas { position:relative; height:260px; width:100%; overflow:hidden; border:1px dashed var(--ym-border-strong); border-radius:16px; }
+.ym-placement-body { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:grid; place-items:center; color:var(--ym-accent-strong); font:var(--ym-font-pet)/1.4 var(--ym-font-kaomoji); white-space:nowrap; }
+.ym-placement-body .pet-expression { animation:none; }
+.ym-placement-accessory { position:absolute; transform:translate(-50%,-50%); touch-action:none; cursor:move; border:1px dashed var(--ym-border-strong); border-radius:8px; }
+.ym-placement-accessory .ym-accessory-visual { width:100%;height:100%;pointer-events:none; }
+
+.ym-placement-accessory .ym-accessory-visual img { width:100%;height:100%;object-fit:contain; }

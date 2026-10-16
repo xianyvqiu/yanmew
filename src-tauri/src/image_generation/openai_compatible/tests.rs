@@ -36,3 +36,11 @@ async fn image_links_reject_private_addresses_protocols_credentials_and_bad_enco
     }
     assert!(public_url("https://images.example/image.png?signature=signed").is_ok());
 }
+
+#[tokio::test]
+async fn reference_edit_sends_source_image_to_edits_without_text_only_fallback(){
+ use std::io::{Read,Write};
+ let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let url=format!("http://{}/v1",listener.local_addr().unwrap());
+ let server=std::thread::spawn(move||{let (mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();let mut raw=vec![];let mut buf=[0u8;4096];let end=loop{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);if let Some(i)=raw.windows(4).position(|s|s==b"\r\n\r\n"){break i+4;}};let header=String::from_utf8_lossy(&raw[..end]).to_lowercase();assert!(header.starts_with("post /v1/images/edits "));assert!(header.contains("multipart/form-data; boundary=yanmew-"));let len:usize=header.lines().find_map(|s|s.strip_prefix("content-length:")).unwrap().trim().parse().unwrap();while raw.len()<end+len{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);}let payload=String::from_utf8_lossy(&raw[end..]);assert!(payload.contains("name=\"image\"; filename=\"reference.png\""));assert!(payload.contains("reference-image-content"));assert!(payload.contains("挥手"));assert!(payload.contains("name=\"background\"\r\n\r\ntransparent"));assert!(payload.contains("configured-image-model"));let body=r#"{"data":[{"b64_json":"AQID"}]}"#;write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();});
+ let bytes=edit(&client(),&snapshot(url),b"reference-image-content","开心挥手",&Cancellation::default()).await.unwrap();assert_eq!(bytes,vec![1,2,3]);server.join().unwrap();
+}

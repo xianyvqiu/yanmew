@@ -386,6 +386,7 @@ pub async fn delete_tail_message(window:WebviewWindow,app:AppHandle,runtime:Stat
     let (persona,session,message)=(parse_id(&context.persona_id)?,parse_id(&context.session_id)?,parse_id(&message_id)?);
     let worker=runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move||crate::sessions::messages::delete_tail(&worker,persona,session,context.context_revision,message,&expected_content)).await.map_err(|_|AppError::storage())??;
+    crate::chat_images::cleanup_unused(runtime.inner());
     notify_message_change(&app,session);
     Ok(())
 }
@@ -477,7 +478,7 @@ pub async fn save_notebook(window: WebviewWindow, app: AppHandle, runtime: State
 
 #[tauri::command]
 pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>,
-    persona_id: String, session_id: String, context_revision: u64, input: String,
+    persona_id: String, session_id: String, context_revision: u64, input: String, images:Option<Vec<crate::chat_images::Input>>,
 ) -> AppResult<crate::chat::RequestSnapshot> {
     authorize(&window)?;
     let persona_id = parse_id(&persona_id)?;
@@ -486,7 +487,7 @@ pub async fn submit_chat(window: WebviewWindow, app: AppHandle, runtime: State<'
     let client = runtime.ai.clone()?;
     let title_runtime = runtime.clone();
     let (mut prepared, receipt) = tauri::async_runtime::spawn_blocking(move ||
-        crate::chat::submit(&runtime, persona_id, session_id, context_revision, input)
+        crate::chat::submit_images(&runtime, persona_id, session_id, context_revision, input,images.unwrap_or_default())
     ).await.map_err(|_| AppError::storage())??;
     prepared.set_tool_events(std::sync::Arc::new(ChatToolEvents(app.clone())));
     tauri::async_runtime::spawn(async move {
@@ -801,7 +802,7 @@ pub async fn refresh_pet_provider(
     let id = storage(runtime.inner().clone(), |s, _| {
         use rusqlite::OptionalExtension;
         s.connection
-            .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+            .query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| {
                 r.get::<_, i64>(0)
             })
             .optional()?
@@ -821,7 +822,7 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
         let config = crate::providers::connection_test_config(&s.connection, id, p)?;
         let active =
             s.connection
-                .query_row("SELECT is_active FROM providers WHERE id=?1", [id], |r| {
+                .query_row("SELECT is_active FROM provider_effective WHERE id=?1", [id], |r| {
                     r.get::<_, bool>(0)
                 })?;
         let token = if active {
@@ -850,7 +851,7 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
         // 只对实际记忆提供商的成功测试解除失败等待，不重复请求不相关模型。
         if health_result.is_ok() {
             let selected: Option<i64> = s.connection.query_row(
-                "SELECT id FROM providers WHERE memory_is_active=1 OR is_active=1 ORDER BY memory_is_active DESC LIMIT 1",
+                "SELECT id FROM provider_effective WHERE memory_is_active=1 OR is_active=1 ORDER BY memory_is_active DESC LIMIT 1",
                 [], |row| row.get(0),
             ).optional()?;
             if selected == Some(id) { worker.memory.retry(None)?; }
@@ -1045,6 +1046,7 @@ pub async fn create_session(
     })
     .await?;
     crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
+    crate::chat_images::cleanup_unused(runtime.inner());
     if let Some(error) = pet_error {
         let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
     }
@@ -1088,6 +1090,7 @@ pub async fn set_active_session(
     })
     .await?;
     crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
+    crate::chat_images::cleanup_unused(runtime.inner());
     if let Some(error) = pet_error {
         let _ = app.emit(crate::events::PET_ACTIVITY_ERROR, &error);
     }
@@ -1123,6 +1126,21 @@ pub async fn rename_session(
 }
 
 #[tauri::command]
+pub async fn set_session_pinned(
+    window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>,
+    persona_id: String, session_id: String, context_revision: u64, is_pinned: bool,
+) -> AppResult<crate::models::Session> {
+    authorize(&window)?;
+    let (persona_id, session_id) = (parse_id(&persona_id)?, parse_id(&session_id)?);
+    let session = storage(runtime.inner().clone(), move |store, _| {
+        validate_persona_context(store, persona_id, context_revision)?;
+        crate::sessions::set_pinned(&mut store.connection, persona_id, session_id, is_pinned)
+    }).await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(session)
+}
+
+#[tauri::command]
 pub async fn delete_session(
     window: WebviewWindow,
     app: AppHandle,
@@ -1138,6 +1156,7 @@ pub async fn delete_session(
         crate::sessions::delete_in_context(&worker,persona_id,session_id,context_revision)
     ).await.map_err(|_|AppError::storage())??;
     crate::accessories::images::cleanup_unused(runtime.inner(), &[]);
+    crate::chat_images::cleanup_unused(runtime.inner());
     if let Some(error) = outcome.pet_error { let _ = app.emit(crate::events::PET_ACTIVITY_ERROR,&error); }
     // 仅删除当前项改变上下文，其余删除刷新列表，不打断当前窗口任务。
     if outcome.context_changed && app.emit("window_context_changed",&outcome.context).is_err() {
@@ -1306,8 +1325,22 @@ fn authorize(window: &WebviewWindow) -> AppResult<()> {
     Ok(())
 }
 #[tauri::command]
-pub async fn focus_or_create_window(window: WebviewWindow, app: AppHandle, page: crate::desktop_windows::Page) -> AppResult<()> {
+pub async fn focus_or_create_window(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, page: crate::desktop_windows::Page,
+    detail: Option<crate::desktop_windows::SettingsTarget>) -> AppResult<()> {
     authorize(&window)?;
+    if let Some(target) = detail {
+        if !matches!(page, crate::desktop_windows::Page::Settings) { return Err(AppError::validation("detail", "详情跳转只能打开设置页")); }
+        let (table, id) = match &target {
+            crate::desktop_windows::SettingsTarget::Persona { id } => ("personas", parse_id(id)?),
+            crate::desktop_windows::SettingsTarget::UserProfile { id } => ("user_profiles", parse_id(id)?),
+            _ => return Err(AppError::validation("detail", "请选择人设或用户设定详情")),
+        };
+        runtime.read(|store,_| {
+            let exists: bool = store.connection.query_row(&format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id=?1)"), [id], |row| row.get(0))?;
+            if exists { Ok(()) } else { Err(AppError::not_found()) }
+        })?;
+        return crate::desktop_windows::open_settings_detail(app, target).await;
+    }
     crate::desktop_windows::open(app, page).await
 }
 #[tauri::command]
@@ -1425,6 +1458,27 @@ pub async fn list_providers(
     .await
 }
 #[tauri::command]
+pub async fn get_provider_roles(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<crate::provider_roles::Config> {
+    authorize(&window)?;storage(runtime.inner().clone(),|s,_|crate::provider_roles::get(&s.connection)).await
+}
+#[tauri::command]
+pub async fn save_provider_role(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,purpose:String,provider_id:Option<String>,model:String,enabled:bool,expected_revision:u64,max_output_tokens:Option<u32>,context_window_override:Option<u32>)->AppResult<crate::provider_roles::Config> {
+    authorize_image_settings(&window)?;
+    let requests=runtime.requests.clone();
+    let (config,preview)=storage(runtime.inner().clone(),move|s,_| {
+        if max_output_tokens==Some(0)||context_window_override==Some(0){return Err(AppError::validation("maxOutputTokens","高级容量必须为正整数"));}
+        let result=crate::provider_roles::save(&mut s.connection,&purpose,provider_id.as_deref(),&model,enabled,expected_revision,max_output_tokens,context_window_override)?;
+        if purpose=="chat" {
+            requests.cancel_all();
+        } else if purpose=="vision" {
+            let context=crate::persona::context(&s.connection,s.context_revision)?;
+            if let Some(session)=context.session_id{requests.cancel_key(&format!("chat:{session}"));}
+        }
+        Ok((result,if purpose=="chat"||purpose=="image"{crate::accessories::craft::configuration_changed(s)}else{None}))
+    }).await?;
+    notify_image_config(&app,preview);let _=app.emit("configuration_changed",());Ok(config)
+}
+#[tauri::command]
 pub async fn create_provider(
     window: WebviewWindow,
     app: AppHandle,
@@ -1450,14 +1504,17 @@ pub async fn update_provider(
     authorize(&window)?;
     let id = parse_id(&id)?;
     let requests = runtime.requests.clone();
-    let result = storage(runtime.inner().clone(), move |s, p| {
+    let (result,preview) = storage(runtime.inner().clone(), move |s, p| {
         let result = crate::providers::save(&mut s.connection, Some(id), input, p)?;
-        if result.is_active {
+        if result.is_active || result.purposes.iter().any(|p|p=="vision") {
             requests.cancel_all();
         }
-        Ok(result)
+        let image=result.purposes.iter().any(|p|p=="image");
+        let preview=if image{crate::accessories::craft::configuration_changed(s)}else{None};
+        Ok((result,preview))
     })
     .await?;
+    if result.purposes.iter().any(|p|p=="image"){notify_image_config(&app,preview);}
     let _ = app.emit("configuration_changed", ());
     Ok(result)
 }
@@ -1489,7 +1546,7 @@ pub async fn create_persona(
     let id = parse_id(&persona.id)?;
     let available = storage(runtime.inner().clone(), |s, _| {
         Ok(s.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM providers WHERE is_active=1)",
+            "SELECT EXISTS(SELECT 1 FROM provider_effective WHERE is_active=1)",
             [],
             |r| r.get::<_, bool>(0),
         )?)
@@ -1600,7 +1657,7 @@ pub async fn set_active_chat_provider(
     let requests = runtime.requests.clone();
     let result = storage(runtime.inner().clone(), move |s, _| {
         let same = s.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM providers WHERE id=?1 AND is_active=1)",
+            "SELECT EXISTS(SELECT 1 FROM provider_effective WHERE id=?1 AND is_active=1)",
             [id],
             |r| r.get::<_, bool>(0),
         )?;
@@ -1663,7 +1720,7 @@ async fn change_persona(
         Ok((after, changed))
     })
     .await?;
-    if delete || changed { crate::accessories::images::cleanup_unused(&cleanup_runtime, &[]); }
+    if delete || changed { crate::accessories::images::cleanup_unused(&cleanup_runtime, &[]);crate::chat_images::cleanup_unused(&cleanup_runtime); }
     if delete {
         let _ = app.emit("configuration_changed", ());
     }
@@ -1699,10 +1756,13 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager};
 
 pub const STATE_EVENT: &str = "pet-window-state";
+const PET_CHAT_EXTRA_HEIGHT: f64 = 120.0;
 
 #[derive(Clone, Copy, Default, Serialize)]
 pub struct Snapshot {
     pub hidden: bool,
+    #[serde(rename = "chatOpen")]
+    pub chat_open: bool,
     pub revision: u64,
 }
 
@@ -1718,7 +1778,8 @@ impl PetState {
         if hidden {
             LogicalSize::new(112.0, 44.0)
         } else {
-            self.full_size.unwrap_or(LogicalSize::new(320.0, 240.0))
+            let base = self.full_size.unwrap_or(LogicalSize::new(320.0, 280.0));
+            LogicalSize::new(base.width, base.height + if self.snapshot.chat_open { PET_CHAT_EXTRA_HEIGHT } else { 0.0 })
         }
     }
 
@@ -1760,19 +1821,12 @@ pub fn change_hidden(app: &AppHandle, hidden: bool) -> Result<Snapshot, String> 
     let mut state = managed.lock().map_err(|_| "宠窗状态不可用")?;
     if state.snapshot.hidden != hidden {
         let full_size = if hidden {
-            Some(
-                window
-                    .inner_size()
-                    .map_err(|e| format!("读取宠窗尺寸失败：{e}"))?
-                    .to_logical(
-                        window
-                            .scale_factor()
-                            .map_err(|e| format!("读取屏幕缩放失败：{e}"))?,
-                    ),
-            )
-        } else {
-            state.full_size
-        };
+            let mut base: LogicalSize<f64> = window.inner_size()
+                .map_err(|e| format!("读取宠窗尺寸失败：{e}"))?
+                .to_logical(window.scale_factor().map_err(|e| format!("读取屏幕缩放失败：{e}"))?);
+            if state.snapshot.chat_open { base.height = (base.height - PET_CHAT_EXTRA_HEIGHT).max(1.0); }
+            Some(base)
+        } else { state.full_size };
         // 先解除旧模式裁剪，确保恢复期间不会被旧区域永久遮挡。
         pet_region::apply(&window, None)?;
         state.region = None;
@@ -1812,6 +1866,36 @@ pub async fn get_pet_window_state(app: AppHandle) -> Result<Snapshot, String> {
 #[tauri::command]
 pub async fn set_pet_hidden(app: AppHandle, hidden: bool) -> Result<Snapshot, String> {
     on_main(app, move |app| change_hidden(&app, hidden)).await
+}
+
+/// 快捷输入只扩大透明可用区域，复用主线程尺寸与裁剪处理；不写入数据库。
+#[tauri::command]
+pub async fn set_pet_chat_open(window: WebviewWindow, app: AppHandle, open: bool) -> Result<Snapshot, String> {
+    if window.label() != "main" { return Err("只有宠窗可以展开快捷输入".into()); }
+    on_main(app, move |app| {
+        let window=app.get_webview_window("main").ok_or("找不到 main 宠窗")?;
+        let managed=app.state::<Mutex<PetState>>();
+        let mut state=managed.lock().map_err(|_|"宠窗状态不可用")?;
+        if state.snapshot.hidden { return Err("请先显示宠窗".into()); }
+        if state.snapshot.chat_open != open {
+            let mut base:LogicalSize<f64>=window.inner_size().map_err(|_|"读取宠窗尺寸失败")?
+                .to_logical(window.scale_factor().map_err(|_|"读取屏幕缩放失败")?);
+            if state.snapshot.chat_open {base.height=(base.height-PET_CHAT_EXTRA_HEIGHT).max(1.0);}
+            let target=LogicalSize::new(base.width,base.height+if open {PET_CHAT_EXTRA_HEIGHT}else{0.0});
+            pet_region::apply(&window,None)?;
+            state.region=None;
+            window.set_size(target).map_err(|_|"调整快捷输入区域失败")?;
+            state.full_size=Some(base);
+            state.snapshot.chat_open=open;
+            state.snapshot.revision+=1;
+        }
+        let snapshot=state.snapshot;drop(state);
+        // 沿用现有多屏可见性处理，靠近屏幕下缘时保证输入框可操作。
+        let position=app.state::<crate::pet_position::WindowPosition>();
+        if let Err(error)=position.ensure_visible(&window,true) {crate::pet_position::report(&app,&error);}
+        window.emit(STATE_EVENT,snapshot).map_err(|_|"同步快捷输入状态失败")?;
+        Ok(snapshot)
+    }).await
 }
 
 #[tauri::command]
@@ -1859,6 +1943,18 @@ mod tests {
         assert_eq!(state.snapshot.revision, 2);
         state.commit_hidden(false, state.full_size);
         assert_eq!(state.snapshot.revision, 2);
+    }
+    #[test]
+    fn quick_chat_height_is_temporary_and_hidden_mode_keeps_its_small_size() {
+        let mut state=PetState::default();
+        state.snapshot.chat_open=true;
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,400.0));
+        assert_eq!(state.target_size(true),LogicalSize::new(112.0,44.0));
+        state.commit_hidden(true,state.full_size);
+        state.commit_hidden(false,state.full_size);
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,400.0));
+        state.snapshot.chat_open=false;
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,280.0));
     }
     #[test]
     fn old_regions_are_rejected_after_mode_changes() {
@@ -2229,6 +2325,19 @@ pub async fn retry_journal_generation(window:WebviewWindow,app:AppHandle,runtime
 
 /// 母表只读；会话日期管理复用已有可信窗口与当前上下文校验。
 #[tauri::command]
+pub async fn browse_cards(window:WebviewWindow,runtime:State<'_,Runtime>,input:crate::card_browser::Query)->AppResult<crate::card_browser::Page> {
+    authorize(&window)?;storage(runtime.inner().clone(),move|s,_|crate::card_browser::browse(s,input)).await
+}
+#[tauri::command]
+pub async fn get_calendar_month(window:WebviewWindow,runtime:State<'_,Runtime>,year:i32,month:u32)->AppResult<crate::festivals::calendar::Month> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(),move|store,_| {
+        let context=crate::persona::context(&store.connection,store.context_revision)?;
+        let session=context.session_id.as_deref().map(parse_id).transpose()?;
+        crate::festivals::calendar::month(&store.connection,session,year,month)
+    }).await
+}
+#[tauri::command]
 pub async fn list_festival_catalog(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<crate::festivals::session::CatalogRecord>> {
     authorize(&window)?;let clock=runtime.clock.clone();
     storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::catalog(&store.connection,today)}).await
@@ -2261,3 +2370,73 @@ pub async fn delete_session_festival(window:WebviewWindow,app:AppHandle,runtime:
     storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::delete(&mut store.connection,session,id,&expected,today)}).await?;
     let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(())
 }
+
+#[tauri::command]
+pub async fn get_chat_image(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput,id:String)->AppResult<String> {
+    authorize(&window)?;let worker=runtime.inner().clone();let id=parse_id(&id)?;
+    tauri::async_runtime::spawn_blocking(move||{
+        let image=worker.read(|store,_|{
+            let persona=parse_id(&context.persona_id)?;let session=parse_id(&context.session_id)?;
+            validate_persona_context(store,persona,context.context_revision)?;
+            let current=crate::persona::context(&store.connection,store.context_revision)?;
+            if current.session_id.as_deref()!=Some(&context.session_id){return Err(AppError::new("CONTEXT_CHANGED","当前会话已变化"));}
+            let message:i64=store.connection.query_row("SELECT m.id FROM message_images i JOIN messages m ON m.id=i.message_id WHERE i.id=?1 AND m.session_id=?2",[id,session],|r|r.get(0)).optional()?.ok_or_else(AppError::not_found)?;
+            crate::chat_images::list(&store.connection,message)?.into_iter().find(|image|image.id==id.to_string()).ok_or_else(AppError::not_found)
+        })?;
+        crate::chat_images::data_url(worker.paths.as_ref().map_err(Clone::clone)?,&image)
+    }).await.map_err(|_|AppError::storage())?
+}
+
+/// SMTP管理只开放给可信设置窗口，不提供给小游戏或聊天工具。
+#[tauri::command]
+pub async fn get_reminder_email(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    storage(runtime.inner().clone(),|s,_|crate::reminder_email::view(&s.connection)).await
+}
+#[tauri::command]
+pub async fn save_reminder_email(window:WebviewWindow,runtime:State<'_,Runtime>,input:crate::reminder_email::Input)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    storage(runtime.inner().clone(),move|s,secrets|crate::reminder_email::save(&mut s.connection,secrets,input)).await
+}
+#[tauri::command]
+pub async fn send_reminder_email_code(window:WebviewWindow,runtime:State<'_,Runtime>,input:crate::reminder_email::Input)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    crate::reminder_email::send_code(runtime.inner(),input).await
+}
+#[tauri::command]
+pub async fn verify_reminder_email(window:WebviewWindow,runtime:State<'_,Runtime>,code:String,revision:u64)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    let worker=runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move||crate::reminder_email::verify(&worker,&code,revision)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
+pub async fn set_reminder_email_enabled(window:WebviewWindow,runtime:State<'_,Runtime>,enabled:bool,revision:u64)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    let worker=runtime.inner().clone();let clock=worker.clock.clone();
+    storage(worker,move|s,_|crate::reminder_email::enable(&mut s.connection,enabled,revision,clock.sample()?.utc)).await
+}
+#[tauri::command]
+pub async fn retry_reminder_email(window:WebviewWindow,runtime:State<'_,Runtime>,id:String,revision:u64,confirm_uncertain:bool)->AppResult<crate::reminder_email::View> {
+    authorize_backup(&window)?;
+    let id=parse_id(&id)?;
+    storage(runtime.inner().clone(),move|s,_|crate::reminder_email::outbox_retry(&mut s.connection,id,revision,confirm_uncertain)).await
+}
+
+#[tauri::command]
+pub async fn get_pet_creation(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String)->AppResult<crate::pet_creation::Library>{authorize(&window)?;let id=parse_id(&persona_id)?;storage(runtime.inner().clone(),move|s,_|crate::pet_creation::library(&s.connection,id)).await}
+#[tauri::command]
+pub async fn save_pet_artwork(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,id:Option<String>,revision:Option<u64>,input:crate::pet_creation::Input)->AppResult<crate::pet_creation::Artwork>{authorize_backup(&window)?;let persona=parse_id(&persona_id)?;let id=id.as_deref().map(parse_id).transpose()?;let result=storage(runtime.inner().clone(),move|s,_|crate::pet_creation::save(&mut s.connection,persona,id,revision,input)).await?;let _=app.emit("pet_creation_changed",());Ok(result)}
+#[tauri::command]
+pub async fn set_pet_creation_enabled(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,enabled:bool,revision:u64)->AppResult<()>{authorize_backup(&window)?;let id=parse_id(&persona_id)?;storage(runtime.inner().clone(),move|s,_|crate::pet_creation::set_enabled(&s.connection,id,enabled,revision)).await?;let _=app.emit("pet_creation_changed",());Ok(())}
+#[tauri::command]
+pub async fn get_pet_artwork_image(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,id:String,preview:bool)->AppResult<String>{authorize(&window)?;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;let worker=runtime.inner().clone();tauri::async_runtime::spawn_blocking(move||crate::pet_creation::image(&worker,persona,id,preview)).await.map_err(|_|AppError::storage())?}
+#[tauri::command]
+pub async fn upload_pet_artwork(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,id:String,revision:u64,data:String)->AppResult<crate::pet_creation::Artwork>{authorize_backup(&window)?;use base64::Engine;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;if data.len()>crate::accessories::images::MAX_BYTES.div_ceil(3)*4+128{return Err(AppError::validation("image","图片超过16MB，请压缩图片后上传"));}let bytes=base64::engine::general_purpose::STANDARD.decode(data.split_once(',').map(|(_,s)|s).unwrap_or(&data)).map_err(|_|AppError::validation("image","图片编码无效"))?;let worker=runtime.inner().clone();let result=tauri::async_runtime::spawn_blocking(move||crate::pet_creation::preview(&worker,persona,id,revision,&bytes)).await.map_err(|_|AppError::storage())??;let _=app.emit("pet_creation_changed",());Ok(result)}
+#[tauri::command]
+pub async fn finish_pet_artwork(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,id:String,revision:u64,action:String)->AppResult<()>{authorize_backup(&window)?;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;let removed=storage(runtime.inner().clone(),move|s,_|crate::pet_creation::finish(&mut s.connection,persona,id,revision,&action)).await?;for file in removed{crate::accessories::images::cleanup_one(runtime.inner(),&file,&[]);}let _=app.emit("pet_creation_changed",());Ok(())}
+#[tauri::command]
+pub async fn generate_pet_artwork(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,persona_id:String,id:String,revision:u64)->AppResult<crate::pet_creation::Artwork>{authorize_backup(&window)?;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;let result=crate::pet_creation::generate(runtime.inner().clone(),persona,id,revision).await?;let _=app.emit("pet_creation_changed",());Ok(result)}
+#[tauri::command]
+pub async fn cancel_pet_artwork(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,id:String)->AppResult<()>{authorize_backup(&window)?;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;runtime.requests.cancel_key(&format!("pet-art:{persona}:{id}"));Ok(())}
+#[tauri::command]
+pub async fn save_accessory_placement(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String,x:Option<i32>,y:Option<i32>,scale:i32)->AppResult<crate::models::Accessory>{authorize_backup(&window)?;let (persona,session,revision)=accessory_target(&context)?;let id=parse_id(&id)?;let item=storage(runtime.inner().clone(),move|s,_|{crate::accessories::require_current(s,persona,session,revision)?;crate::accessories::placement(&s.connection,session,id,x,y,scale)}).await?;notify_accessories(&app,session);Ok(item)}

@@ -25,3 +25,10 @@
 .ym-letter-target { border-left: 3px solid var(--ym-accent); padding-left: 12px; }
 @container (max-width: 599px) { .ym-mailbox-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 599px) { .ym-mailbox-layout { grid-template-columns: minmax(0, 1fr); } }
+
+.ym-mailbox-layout[data-detail="false"] { grid-template-columns:minmax(0,1fr); }
+.ym-mailbox-layout[data-detail="false"]>.ym-letter-detail { display:none; }
+.ym-letter-list.ym-object-grid { gap:12px; }
+.ym-letter-list.ym-object-grid li { min-width:0; }
+.ym-letter-list.ym-object-grid .ym-letter-item { height:100%; padding:16px; border-radius:16px; }
+.ym-letter-list.ym-object-grid .ym-letter-item strong { overflow-wrap:anywhere; }

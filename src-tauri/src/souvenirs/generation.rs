@@ -240,7 +240,7 @@ impl Worker {
             let mut query=store.connection.prepare("SELECT id,session_id FROM travels WHERE status='returned' AND facts_state='ready' AND gift_state='pending' ORDER BY id")?;
             let rows=query.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?)))?.collect::<Result<Vec<_>,_>>()?;
             // 私有配置签名仅在内存比较，包含的是DPAPI密文，绝不进入事件/日志/DTO。
-            let stamp=store.connection.query_row("SELECT json_array(id,base_url,model,api_key_encrypted,max_output_tokens) FROM providers WHERE is_active=1",[],|r|r.get::<_,String>(0)).optional()?.unwrap_or_default();
+            let stamp=store.connection.query_row("SELECT json_array(id,base_url,model,api_key_encrypted,max_output_tokens) FROM provider_effective WHERE is_active=1",[],|r|r.get::<_,String>(0)).optional()?.unwrap_or_default();
             Ok((rows,stamp))
         });
         let Ok((pending, stamp)) = pending else {
@@ -439,9 +439,9 @@ fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
         facts.validate(elapsed.num_minutes())?;
         // 返回礼物只参考实际时间内的活动，不把未来计划写成已完成。
         facts.activities.retain(|a|a.elapsed_minutes<=elapsed.num_minutes());
-        let provider=store.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成伴手礼"))?;
+        let provider=store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成伴手礼"))?;
         let target=providers::connection_test_config(&store.connection,provider,secrets)?;
-        let max_tokens=store.connection.query_row("SELECT max_output_tokens FROM providers WHERE id=?1",[provider],|r|r.get::<_,u32>(0))?.min(4096);
+        let max_tokens=store.connection.query_row("SELECT max_output_tokens FROM provider_effective WHERE id=?1",[provider],|r|r.get::<_,u32>(0))?.min(4096);
         let lease=runtime.requests.start(format!("travel-gift:{id}"),s.1)?;
         Ok((Snapshot{id,session:s.0,persona:s.1,prompt:std::mem::take(&mut s.2),started:s.3,actual:s.4,kind:s.5,facts,version:s.8,provider,target,max_tokens},lease))
     })
@@ -462,7 +462,7 @@ fn require_snapshot(
     let valid=store.connection.query_row("SELECT EXISTS(SELECT 1 FROM travels t JOIN sessions a ON a.id=t.session_id JOIN personas p ON p.id=a.persona_id WHERE t.id=?1 AND t.session_id=?2 AND a.persona_id=?3 AND p.prompt=?4 AND t.status='returned' AND t.facts_state='ready' AND t.facts_version=?5 AND t.gift_state='pending' AND t.gift_kind=?6 AND t.started_at=?7 AND t.actual_return_at=?8)",params![s.id,s.session,s.persona,s.prompt,s.version,s.kind,s.started,s.actual],|r|r.get::<_,bool>(0))?;
     let provider = store
         .connection
-        .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+        .query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| {
             r.get::<_, i64>(0)
         })
         .optional()?;

@@ -197,7 +197,7 @@ pub(crate) async fn generate(
         let provider = snapshot.configuration.provider.as_ref().ok_or_else(|| {
             AppError::new("PROVIDER_UNAVAILABLE", "尚无可用记忆提供商，请先配置提供商")
         })?;
-        providers::connection_test_config(&store.connection, provider.id, secrets)
+        crate::provider_roles::connection(&store.connection, provider.id, "memory", secrets)
     })?;
     let config = &snapshot.configuration;
     let input = GenerateRequest {

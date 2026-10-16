@@ -2,11 +2,15 @@
 use super::*;
 use rusqlite::{types::ValueRef, Row};
 pub(super) const COLUMNS: &[(&str, &str)] = &[
-    ("providers", "id,name,base_url,model,is_active,memory_is_active,max_output_tokens,context_window_override"),
+    ("providers", "id,name,base_url,created_at,updated_at"),
+    ("provider_roles", "purpose,provider_id,enabled"),
+    ("provider_models", "provider_id,purpose,model,max_output_tokens,context_window_override"),
+    ("message_images", "id,message_id,filename,image_file,media_type,caption,created_at"),
     ("embedding_providers", "id,name,kind,base_url,model,is_builtin,is_active"),
-    ("personas", "id,name,prompt,initial_prompt,self_evolve_enabled,last_evolved_at,color,chat_bg_file,chat_bg_opacity,chat_bg_blur,is_active,is_builtin,expressions"),
+    ("personas", "id,name,prompt,initial_prompt,self_evolve_enabled,last_evolved_at,color,chat_bg_file,chat_bg_opacity,chat_bg_blur,is_active,is_builtin,expressions,created_at,updated_at,chat_bubble_style,chat_user_text_color,chat_assistant_text_color,pet_image_enabled,pet_image_revision"),
+    ("pet_artworks", "id,persona_id,kind,name,prompt,description,category,enabled,image_file,preview_file,revision,created_at,updated_at"),
     ("user_profiles", "id,name,content,created_at,updated_at"),
-    ("sessions", "id,persona_id,user_profile_id,title,created_at,updated_at,memory_revision,craft_tier_1_used,craft_tier_2_used,craft_tier_3_used,intimacy,last_return_at,travel_trigger_remaining_seconds"),
+    ("sessions", "id,persona_id,user_profile_id,title,created_at,updated_at,memory_revision,craft_tier_1_used,craft_tier_2_used,craft_tier_3_used,intimacy,last_return_at,travel_trigger_remaining_seconds,is_pinned"),
     ("session_pet_states", "session_id,hunger_elapsed_ms,idle_elapsed_ms,idle_branch,sleep_until,last_fed_at,last_interacted_at,state_revision,updated_at,proactive_next_check_idle_ms,last_proactive_sent_at"),
     ("chat_rounds", "id,session_id,status,created_at,completed_at,stop_reason"),
     ("messages", "id,session_id,round_id,role,content,expression,created_at"),
@@ -26,7 +30,7 @@ pub(super) const COLUMNS: &[(&str, &str)] = &[
     ("currency_ledger", "id,delta,reason,ref_id,game_run_id,plugin_id,plugin_version,plugin_display_reason,wallet_request_id,created_at"),
     ("travels", "id,session_id,status,started_at,planned_return_at,actual_return_at,cancelled_at,midway_letter_at,midway_letter_state,return_letter_state,gift_state,journal_state,gift_kind,facts_state,destination,activities_json,facts_version,facts_ready_at,gift_snapshot_json,created_at"),
     ("travel_journals", "id,session_id,travel_id,title,content,created_at,updated_at"),
-    ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file"),
+    ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file,position_x,position_y,scale"),
     ("letters", "id,session_id,travel_id,sender,content,reply_to_id,has_been_replied,reply_due_at,reply_state,letter_kind,is_favorite,is_read,created_at"),
     ("souvenirs", "id,session_id,travel_id,content,note,is_favorite,created_at"),
     ("session_festivals", "id,session_id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at"),
@@ -61,6 +65,7 @@ pub(super) fn setting_allowed(key: &str) -> bool {
         .iter()
         .any(|(known, _)| *known == key)
         || [
+            "provider_roles_revision",
             "theme_mode",
             "current_session_id",
             "last_sign_in_date",
@@ -68,6 +73,7 @@ pub(super) fn setting_allowed(key: &str) -> bool {
             "window_pos_y",
             "image_generation_config",
             "web_search_config",
+            "reminder_email_config",
         ]
         .contains(&key)
 }

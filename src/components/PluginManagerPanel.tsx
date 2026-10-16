@@ -1,9 +1,13 @@
+import CardBrowserControls from "./CardBrowserControls";
+import {useCardBrowser} from "../hooks/useCardBrowser";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, gamePluginsApi, webSearchApi } from "../api";
 import { useGamePlugins } from "../hooks/useGamePlugins";
-import type { GameInstallPreview, GamePermissionChoice, GamePluginDetail, GamePluginLedger, GameRun, PluginJson, PluginSetting } from "../types";
+import type { GameInstallPreview, GamePermissionChoice, GamePlugin, GamePluginDetail, GamePluginLedger, GameRun, PluginJson, PluginSetting } from "../types";
 import GamePermissions from "./GamePermissions";
 import "./GamePlugins.css";
+
+const requiresWallet = (plugin: GamePlugin) => plugin.pluginId === "com.yanmew.game.my-home";
 
 type Confirmation = "clear" | "uninstall" | null;
 function SettingField({ setting, value, disabled, onSave }: {
@@ -28,13 +32,19 @@ function SettingField({ setting, value, disabled, onSave }: {
 }
 
 export default function PluginManagerPanel() {
-  const { plugins, error: listError, loading, refresh } = useGamePlugins();
+  const { plugins, wallet, error: listError, loading, refresh } = useGamePlugins();
+  const [launchDetail, setLaunchDetail] = useState<GamePluginDetail | null>(null);
+  const [launchChoices, setLaunchChoices] = useState<GamePermissionChoice[]>([]);
+  const launchDialog = useRef<HTMLDialogElement>(null);
   const [selected, setSelected] = useState("");
+  const pendingCardAction=useRef<{id:string;kind:"clear"|"uninstall"}|null>(null);
+  const browser=useCardBrowser(plugins,p=>`${p.name} ${p.description} ${p.author} ${p.pluginId}`,p=>p.installedAt,p=>p.pluginId);
   const [detail, setDetail] = useState<GamePluginDetail | null>(null);
   const [choices, setChoices] = useState<GamePermissionChoice[]>([]);
   const [preview, setPreview] = useState<GameInstallPreview | null>(null);
   const [installChoices, setInstallChoices] = useState<GamePermissionChoice[]>([]);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const [resetPluginId, setResetPluginId] = useState("");
   const [clearOnUninstall, setClearOnUninstall] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -72,6 +82,7 @@ export default function PluginManagerPanel() {
       readPages(gamePluginsApi.history, historyDepth.current.runs), readPages(gamePluginsApi.ledger, historyDepth.current.ledger)]);
     if (!mounted.current || generation.current !== token) return;
     setDetail(item);
+    if(pendingCardAction.current?.id===id){setConfirmation(pendingCardAction.current.kind);setClearOnUninstall(false);pendingCardAction.current=null;}
     if (!choicesDirty.current) setChoices(item.permissions.map(({ permission, scope, decision }) => ({ permission, scope, decision })));
     setRuns(history.records); setLedger(transactions.records); setRunsMore(history.lastCount === 30); setLedgerMore(transactions.lastCount === 30);
   };
@@ -87,6 +98,7 @@ export default function PluginManagerPanel() {
       generation.current++;
       historyDepth.current = { runs: 1, ledger: 1 };
       previousSelected.current = selected; choicesDirty.current = false;
+      if (resetPluginId && resetPluginId !== selected) setResetPluginId("");
       setDetail(null); setError(""); setRuns([]); setLedger([]); setConfirmation(null);
     }
     const token = generation.current + 1;
@@ -101,6 +113,25 @@ export default function PluginManagerPanel() {
     catch (cause) { if (mounted.current) setError(errorMessage(cause)); }
     finally { lock.current = false; if (mounted.current) setBusy(false); }
   };
+  useEffect(() => { if (launchDetail) launchDialog.current?.showModal(); else launchDialog.current?.close(); }, [launchDetail]);
+  const open = (plugin: GamePlugin) => run(async () => {
+    const value = await gamePluginsApi.detail(plugin.pluginId);
+    if (!mounted.current) return;
+    if (value.permissions.some(item => item.decision === "pending") || requiresWallet(plugin) && !value.permissions.some(item => item.permission === "wallet.modify" && item.decision === "allowed")) {
+      setLaunchDetail(value);
+      setLaunchChoices(value.permissions.map(({permission, scope, decision}) => ({permission, scope, decision})));
+      return;
+    }
+    await gamePluginsApi.open(plugin.pluginId);
+  });
+  const authorizeAndOpen = () => run(async () => {
+    if (!launchDetail) return;
+    if (launchChoices.some(item => item.decision === "pending")) throw new Error("请先决定全部钱包与联网权限。");
+    if (requiresWallet(launchDetail.plugin) && !launchChoices.some(item => item.permission === "wallet.modify" && item.decision === "allowed")) throw new Error("“我的家”需要允许钱包权限才能游玩。");
+    for (const choice of launchChoices) await gamePluginsApi.permission(launchDetail.plugin.pluginId, launchDetail.plugin.installedVersion, choice);
+    await gamePluginsApi.open(launchDetail.plugin.pluginId);
+    if (mounted.current) { setLaunchDetail(null); await refresh(); }
+  });
   const cancelInstall = () => run(async () => {
     if (preview) await gamePluginsApi.cancelInstall(preview.token);
     previewToken.current = null; setPreview(null);
@@ -125,10 +156,21 @@ export default function PluginManagerPanel() {
     await action(detail); await refresh();
   }, success);
   const confirm = () => actOnDetail(async value => {
-    if (confirmation === "clear") await gamePluginsApi.clearData(value.plugin.pluginId, value.plugin.installedVersion);
+    if (confirmation === "clear") {
+      await gamePluginsApi.clearData(value.plugin.pluginId, value.plugin.installedVersion);
+      setConfirmation(null);setResetPluginId(value.plugin.pluginId);choicesDirty.current=false;
+    }
     else { await gamePluginsApi.uninstall(value.plugin.pluginId, value.plugin.installedVersion, clearOnUninstall); setSelected(""); }
     setConfirmation(null);
-  }, confirmation === "clear" ? "私有存档已清除，钱包及账单保留。" : "插件程序已卸载。");
+  }, confirmation === "clear" ? "小游戏已恢复初始数据；钱包和联网权限需要重新确认。原有喵币、账单和运行历史保留。" : "插件程序已卸载。");
+  const reopenAfterReset = () => actOnDetail(async value => {
+    if (choices.some(item => item.decision === "pending")) throw new Error("请先决定全部钱包与联网权限。");
+    if (value.plugin.pluginId === "com.yanmew.game.my-home" && !choices.some(item => item.permission === "wallet.modify" && item.decision === "allowed")) throw new Error("“我的家”需要允许钱包权限才能游玩。");
+    for (const choice of choices) await gamePluginsApi.permission(value.plugin.pluginId,value.plugin.installedVersion,choice);
+    choicesDirty.current=false;
+    await gamePluginsApi.open(value.plugin.pluginId);
+    setResetPluginId("");
+  }, "小游戏已用全新进度打开。");
   const pageHistory = (kind: "runs" | "ledger") => run(async () => {
     if (!detail) return;
     const token = ++generation.current;
@@ -146,29 +188,38 @@ export default function PluginManagerPanel() {
   });
   const sourceLink = (url: string | null, title: string) => url && <button className="ym-button" disabled={busy} onClick={() => void run(() => webSearchApi.open(url))}>{title}</button>;
   return <>
-    <section className="ym-page-card"><div className="ym-page-heading"><h2>插件管理</h2><button className="ym-button" disabled={busy || !!preview} onClick={() => fileInput.current?.click()}>{busy ? "正在处理…" : "安装 / 更新本地插件"}</button><input ref={fileInput} hidden type="file" accept=".yanmew-game,.zip" disabled={busy || !!preview} aria-label="安装本地插件包" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void previewFile(file); }} /></div>
-      <p className="ym-page-note">从作者 GitHub 下载插件包后在这里安装。钱包和联网权限由你确认；升级时作者负责迁移存档。自带插件可停用，不能永久卸载。</p>
+    <section className="ym-page-card"><div className="ym-page-heading"><h2>小游戏插件</h2><span className="ym-page-note">全局喵币 · {wallet?.coins ?? "读取中…"}</span><button className="ym-button" disabled={busy || !!preview} onClick={() => fileInput.current?.click()}>{busy ? "正在处理…" : "安装 / 更新本地小游戏插件"}</button><input ref={fileInput} hidden type="file" accept=".yanmew-game,.zip" disabled={busy || !!preview} aria-label="安装本地小游戏插件包" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void previewFile(file); }} /></div>
+      <p className="ym-page-note">在这里打开和管理所有小游戏，也可安装从作者 GitHub 下载的小游戏插件包。游戏与存档不随人设切换，各游戏自己的次数限制由插件保存；钱包和联网权限由你确认，自带小游戏可以停用，不能卸载。</p>
       {loading && <p>正在读取插件…</p>}{listError && <p role="alert" className="ym-page-error">{listError}<button className="ym-button" onClick={() => void refresh()}>重试</button></p>}
       {error && <p role="alert" className="ym-page-error">{error}</p>}{notice && <p role="status">{notice}</p>}
-      <label className="ym-field">选择插件<select value={selected} disabled={busy} onChange={event => setSelected(event.target.value)}><option value="">请选择</option>{plugins.map(plugin => <option key={plugin.pluginId} value={plugin.pluginId}>{plugin.name}{plugin.packageStatus === "missing_package" ? " · 程序包缺失" : !plugin.isEnabled ? " · 已停用" : ""}</option>)}</select></label>
+      {!selected&&<><CardBrowserControls browser={browser} label="小游戏插件" timeLabel="安装时间" disabled={busy}/><div className="ym-object-grid">{browser.items.map(plugin=><article className="ym-object-card" key={plugin.pluginId} onClick={event=>{if(!busy&&!(event.target as HTMLElement).closest("button"))setSelected(plugin.pluginId);}}>
+        <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={busy} onClick={()=>setSelected(plugin.pluginId)}>{plugin.name}</button></h3><span className="ym-page-note">{plugin.isBundled?"自带":"已安装"}</span></div>
+        <p className="ym-card-summary">{plugin.description}</p><p className="ym-page-note">{plugin.author} · v{plugin.installedVersion}</p><p className="ym-page-note">{plugin.packageStatus==="missing_package"?"程序包缺失 · 使用数据保留":plugin.isEnabled?"已启用":"已停用"}</p>
+        <div className="ym-inline-form"><button className="ym-button" disabled={busy||!plugin.isEnabled||plugin.packageStatus!=="available"} onClick={()=>void open(plugin)}>打开 {plugin.name}</button><button className="ym-button" disabled={busy||plugin.isBundled} title={plugin.isBundled?"随应用提供，不能卸载":"卸载插件程序"} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"uninstall"};setSelected(plugin.pluginId);}}>卸载</button>
+          <button className="ym-button" disabled={busy||plugin.packageStatus!=="available"} onClick={()=>void run(async()=>{await gamePluginsApi.enable(plugin.pluginId,plugin.installedVersion,!plugin.isEnabled);await refresh();},"插件状态已保存。")}>{plugin.isEnabled?"停用":"启用"}</button>
+          <button className="ym-button" disabled={busy} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"clear"};setSelected(plugin.pluginId);}}>清除数据并重载</button></div>
+        {plugin.isBundled&&<p className="ym-page-note">自带小游戏不可卸载，可停用或恢复初始数据。</p>}
+      </article>)}</div>{!loading&&!browser.total&&<p className="ym-page-empty">{plugins.length?"没有匹配的小游戏。":"暂无小游戏，可使用上方按钮安装本地小游戏插件包。"}</p>}</>}
+      {selected&&<button className="ym-button" disabled={busy} onClick={()=>{pendingCardAction.current=null;setSelected("");}}>返回小游戏列表</button>}
     </section>
     {selected && !detail && <p className="ym-page-note">正在读取插件详情…</p>}
     {detail && <>
       <section className="ym-page-card"><div className="ym-page-heading"><h2>{detail.plugin.name}</h2><span>{detail.plugin.isBundled ? "随应用提供" : "本地安装"}</span></div>
         <p>{detail.plugin.description}</p><p className="ym-game-plugin-id">{detail.plugin.pluginId} · {detail.plugin.author} · v{detail.plugin.installedVersion} · 存档版本 {detail.usage.storage_version}</p>
-        <div className="ym-game-tools">{sourceLink(detail.plugin.repository, "GitHub 源码")}{sourceLink(detail.plugin.releasePage, "下载页面")}{sourceLink(detail.plugin.homepage, "作者主页")}
+        <div className="ym-game-tools"><button className="ym-button" disabled={busy||!detail.plugin.isEnabled||detail.plugin.packageStatus!=="available"||resetPluginId===detail.plugin.pluginId} onClick={()=>void open(detail.plugin)}>打开 {detail.plugin.name}</button>{sourceLink(detail.plugin.repository, "GitHub 源码")}{sourceLink(detail.plugin.releasePage, "下载页面")}{sourceLink(detail.plugin.homepage, "作者主页")}
           <button className="ym-button" disabled={busy || detail.plugin.packageStatus !== "available"} onClick={() => void actOnDetail(value => gamePluginsApi.enable(value.plugin.pluginId, value.plugin.installedVersion, !value.plugin.isEnabled), "插件状态已保存。")}>{detail.plugin.isEnabled ? "停用" : "启用"}</button>
-          <button className="ym-button" disabled={busy} onClick={() => { setConfirmation("clear"); setError(""); }}>清除私有存档</button>
+          <button className="ym-button" disabled={busy} onClick={() => { setConfirmation("clear"); setError(""); }}>清除数据并重载</button>
           <button className="ym-button" disabled={busy || detail.plugin.isBundled} onClick={() => { setClearOnUninstall(false); setConfirmation("uninstall"); setError(""); }}>卸载程序</button>
         </div>
         {detail.plugin.packageStatus === "missing_package" && <p className="ym-page-note">数据仍在，但程序包缺失。可从来源页找到相同插件 ID 的包并重新安装。</p>}
         {!detail.plugin.repository && !detail.plugin.releasePage && !detail.plugin.homepage && <p className="ym-page-note">作者未提供来源链接，可用插件 ID 查找程序包。</p>}
         <h3>权限</h3><GamePermissions choices={choices} disabled={busy} onChange={values => { choicesDirty.current = true; setChoices(values); }} />
         <button className="ym-button" disabled={busy || detail.plugin.packageStatus !== "available"} onClick={() => void actOnDetail(async value => { for (const choice of choices) await gamePluginsApi.permission(value.plugin.pluginId, value.plugin.installedVersion, choice); choicesDirty.current = false; }, "权限已保存。新增钱包授权需重新打开游戏后生效；撤销会立即阻止新扣款。")}>保存权限</button>
+        {resetPluginId===detail.plugin.pluginId&&<><p className="ym-page-note">已恢复初始数据。选择钱包和联网权限后，重新打开这个小游戏。</p><button className="ym-button" disabled={busy||!detail.plugin.isEnabled||detail.plugin.packageStatus!=="available"||choices.some(item=>item.decision==="pending")||detail.plugin.pluginId==="com.yanmew.game.my-home"&&!choices.some(item=>item.permission==="wallet.modify"&&item.decision==="allowed")} onClick={()=>void reopenAfterReset()}>重新授权并打开</button></>}
         <p className="ym-page-note">拒绝钱包权限时可纯玩；“我的家”需要钱包权限才能玩。插件不能访问颜喵的聊天、记忆或提供商密钥。</p>
       </section>
-      <section className="ym-page-card"><h2>插件设置与存档</h2>
-        {detail.manifest?.settings_schema.length ? detail.manifest.settings_schema.map(setting => <SettingField key={`${detail.plugin.pluginId}:${detail.plugin.installedVersion}:${setting.key}`} setting={setting} value={Object.prototype.hasOwnProperty.call(detail.usage.settings, setting.key) ? detail.usage.settings[setting.key] : setting.default} disabled={busy} onSave={value => actOnDetail(item => gamePluginsApi.setting(item.plugin.pluginId, item.plugin.installedVersion, setting.key, value), "插件设置已保存。重新打开游戏使用新设置。")} />) : <p className="ym-page-note">此插件没有额外设置表单。</p>}
+      <section className="ym-page-card"><h2>游戏存档</h2>
+        {detail.manifest?.settings_schema.length ? detail.manifest.settings_schema.map(setting => <SettingField key={`${detail.plugin.pluginId}:${detail.plugin.installedVersion}:${setting.key}`} setting={setting} value={Object.prototype.hasOwnProperty.call(detail.usage.settings, setting.key) ? detail.usage.settings[setting.key] : setting.default} disabled={busy} onSave={value => actOnDetail(item => gamePluginsApi.setting(item.plugin.pluginId, item.plugin.installedVersion, setting.key, value), "插件设置已保存。重新打开游戏使用新设置。")} />) : null}
         <p className="ym-page-note">已保存 {Object.keys(detail.usage.data).length} 个存档键；这些是插件自己的使用数据。</p>
         <details><summary>查看存档内容</summary><pre className="ym-game-data">{JSON.stringify(detail.usage.data, null, 2)}</pre></details>
       </section>
@@ -180,6 +231,16 @@ export default function PluginManagerPanel() {
         {!ledger.length && <p className="ym-page-note">暂无喵币账单。</p>}{ledgerMore && <button className="ym-button" disabled={busy} onClick={() => void pageHistory("ledger")}>加载更早的账单</button>}
       </section>
     </>}
+    <dialog ref={launchDialog} className="ym-session-dialog" aria-labelledby="game-permission-title" onCancel={event => { if (busy) event.preventDefault(); else setLaunchDetail(null); }}>
+      {launchDetail && <><h2 id="game-permission-title">{launchDetail.plugin.name} · 权限确认</h2><div className="ym-session-dialog-body">
+        <p>允许修改喵币后，游戏可以增减整个应用的钱包余额。联网授权只对列出的来源生效。</p>
+        <p>{requiresWallet(launchDetail.plugin) ? "我的家必须允许钱包权限才能游玩，不提供纯玩模式。" : "拒绝钱包权限可纯玩，不会增加或扣除喵币。"}</p>
+        <GamePermissions choices={launchChoices} disabled={busy} onChange={setLaunchChoices}/>
+        {error && <p role="alert" className="ym-page-error">{error}</p>}
+      </div><div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy} onClick={()=>setLaunchDetail(null)}>取消</button>
+        <button className="ym-button" disabled={busy||launchChoices.some(item=>item.decision==="pending")||requiresWallet(launchDetail.plugin)&&!launchChoices.some(item=>item.permission==="wallet.modify"&&item.decision==="allowed")} onClick={()=>void authorizeAndOpen()}>保存权限并打开</button>
+      </div></>}
+    </dialog>
     <dialog ref={installDialog} className="ym-session-dialog" aria-labelledby="game-install-title" onCancel={event => { event.preventDefault(); if (!busy) void cancelInstall(); }}>
       {preview && <><h2 id="game-install-title">{preview.installed ? "更新" : "安装"} {preview.manifest.name}</h2><div className="ym-session-dialog-body"><p>{preview.manifest.description}</p>
         <p>{preview.manifest.author} · v{preview.manifest.version}</p><p className="ym-game-plugin-id">{preview.manifest.id} · 来源：{preview.manifest.repository ?? "作者未提供"}</p>
@@ -188,8 +249,8 @@ export default function PluginManagerPanel() {
       </div><div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy} onClick={() => void cancelInstall()}>取消</button><button className="ym-button" disabled={busy || installChoices.some(item => item.decision === "pending")} onClick={() => void install()}>确认{preview.installed ? "更新" : "安装"}</button></div></>}
     </dialog>
     <dialog ref={confirmDialog} className="ym-session-dialog" aria-labelledby="game-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
-      {confirmation && detail && <><h2 id="game-delete-title">{confirmation === "clear" ? "清除私有存档" : "卸载插件程序"} · {detail.plugin.name}</h2><div className="ym-session-dialog-body">
-        <p>{confirmation === "clear" ? "将删除该插件的私有进度，无法恢复。插件设置、授权、全局钱包和历史账单保留。请先关闭游戏窗口。" : "程序卸载后不能打开游戏。默认保留设置、存档、来源和历史账单，方便以后重装。"}</p>
+      {confirmation && detail && <><h2 id="game-delete-title">{confirmation === "clear" ? "清除数据并重载" : "卸载插件程序"} · {detail.plugin.name}</h2><div className="ym-session-dialog-body">
+        <p>{confirmation === "clear" ? "将关闭这个小游戏，清空它的进度和自有设置，钱包与联网权限重置为待确认。安装包、全局喵币、已有账单和运行历史保留。清除后重新选择权限，再以初始进度打开。" : "程序卸载后不能打开游戏。默认保留设置、存档、来源和历史账单，方便以后重装。"}</p>
         {confirmation === "uninstall" && <label className="ym-game-check"><input type="checkbox" checked={clearOnUninstall} disabled={busy} onChange={event => setClearOnUninstall(event.target.checked)} />同时清除插件设置和私有存档（钱包和账单保留）</label>}
         {error && <p role="alert" className="ym-page-error">{error}</p>}
       </div><div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy} onClick={() => setConfirmation(null)}>取消</button><button className="ym-button" disabled={busy} onClick={() => void confirm()}>确认{confirmation === "clear" ? "清除" : "卸载"}</button></div></>}

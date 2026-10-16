@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-export type PetSnapshot = { hidden: boolean; revision: number };
+export type PetSnapshot = { hidden: boolean; revision: number; chatOpen?: boolean };
 export const newestSnapshot = (current: PetSnapshot, incoming: PetSnapshot) =>
   incoming.revision >= current.revision ? incoming : current;
 
@@ -114,6 +114,15 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
       try { accept(await invoke<PetSnapshot>("get_pet_window_state")); } catch (refreshError) { fail(refreshError); }
     } finally { operationPending.current = false; if (mounted.current) setPending(false); }
   };
+  const setChatOpen = async (open: boolean) => {
+    if (operationPending.current || state.revision < 0 || state.hidden) return;
+    operationPending.current = true; setPending(true); setError("");
+    try { accept(await invoke<PetSnapshot>("set_pet_chat_open", { open })); }
+    catch (cause) {
+      fail(cause);
+      try { accept(await invoke<PetSnapshot>("get_pet_window_state")); } catch (refreshError) { fail(refreshError); }
+    } finally { operationPending.current = false; if (mounted.current) setPending(false); }
+  };
   const retry = () => { setError(""); setConnectionAttempt((value) => value + 1); };
-  return { state, error, pending, toggleHidden, retry, fail };
+  return { state, error, pending, toggleHidden, setChatOpen, retry, fail };
 }

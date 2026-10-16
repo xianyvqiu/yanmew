@@ -324,6 +324,7 @@ fn cleanup_published(runtime: &Runtime, source: &Connection) {
         match role.as_str() {
             "background" => crate::persona::background::cleanup_one(runtime, &filename),
             "accessory" => crate::accessories::images::cleanup_one(runtime, &filename, &[]),
+            "chat" => {let _=runtime.read(|store,_|crate::chat_images::cleanup(&store.connection,runtime.paths.as_ref().map_err(Clone::clone)?));},
             _ => {}
         }
     }

@@ -220,7 +220,7 @@ fn regeneration_apply_conflicts_before_any_write() {
     for change in [
         "UPDATE sessions SET memory_revision=memory_revision+1 WHERE id=1",
         "UPDATE messages SET expression='新表情' WHERE role='assistant'",
-        "UPDATE providers SET model='new-model' WHERE is_active=1",
+        "UPDATE provider_models SET model='new-model' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
         "UPDATE settings SET value='90' WHERE key='long_memory_max_chars'",
         "UPDATE short_memories SET content='手动改过来源' WHERE id=9",
         "UPDATE long_memory_sources SET source_order=3 WHERE short_memory_id=3",

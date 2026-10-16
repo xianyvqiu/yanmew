@@ -108,7 +108,7 @@ fn changed_persona_or_provider_does_not_commit_old_result() {
     let (snapshot, lease) = capture(&r, 1).unwrap();
     r.read(|s, _| {
         s.connection.execute(
-            "UPDATE providers SET model='new-model' WHERE is_active=1",
+            "UPDATE provider_models SET model='new-model' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
             [],
         )?;
         Ok(())

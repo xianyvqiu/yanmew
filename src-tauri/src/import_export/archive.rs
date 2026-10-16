@@ -60,7 +60,8 @@ pub(super) fn write<W: Write + Seek>(
             continue;
         };
         // 只保留既有单张图片校验，不设置聊天/JSON/ZIP的总量上限。
-        let max = if background {
+        let chat=name.starts_with("assets/chat_images/");
+        let max = if chat {usize::MAX-1} else if background {
             crate::persona::background::MAX_BYTES
         } else {
             crate::accessories::images::MAX_BYTES
@@ -70,7 +71,9 @@ pub(super) fn write<W: Write + Seek>(
             .take(max as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(io_error)?;
-        let extension = if background {
+        let extension = if chat {
+            match image::guess_format(&bytes).map_err(|_|AppError::storage())? {image::ImageFormat::Png=>"png",image::ImageFormat::Jpeg=>"jpg",image::ImageFormat::WebP=>"webp",_=>return Err(AppError::storage())}
+        } else if background {
             crate::persona::background::validate(&name, &bytes)?
         } else {
             crate::accessories::images::validate_png(&bytes)?;

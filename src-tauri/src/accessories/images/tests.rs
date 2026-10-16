@@ -29,9 +29,7 @@ impl Fixture {
         ));
         fs::create_dir_all(&root).unwrap();
         let mut runtime = crate::runtime::test_runtime("http://localhost");
-        runtime.paths = Ok(AppPaths {
-            data_root: root.clone(),
-        });
+        runtime.paths = Ok(AppPaths::portable(root.clone()));
         Self { runtime, root }
     }
     fn insert(&self, relative: &str) {

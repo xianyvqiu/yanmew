@@ -68,7 +68,7 @@ fn capture(runtime: &Runtime, id: i64, persona: &str, revision: u64) -> AppResul
             "SELECT name,prompt FROM personas WHERE id=?1", [parse_id(persona)?], |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let provider: (i64, Option<String>, String, Option<String>) = s.connection.query_row(
-            "SELECT id,base_url,model,api_key_encrypted FROM providers WHERE is_active=1", [],
+            "SELECT id,base_url,model,api_key_encrypted FROM provider_effective WHERE is_active=1", [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )?;
         let config = providers::connection_test_config(&s.connection, provider.0, secrets)?;

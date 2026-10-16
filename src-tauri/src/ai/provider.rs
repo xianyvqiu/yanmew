@@ -1,14 +1,28 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub struct Message {
     pub role: String,
     pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    pub images:Vec<String>,
+}
+impl Serialize for Message {
+    fn serialize<S:serde::Serializer>(&self,serializer:S)->Result<S::Ok,S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map=serializer.serialize_map(None)?;
+        map.serialize_entry("role",&self.role)?;
+        if self.images.is_empty(){map.serialize_entry("content",&self.content)?;}else{
+            let mut content=vec![serde_json::json!({"type":"text","text":self.content})];
+            content.extend(self.images.iter().map(|url|serde_json::json!({"type":"image_url","image_url":{"url":url,"detail":"auto"}})));
+            map.serialize_entry("content",&content)?;
+        }
+        if let Some(calls)=&self.tool_calls{map.serialize_entry("tool_calls",calls)?;}
+        if let Some(id)=&self.tool_call_id{map.serialize_entry("tool_call_id",id)?;}
+        map.end()
+    }
 }
 impl Message {
     pub fn new(role: &str, content: impl Into<String>) -> Self {
@@ -17,6 +31,7 @@ impl Message {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            images:vec![],
         }
     }
     /// 工具调用参数必须作为 JSON 字符串发送，不能直接序列化内部 ToolCall。

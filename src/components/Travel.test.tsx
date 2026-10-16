@@ -7,13 +7,14 @@ import { useTravel } from "../hooks/useTravel";
 import type { CurrentContext, Letter, LetterTarget, Travel } from "../types";
 
 const api = vi.hoisted(() => ({
+  browse:vi.fn(),browserListen:vi.fn(),
   travel: { current:vi.fn(),list:vi.fn(),status:vi.fn(),retry:vi.fn(),listen:vi.fn() },
   letters: { list:vi.fn(),get:vi.fn(),flags:vi.fn(),delete:vi.fn(),status:vi.fn(),retry:vi.fn(),send:vi.fn(),listen:vi.fn() },
   pet: {listen:vi.fn()},
   journals: {list:vi.fn(),get:vi.fn(),status:vi.fn(),retry:vi.fn(),update:vi.fn(),delete:vi.fn()},
   navigation: {openLetter:vi.fn(),open:vi.fn()},
 }));
-vi.mock("../api", () => ({travelApi:api.travel,lettersApi:api.letters,petApi:api.pet,travelJournalsApi:api.journals,errorMessage:(e: {message?:string})=>e.message ?? "读取失败"}));
+vi.mock("../api", () => ({cardBrowserApi:{browse:api.browse,listen:api.browserListen},travelApi:api.travel,lettersApi:api.letters,petApi:api.pet,travelJournalsApi:api.journals,errorMessage:(e: {message?:string})=>e.message ?? "读取失败"}));
 vi.mock("../platform/navigation", () => ({navigation:api.navigation}));
 const context: CurrentContext = {personaId:"1",sessionId:"1",contextRevision:2};
 const trip: Travel = {id:"3",sessionId:"1",status:"away",startedAt:"2026-10-09T00:00:00Z",plannedReturnAt:"2099-10-09T01:00:00Z",actualReturnAt:null,cancelledAt:null,midwayLetterAt:"2026-10-09T00:30:00Z",destination:"湖边",factsState:"ready",midwayLetterState:"done",returnLetterState:"pending",giftState:"pending",journalState:"pending",giftKind:null};
@@ -36,6 +37,14 @@ beforeEach(() => {
   api.letters.send.mockResolvedValue({});
   for(const listen of [api.travel.listen,api.letters.listen,api.pet.listen]) listen.mockResolvedValue(()=>{});
   api.navigation.openLetter.mockResolvedValue(undefined); api.navigation.open.mockResolvedValue(undefined);
+  api.browserListen.mockResolvedValue(()=>{});
+  api.browse.mockImplementation(async(kind,scope,search,order,page)=>{
+    const source=kind==="travels"?api.travel:kind==="letters"?api.letters:api.journals;
+    const records=(await source.list(scope)).filter((row:object)=>JSON.stringify(row).includes(search));
+    if(order==="oldest")records.reverse();
+    const pages=Math.max(1,Math.ceil(records.length/12)),current=Math.min(page,pages);
+    return {items:records.slice((current-1)*12,current*12),total:records.length,page:current,pages};
+  });
   HTMLDialogElement.prototype.showModal=function(){this.setAttribute("open","");};
   HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};
 });
@@ -83,6 +92,7 @@ it("返回后的邮箱仍可查看，回信禁用，取消历史不显示奖励"
   api.travel.current.mockResolvedValue(null);
   api.travel.list.mockResolvedValue([{...trip,status:"cancelled",cancelledAt:"2026-10-09T00:35:00Z",giftKind:null}]);
   render(<TravelPanel context={context} personaName="小喵" />);
+  fireEvent.click(await screen.findByRole("button",{name:"湖边"}));
   await screen.findByText("旅行已取消，不生成回来信、伴手礼或游记。");
   fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
   fireEvent.click(await screen.findByRole("button",{name:/小喵的来信/}));
@@ -100,54 +110,26 @@ it("行程失败与信件失败显示并按当前会话提前重试",async()=> {
   fireEvent.click(screen.getByRole("button",{name:"重试待生成信件"}));
   await waitFor(()=>expect(api.letters.retry).toHaveBeenCalledWith(context));
 });
-it("分页读取较旧信件后，聚焦和新信件通知刷新仍保留展开内容",async()=> {
-  const first=Array.from({length:30},(_,i)=>({...stored,id:String(100-i)}));
-  const rows=[...first,{...stored,id:"1",content:"更早的信"}];
-  api.letters.list.mockImplementation(async(_context,before)=>rows.filter(row=>!before || BigInt(row.id)<BigInt(before)).slice(0,30));
-  let notify!: (change:{sessionId:string})=>void;
-  api.letters.listen.mockImplementation(async callback=>{notify=callback;return ()=>{};});
-  render(<TravelPanel context={context} personaName="小喵" />);
-  fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
-  fireEvent.click(await screen.findByRole("button",{name:"更多信件"}));
-  await screen.findByText("更早的信");
-  expect(api.letters.list).toHaveBeenCalledWith(context,"71");
-  expect(screen.getAllByRole("button",{name:/小喵的来信/})).toHaveLength(31);
-  await act(async()=>{window.dispatchEvent(new Event("focus"));});
-  expect(screen.getByText("更早的信")).toBeTruthy();
-  rows.unshift({...stored,id:"101",content:"刚收到的新信"});
-  await act(async()=>{notify({sessionId:"1"});});
-  await screen.findByText("刚收到的新信");
-  expect(screen.getByText("更早的信")).toBeTruthy();
-  expect(screen.getAllByRole("button",{name:/小喵的来信/})).toHaveLength(32);
+it("邮箱搜索完整历史，聚焦保留页码，重入历史保留独立条件",async()=>{
+  api.letters.list.mockResolvedValue(Array.from({length:13},(_,i)=>({...stored,id:String(100-i),content:`信件编号${i}`})));
+  render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
+  await screen.findByText("信件编号0");fireEvent.click(screen.getByRole("button",{name:"下一页"}));await screen.findByText("信件编号12");
+  await act(async()=>fireEvent.focus(window));expect(await screen.findByText("信件编号12")).toBeTruthy();
+  expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2);
+  fireEvent.click(screen.getByRole("button",{name:"出行历史"}));fireEvent.click(screen.getByRole("button",{name:"邮箱"}));expect(screen.getByText("信件编号12")).toBeTruthy();
+  fireEvent.change(screen.getByRole("searchbox"),{target:{value:"信件编号12"}});await screen.findByText("信件编号12");
+  await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"信件编号12","newest",1));
 });
-it("出行历史和邮箱分别保留分页深度，刷新不丢失较早出行",async()=> {
-  const rows=[...Array.from({length:30},(_,i)=>({...trip,id:String(100-i),status:"returned" as const})),{...trip,id:"1",status:"returned" as const,destination:"较早的山间旅行"}];
-  api.travel.list.mockImplementation(async(_context,before)=>rows.filter(row=>!before || BigInt(row.id)<BigInt(before)).slice(0,30));
-  render(<TravelPanel context={context} personaName="小喵" />);
-  fireEvent.click(await screen.findByRole("button",{name:"更多出行记录"}));
-  await screen.findByText("较早的山间旅行");
-  fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
-  await act(async()=>{window.dispatchEvent(new Event("focus"));});
-  fireEvent.click(screen.getByRole("button",{name:"出行历史"}));
-  expect(screen.getByText("较早的山间旅行")).toBeTruthy();
-  expect(api.travel.list).toHaveBeenCalledWith(context,"71");
-  expect(api.letters.list.mock.calls.every(call=>call[1]===undefined)).toBe(true);
-});
-it("分页请求迟于较新刷新返回时不再追加旧页面",async()=> {
-  const first=Array.from({length:30},(_,i)=>({...stored,id:String(100-i)}));
-  let finish!: (rows:Letter[])=>void;
-  const pending=new Promise<Letter[]>(resolve=>{finish=resolve;});
-  api.letters.list.mockImplementation(async(_context,before)=>before?pending:first);
-  render(<TravelPanel context={context} personaName="小喵" />);
-  fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
-  fireEvent.click(await screen.findByRole("button",{name:"更多信件"}));
-  await waitFor(()=>expect(api.letters.list).toHaveBeenCalledWith(context,"71"));
-  api.letters.list.mockResolvedValue(first);
-  await act(async()=>{window.dispatchEvent(new Event("focus"));});
-  await act(async()=>{finish([{...stored,id:"1",content:"失效的旧分页结果"}]);});
-  expect(screen.queryByText("失效的旧分页结果")).toBeNull();
-  expect(screen.getAllByRole("button",{name:/小喵的来信/})).toHaveLength(30);
-  expect(screen.getByRole("button",{name:"更多信件"})).toHaveProperty("disabled",false);
+it("旧分页响应不能覆盖较新的刷新结果",async()=>{
+  const first=Array.from({length:13},(_,i)=>({...stored,id:String(100-i),content:`信件编号${i}`}));
+  let finish!:(value:object)=>void;
+  api.browse.mockImplementation(async(kind,_scope,_search,_order,page)=>kind==="travels"?{items:[trip],total:1,page:1,pages:1}:page===2?new Promise(resolve=>{finish=resolve;}):{items:first.slice(0,12),total:13,page:1,pages:2});
+  render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));await screen.findByText("信件编号0");fireEvent.click(screen.getByRole("button",{name:"下一页"}));
+  await waitFor(()=>expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2));
+  api.browse.mockResolvedValue({items:[{...stored,content:"新的结果"}],total:1,page:1,pages:1});
+  await act(async()=>fireEvent.focus(window));await screen.findByText("新的结果");
+  await act(async()=>finish({items:[{...stored,content:"失效的旧分页结果"}],total:13,page:2,pages:2}));
+  expect(screen.queryByText("失效的旧分页结果")).toBeNull();expect(screen.getByText("新的结果")).toBeTruthy();
 });
 function Editor({scope=context,editorTarget=target}: {scope?:CurrentContext;editorTarget?:LetterTarget}) {
   const [value,setValue]=useState("一路平安");

@@ -1,0 +1,20 @@
+.ym-email-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 16px; }
+.ym-email-panel .ym-email-header h2 { margin:0; }
+.ym-email-panel .ym-email-switch { display:inline-flex; flex:0 0 auto; align-items:center; gap:8px; margin-left:auto; padding:5px 0 5px 8px; border:0; background:transparent; color:var(--ym-text-secondary); font:inherit; font-size:var(--ym-font-caption); white-space:nowrap; cursor:pointer; }
+.ym-email-switch__track { display:inline-flex; align-items:center; flex:0 0 38px; width:38px; height:22px; padding:3px; border:1px solid var(--ym-border-strong); border-radius:var(--ym-radius-pill); background:var(--ym-surface-muted); }
+.ym-email-switch__track > span { width:14px; height:14px; border-radius:50%; background:var(--ym-text-secondary); transition:transform var(--ym-duration-normal); }
+.ym-email-switch[aria-checked="true"] { color:var(--ym-accent-strong); }
+.ym-email-switch[aria-checked="true"] .ym-email-switch__track { border-color:var(--ym-accent-strong); background:var(--ym-accent-soft); }
+.ym-email-switch[aria-checked="true"] .ym-email-switch__track > span { background:var(--ym-accent-strong); transform:translateX(16px); }
+.ym-email-switch:hover:not(:disabled) .ym-email-switch__track { border-color:var(--ym-focus); }
+.ym-email-panel .ym-email-switch:disabled { cursor:not-allowed; opacity:.65; }
+.ym-email-fields { display:grid; gap:1rem; margin:1rem 0 0; padding:0; min-width:0; border:0; }
+.ym-email-guide { padding:1rem; border:1px solid var(--ym-border); border-radius:16px; background:var(--ym-accent-subtle); line-height:1.7; }
+.ym-email-guide strong { color:var(--ym-accent-strong); }
+.ym-email-guide p { overflow-wrap:anywhere; }
+.ym-email-advanced,.ym-email-history { padding:1rem; border:1px solid var(--ym-border); border-radius:16px; background:var(--ym-surface-muted); }
+.ym-email-history { margin-top:1rem; }
+.ym-email-panel summary { cursor:pointer; color:var(--ym-text-secondary); line-height:1.6; }
+.ym-email-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); gap:1rem; }
+.ym-email-delivery { padding:1rem 0; border-top:1px solid var(--ym-border); overflow-wrap:anywhere; }
+.ym-email-delivery .ym-inline-form { justify-content:space-between; }

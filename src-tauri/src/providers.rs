@@ -19,7 +19,7 @@ pub fn connection_test_config(
 ) -> AppResult<ConnectionTest> {
     let row: Option<(Option<String>, String, Option<String>)> = c
         .query_row(
-            "SELECT base_url,model,api_key_encrypted FROM providers WHERE id=?1",
+            "SELECT base_url,model,api_key_encrypted FROM provider_effective WHERE id=?1",
             [id],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -67,12 +67,16 @@ pub struct Provider {
     pub max_output_tokens: u32,
     pub context_window_override: Option<u32>,
     pub capacity: crate::chat_capacity::Capacity,
+    pub purposes: Vec<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderInput {
     pub name: String,
     pub base_url: Option<String>,
+    #[serde(default)]
     pub model: String,
     #[serde(default)]
     pub api_key: SecretUpdate,
@@ -104,7 +108,7 @@ pub fn validate_url(value: &str) -> AppResult<()> {
     Ok(())
 }
 pub fn list(c: &Connection) -> AppResult<Vec<Provider>> {
-    let mut stmt=c.prepare("SELECT id,name,base_url,model,api_key_encrypted IS NOT NULL,is_active,memory_is_active,max_output_tokens,context_window_override FROM providers ORDER BY id")?;
+    let mut stmt=c.prepare("SELECT id,name,base_url,model,api_key_encrypted IS NOT NULL,is_active,memory_is_active,max_output_tokens,context_window_override,created_at,updated_at FROM provider_effective ORDER BY id")?;
     let rows = stmt.query_map([], |r| {
         let base_url: Option<String> = r.get(2)?;
         let model: String = r.get(3)?;
@@ -125,9 +129,22 @@ pub fn list(c: &Connection) -> AppResult<Vec<Provider>> {
             max_output_tokens: r.get(7)?,
             context_window_override,
             capacity,
+            purposes: vec![],
+            created_at: r.get(9)?,
+            updated_at: r.get(10)?,
         })
     })?;
-    Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    let mut providers = rows.collect::<Result<Vec<_>, _>>()?;
+    let roles = crate::provider_roles::get(c)?;
+    for p in &mut providers {
+        p.purposes = roles
+            .roles
+            .iter()
+            .filter(|r| r.provider_id == p.id)
+            .map(|r| r.purpose.clone())
+            .collect();
+    }
+    Ok(providers)
 }
 pub fn save(
     c: &mut Connection,
@@ -137,9 +154,6 @@ pub fn save(
 ) -> AppResult<Provider> {
     if input.name.trim().is_empty() {
         return Err(AppError::validation("name", "请填写提供商名称"));
-    }
-    if input.model.trim().is_empty() {
-        return Err(AppError::validation("model", "请填写模型名称"));
     }
     if input.max_output_tokens == 0 {
         return Err(AppError::validation(
@@ -159,6 +173,8 @@ pub fn save(
     }
     let secret = crypto::prepare(input.api_key, protector)?;
     let tx = c.transaction()?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let creating = id.is_none();
     let id = if let Some(id) = id {
         let old: Option<Option<String>> = tx
             .query_row(
@@ -169,24 +185,30 @@ pub fn save(
             .optional()?;
         let key = secret.unwrap_or(old.ok_or_else(AppError::not_found)?);
         tx.execute(
-            "UPDATE providers SET name=?1,base_url=?2,model=?3,api_key_encrypted=?4,max_output_tokens=?5,context_window_override=?6 WHERE id=?7",
-            params![input.name.trim(), base_url, input.model.trim(), key, input.max_output_tokens, input.context_window_override, id],
+            "UPDATE providers SET name=?1,base_url=?2,api_key_encrypted=?3 WHERE id=?4",
+            params![input.name.trim(), base_url, key, id],
         )?;
         id
     } else {
         tx.execute(
-            "INSERT INTO providers(name,base_url,model,api_key_encrypted,max_output_tokens,context_window_override) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![
-                input.name.trim(),
-                base_url,
-                input.model.trim(),
-                secret.flatten(),
-                input.max_output_tokens,
-                input.context_window_override
-            ],
+            "INSERT INTO providers(name,base_url,api_key_encrypted) VALUES(?1,?2,?3)",
+            params![input.name.trim(), base_url, secret.flatten()],
         )?;
         tx.last_insert_rowid()
     };
+    if creating && !input.model.trim().is_empty() && input.model.trim() != "未配置" {
+        tx.execute("INSERT INTO provider_models(provider_id,purpose,model,max_output_tokens,context_window_override) VALUES(?1,'chat',?2,?3,?4)",params![id,input.model.trim(),input.max_output_tokens,input.context_window_override])?;
+    }
+    tx.execute("UPDATE providers SET created_at=CASE WHEN ?2 THEN ?3 ELSE created_at END,updated_at=?3 WHERE id=?1",params![id,creating,now])?;
+    if tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM provider_roles WHERE purpose='image' AND provider_id=?1)",
+        [id],
+        |r| r.get::<_, bool>(0),
+    )? {
+        tx.execute("UPDATE provider_roles SET enabled=0 WHERE purpose='image' AND provider_id=?1 AND (SELECT api_key_encrypted FROM providers WHERE id=?1) IS NULL",[id])?;
+        crate::provider_roles::image_changed(&tx)?;
+    }
+    crate::provider_roles::changed(&tx)?;
     let result = list(&tx)?
         .into_iter()
         .find(|p| p.id == id.to_string())
@@ -208,38 +230,43 @@ pub fn select(c: &mut Connection, id: Option<i64>, memory: bool) -> AppResult<()
             return Err(AppError::not_found());
         }
     }
-    if memory {
-        tx.execute(
-            "UPDATE providers SET memory_is_active=0 WHERE memory_is_active=1",
-            [],
-        )?;
-        if let Some(id) = id {
-            tx.execute("UPDATE providers SET memory_is_active=1 WHERE id=?1", [id])?;
+    let purpose = if memory { "memory" } else { "chat" };
+    if let Some(id) = id {
+        if memory {
+            tx.execute("INSERT OR IGNORE INTO provider_models(provider_id,purpose,model) SELECT provider_id,'memory',model FROM provider_models WHERE provider_id=?1 AND purpose='chat'",[id])?;
+        }
+        tx.execute("INSERT INTO provider_roles(purpose,provider_id) SELECT purpose,provider_id FROM provider_models WHERE purpose=?1 AND provider_id=?2 ON CONFLICT(purpose) DO UPDATE SET provider_id=excluded.provider_id",params![purpose,id])?;
+        if !tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM provider_roles WHERE purpose=?1 AND provider_id=?2)",
+            params![purpose, id],
+            |r| r.get::<_, bool>(0),
+        )? {
+            return Err(AppError::validation("model", "请先配置该用途的模型"));
         }
     } else {
-        tx.execute("UPDATE providers SET is_active=0 WHERE is_active=1", [])?;
-        tx.execute(
-            "UPDATE providers SET is_active=1 WHERE id=?1",
-            [id.unwrap()],
-        )?;
+        tx.execute("DELETE FROM provider_roles WHERE purpose=?1", [purpose])?;
     }
+    crate::provider_roles::changed(&tx)?;
     tx.commit()?;
     Ok(())
 }
 pub fn delete(c: &mut Connection, id: i64) -> AppResult<()> {
     let tx = c.transaction()?;
-    let active = tx
-        .query_row(
-            "SELECT is_active OR memory_is_active FROM providers WHERE id=?1",
-            [id],
-            |r| r.get::<_, bool>(0),
-        )
-        .optional()?
-        .ok_or_else(AppError::not_found)?;
-    if active {
+    if !tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM providers WHERE id=?1)",
+        [id],
+        |r| r.get::<_, bool>(0),
+    )? {
+        return Err(AppError::not_found());
+    }
+    if tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM provider_roles WHERE provider_id=?1)",
+        [id],
+        |r| r.get::<_, bool>(0),
+    )? {
         return Err(AppError::new(
             "VALIDATION_ERROR",
-            "不能删除正在使用的提供商，请先切换聊天和记忆提供商",
+            "不能删除正在使用的提供商，请先更改聊天、记忆、生图或识图用途",
         ));
     }
     tx.execute("DELETE FROM providers WHERE id=?1", [id])?;
@@ -320,11 +347,23 @@ mod tests {
         assert_eq!(legacy.context_window_override, None);
         let p = save(&mut c, None, legacy, &Secret).unwrap();
         assert_eq!(p.max_output_tokens, 32768);
-        let id = p.id.parse().unwrap();
+        let id: i64 = p.id.parse().unwrap();
         let mut updated = input(SecretUpdate::Keep);
         updated.max_output_tokens = 4096;
         updated.context_window_override = Some(128000);
-        let p = save(&mut c, Some(id), updated, &Secret).unwrap();
+        let revision = crate::provider_roles::revision(&c).unwrap();
+        crate::provider_roles::save(
+            &mut c,
+            "chat",
+            Some(&id.to_string()),
+            "test-model",
+            true,
+            revision,
+            Some(updated.max_output_tokens),
+            updated.context_window_override,
+        )
+        .unwrap();
+        let p = save(&mut c, Some(id), input(SecretUpdate::Keep), &Secret).unwrap();
         assert_eq!(p.max_output_tokens, 4096);
         assert_eq!(p.context_window_override, Some(128000));
         let json = serde_json::to_value(&p).unwrap();

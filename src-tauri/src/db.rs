@@ -6,7 +6,13 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 6;
+const VERSION: i64 = 12;
+const PET_CREATION_MIGRATION: &str = include_str!("../../db/migrations/012_pet_creation.sql");
+const SESSION_PINNING_MIGRATION: &str = include_str!("../../db/migrations/011_session_pinning.sql");
+const CHAT_APPEARANCE_MIGRATION: &str = include_str!("../../db/migrations/010_chat_appearance.sql");
+const REMINDER_EMAIL_MIGRATION: &str = include_str!("../../db/migrations/009_reminder_email.sql");
+const PROVIDER_MODELS_MIGRATION: &str = include_str!("../../db/migrations/008_provider_models.sql");
+const MODEL_ROLES_MIGRATION: &str = include_str!("../../db/migrations/007_model_roles_and_chat_images.sql");
 const ACCESSORY_IMAGES_MIGRATION: &str = include_str!("../../db/migrations/006_accessory_images.sql");
 const PROACTIVE_MIGRATION: &str = include_str!("../../db/migrations/005_proactive_messages.sql");
 const PET_STATE_MIGRATION: &str = include_str!("../../db/migrations/002_session_pet_states.sql");
@@ -94,7 +100,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 | 5 => {}
+        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -111,6 +117,28 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
         tx.execute_batch(ACCESSORY_IMAGES_MIGRATION)?;
         tx.pragma_update(None, "user_version", VERSION)?;
     }
+    if (1..7).contains(&version) {
+        tx.execute_batch(MODEL_ROLES_MIGRATION)?;
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..8).contains(&version) {
+        tx.execute_batch(PROVIDER_MODELS_MIGRATION)?;
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..9).contains(&version) {
+        tx.execute_batch(REMINDER_EMAIL_MIGRATION)?;
+        tx.pragma_update(None, "user_version", VERSION)?;
+    }
+    if (1..10).contains(&version) {
+        tx.execute_batch(CHAT_APPEARANCE_MIGRATION)?;
+        tx.pragma_update(None, "user_version", VERSION)?;
+    }
+    if (1..11).contains(&version) {
+        tx.execute_batch(SESSION_PINNING_MIGRATION)?;
+        tx.pragma_update(None, "user_version", VERSION)?;
+    }
+    if (1..12).contains(&version) { tx.execute_batch(PET_CREATION_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    crate::provider_roles::migrate_legacy(&tx)?;
     for (key, value) in config::defaults() {
         tx.execute(
             "INSERT OR IGNORE INTO settings(key,value) VALUES (?1,?2)",
@@ -176,7 +204,7 @@ fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
         return Err(AppError::new("STORAGE_ERROR", "存在多个系统默认人设，数据不一致；请保留原数据并检查备份"));
     }
     if count == 0 {
-        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin) VALUES(?1,?2,?2,1)", params![NAME, PROMPT])?;
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin,created_at,updated_at) VALUES(?1,?2,?2,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'))", params![NAME, PROMPT])?;
     } else {
         // 只替换上一版种子的原值；三项独立判断，不覆盖手动编辑或人设自调。
         tx.execute("UPDATE personas SET name=CASE WHEN name='喵喵桌宠' THEN ?1 ELSE name END,
@@ -231,8 +259,94 @@ mod tests {
         assert_eq!(c.query_row("SELECT count(*) FROM settings WHERE key='hungry_minutes'", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
     }
 
+    fn remove_v12_fixture_columns(connection:&Connection){connection.execute_batch("DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale;").unwrap();}
+    fn remove_v10_fixture_columns(connection: &Connection) {
+        remove_v12_fixture_columns(connection);
+        connection.execute_batch("ALTER TABLE sessions DROP COLUMN is_pinned;").unwrap();
+        connection.execute_batch("ALTER TABLE personas DROP COLUMN chat_bubble_style; ALTER TABLE personas DROP COLUMN chat_user_text_color; ALTER TABLE personas DROP COLUMN chat_assistant_text_color;").unwrap();
+    }
+    fn remove_v7_fixture_columns(connection:&Connection) {
+        remove_v10_fixture_columns(connection);
+        connection.execute_batch("DROP TABLE reminder_email_items; DROP TABLE reminder_email_deliveries;").unwrap();
+        connection.execute_batch("DROP VIEW provider_effective; DROP TABLE provider_roles; DROP TABLE provider_models; DROP TABLE message_images;
+            ALTER TABLE providers DROP COLUMN created_at; ALTER TABLE providers DROP COLUMN updated_at;
+            ALTER TABLE providers ADD COLUMN model TEXT NOT NULL DEFAULT 'legacy-model';
+            ALTER TABLE providers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0 CHECK(is_active IN (0,1));
+            ALTER TABLE providers ADD COLUMN memory_is_active INTEGER NOT NULL DEFAULT 0 CHECK(memory_is_active IN (0,1));
+            ALTER TABLE providers ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK(max_output_tokens>0);
+            ALTER TABLE providers ADD COLUMN context_window_override INTEGER CHECK(context_window_override>0);
+            CREATE UNIQUE INDEX idx_providers_one_active ON providers(is_active) WHERE is_active=1;
+            CREATE UNIQUE INDEX idx_providers_one_memory_active ON providers(memory_is_active) WHERE memory_is_active=1;
+            ALTER TABLE personas DROP COLUMN created_at; ALTER TABLE personas DROP COLUMN updated_at;").unwrap();
+    }
+    #[test]
+    fn session_pinning_v10_upgrade_preserves_sessions_and_matches_fresh_schema() {
+        let mut c=memory();
+        remove_v12_fixture_columns(&c);
+        c.execute_batch("ALTER TABLE sessions DROP COLUMN is_pinned; PRAGMA user_version=10; INSERT INTO sessions(persona_id,title,created_at,updated_at) VALUES(1,'原会话','2026-10-01','2026-10-02');").unwrap();
+        initialize(&mut c).unwrap();
+        assert_current_schema(&c);
+        let saved=crate::sessions::get(&c,1,1).unwrap();
+        assert_eq!((saved.title.as_str(),saved.updated_at.as_str(),saved.is_pinned),("原会话","2026-10-02",false));
+        assert!(c.execute("UPDATE sessions SET is_pinned=2",[]).is_err());
+        crate::sessions::set_pinned(&mut c,1,1,true).unwrap();
+        initialize(&mut c).unwrap();
+        assert!(crate::sessions::get(&c,1,1).unwrap().is_pinned);
+    }
+
+    #[test]
+    fn v9_chat_appearance_upgrade_preserves_persona_and_matches_fresh_schema() {
+        let mut c=memory();
+        remove_v10_fixture_columns(&c);
+        c.execute_batch("PRAGMA user_version=9; UPDATE personas SET prompt='保留人设',chat_bg_opacity=63;").unwrap();
+        initialize(&mut c).unwrap();
+        assert_current_schema(&c);
+        let persona=crate::persona::list(&c).unwrap().remove(0);
+        assert_eq!(persona.prompt,"保留人设"); assert_eq!(persona.chat_bg_opacity,63);
+        assert_eq!(persona.chat_appearance,crate::persona::background::Appearance::default());
+        initialize(&mut c).unwrap();
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+    }
+    #[test]
+    fn v7_provider_models_migrate_without_losing_inactive_connection_budget() {
+        let mut c=memory();
+        remove_v10_fixture_columns(&c);
+        c.execute_batch("DROP TABLE reminder_email_items; DROP TABLE reminder_email_deliveries; DROP VIEW provider_effective; DROP TABLE provider_roles; DROP TABLE provider_models;
+            CREATE TABLE provider_roles(purpose TEXT PRIMARY KEY CHECK(purpose IN ('chat','memory','image','vision')),provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,model TEXT NOT NULL CHECK(length(trim(model))>0),enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)));
+            ALTER TABLE providers ADD COLUMN model TEXT NOT NULL DEFAULT 'old';
+            ALTER TABLE providers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 0 CHECK(is_active IN (0,1));
+            ALTER TABLE providers ADD COLUMN memory_is_active INTEGER NOT NULL DEFAULT 0 CHECK(memory_is_active IN (0,1));
+            ALTER TABLE providers ADD COLUMN max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK(max_output_tokens>0);
+            ALTER TABLE providers ADD COLUMN context_window_override INTEGER CHECK(context_window_override>0);
+            CREATE UNIQUE INDEX idx_providers_one_active ON providers(is_active) WHERE is_active=1;
+            CREATE UNIQUE INDEX idx_providers_one_memory_active ON providers(memory_is_active) WHERE memory_is_active=1;
+            INSERT INTO providers(name,model,is_active,max_output_tokens,context_window_override) VALUES('甲','a',1,2048,16000);
+            INSERT INTO providers(name,model,max_output_tokens,context_window_override) VALUES('乙','b',4096,32000);
+            INSERT INTO provider_roles(purpose,provider_id,model) VALUES('chat',1,'a-current');
+            PRAGMA user_version=7;").unwrap();
+        initialize(&mut c).unwrap();
+        let all=crate::providers::list(&c).unwrap();
+        assert_eq!((all[0].model.as_str(),all[0].max_output_tokens,all[0].context_window_override),("a-current",2048,Some(16000)));
+        assert_eq!((all[1].model.as_str(),all[1].max_output_tokens,all[1].context_window_override),("b",4096,Some(32000)));
+        assert_eq!(c.query_row("SELECT count(*) FROM pragma_table_info('providers') WHERE name IN ('model','is_active','memory_is_active','max_output_tokens','context_window_override')",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        let revision=crate::provider_roles::revision(&c).unwrap();
+        crate::provider_roles::save(&mut c,"chat",Some("2"),"b",true,revision,Some(4096),Some(32000)).unwrap();
+        assert_eq!(crate::providers::list(&c).unwrap()[0].max_output_tokens,2048);
+        assert_eq!(crate::providers::list(&c).unwrap()[1].max_output_tokens,4096);
+    }
+    #[test]
+    fn settings_redesign_v6_upgrade_preserves_provider_key_and_initial_persona() {
+        let mut connection=memory();remove_v7_fixture_columns(&connection);
+        connection.execute_batch("PRAGMA user_version=6; INSERT INTO providers(name,model,api_key_encrypted,is_active) VALUES('旧连接','旧模型','原密文',1); UPDATE personas SET prompt='当前正文',initial_prompt='初始正文';").unwrap();
+        initialize(&mut connection).unwrap();assert_current_schema(&connection);
+        let values:(String,String)=connection.query_row("SELECT prompt,initial_prompt FROM personas WHERE is_builtin=1",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();assert_eq!(values,("当前正文".into(),"初始正文".into()));
+        let key:String=connection.query_row("SELECT api_key_encrypted FROM providers",[],|r|r.get(0)).unwrap();assert_eq!(key,"原密文");
+        assert_eq!(crate::provider_roles::role(&connection,"chat").unwrap().unwrap().model,"旧模型");
+        let time:Option<String>=connection.query_row("SELECT created_at FROM providers",[],|r|r.get(0)).unwrap();assert!(time.is_none());
+    }
     fn version_three_fixture() -> Connection {
         let connection = memory();
+        remove_v7_fixture_columns(&connection);
         connection
             .execute_batch(
                 "ALTER TABLE accessories DROP COLUMN image_file;
@@ -285,7 +399,7 @@ mod tests {
                         .chars()
                         .filter(|c| !c.is_whitespace())
                         .collect::<String>();
-                    (name, compact)
+                    (name, compact.replace("IFNOTEXISTS", "").replace('"', ""))
                 })
                 .collect::<Vec<_>>()
         };
@@ -295,6 +409,7 @@ mod tests {
     #[test]
     fn version_four_migration_preserves_idle_and_success_across_restart() {
         let mut connection = memory();
+        remove_v7_fixture_columns(&connection);
         connection.execute_batch("ALTER TABLE accessories DROP COLUMN image_file;
             ALTER TABLE session_pet_states DROP COLUMN proactive_next_check_idle_ms;
             ALTER TABLE session_pet_states DROP COLUMN last_proactive_sent_at;
@@ -357,14 +472,14 @@ mod tests {
                 assert_current_schema(&connection);
                 assert_eq!(
                     connection
-                        .query_row("SELECT max_output_tokens FROM providers", [], |r| r
+                        .query_row("SELECT max_output_tokens FROM provider_effective", [], |r| r
                             .get::<_, i64>(0))
                         .unwrap(),
                     32768
                 );
                 assert_eq!(
                     connection
-                        .query_row("SELECT context_window_override FROM providers", [], |r| {
+                        .query_row("SELECT context_window_override FROM provider_effective", [], |r| {
                             r.get::<_, Option<i64>>(0)
                         })
                         .unwrap(),
@@ -387,7 +502,7 @@ mod tests {
                 assert_eq!(
                     connection
                         .query_row(
-                            "SELECT is_active+memory_is_active FROM providers",
+                            "SELECT is_active+memory_is_active FROM provider_effective",
                             [],
                             |r| r.get::<_, i64>(0)
                         )
@@ -533,6 +648,7 @@ mod tests {
     fn version_five_accessory_migration_preserves_data_and_rolls_back_failures() {
         for fail in [false,true] {
             let mut connection = memory();
+            remove_v7_fixture_columns(&connection);
             connection.execute_batch("ALTER TABLE accessories DROP COLUMN image_file; PRAGMA user_version=5;
                 INSERT INTO sessions(id,persona_id,title,craft_tier_1_used,created_at,updated_at) VALUES(1,1,'保留',1,'a','a');
                 INSERT INTO accessories(id,session_id,name,display_text,description,cost,source,is_worn,created_at) VALUES(1,1,'星星','★','简介',20,'crafted',1,'a');
@@ -618,9 +734,7 @@ mod tests {
                 1
             );
         }
-        let paths = AppPaths {
-            data_root: root.clone(),
-        };
+        let paths = AppPaths::portable(root.clone());
         drop(open(&paths).unwrap());
         let backups: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
@@ -674,9 +788,7 @@ mod tests {
                 .as_nanos()
         );
         let root = std::env::temp_dir().join(unique);
-        let paths = AppPaths {
-            data_root: root.clone(),
-        };
+        let paths = AppPaths::portable(root.clone());
         {
             let (c, _) = open(&paths).unwrap();
             c.execute("UPDATE user_state SET coins=17", []).unwrap();
@@ -691,9 +803,7 @@ mod tests {
         }
         let blocker = root.join("not-a-directory");
         std::fs::write(&blocker, b"keep").unwrap();
-        assert!(open(&AppPaths {
-            data_root: blocker.clone()
-        })
+        assert!(open(&AppPaths::portable(blocker.clone()))
         .is_err());
         assert_eq!(std::fs::read(&blocker).unwrap(), b"keep");
         std::fs::remove_file(blocker).unwrap();
@@ -804,4 +914,22 @@ pub(crate) fn ensure_builtin_embedding(connection:&Connection)->AppResult<()> {
     connection.execute("INSERT INTO embedding_providers(name,kind,model,is_builtin) SELECT '内置中文 Embedding','local','BAAI/bge-small-zh-v1.5',1 WHERE NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_builtin=1)",[])?;
     connection.execute("UPDATE embedding_providers SET is_active=1 WHERE is_builtin=1 AND NOT EXISTS(SELECT 1 FROM embedding_providers WHERE is_active=1)",[])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod reminder_email_migration_tests {
+    use super::*;
+    #[test]
+    fn reminder_email_upgrade_from_v8_preserves_existing_data() {
+        let mut c=test_database();
+        c.execute_batch("DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale; ALTER TABLE sessions DROP COLUMN is_pinned; ALTER TABLE personas DROP COLUMN chat_bubble_style; ALTER TABLE personas DROP COLUMN chat_user_text_color; ALTER TABLE personas DROP COLUMN chat_assistant_text_color;").unwrap();
+        c.execute_batch("DROP TABLE reminder_email_items; DROP TABLE reminder_email_deliveries; PRAGMA user_version=8;").unwrap();
+        c.execute("INSERT INTO reminders(name,kind,content,status,fire_at,source,created_at) VALUES('旧提醒','once','保留','pending','2099-01-01T00:00:00Z','manual','2026-10-15T00:00:00Z')",[]).unwrap();
+        initialize(&mut c).unwrap();
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+        assert_eq!(c.query_row("SELECT content FROM reminders WHERE name='旧提醒'",[],|r|r.get::<_,String>(0)).unwrap(),"保留");
+        assert_eq!(c.query_row("SELECT count(*) FROM reminder_email_deliveries",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        initialize(&mut c).unwrap();
+        assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+    }
 }

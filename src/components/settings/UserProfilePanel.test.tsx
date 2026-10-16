@@ -8,6 +8,19 @@ vi.mock("../../api", () => ({ userProfileApi: api, configurationApi: api, errorM
 
 const profile: UserProfile = { id: "profile-1", name: "我的设定", content: "喜欢猫咪", createdAt: "2026-10-01T08:00:00Z", updatedAt: "2026-10-06T08:00:00Z" };
 let rows: UserProfile[];
+it("详情导航直接展开用户设定，编辑未完成时保留草稿直到取消", async () => {
+  const original = { page:"userProfile" as const,id:profile.id };
+  const view=render(<UserProfilePanel detailRequest={original} />);
+  await screen.findByRole("button",{name:"返回用户设定列表"});
+  fireEvent.click(screen.getByRole("button",{name:`编辑 ${profile.name}`}));
+  fireEvent.change(screen.getByLabelText("内容"),{target:{value:"未保存草稿"}});
+  rows.push({...profile,id:"profile-2",name:"另一份设定"});
+  await act(async () => { changed?.(); });
+  view.rerender(<UserProfilePanel detailRequest={{page:"userProfile",id:"profile-2"}} />);
+  expect(screen.getByLabelText("内容")).toHaveProperty("value","未保存草稿");
+  fireEvent.click(screen.getByRole("button",{name:"取消"}));
+  await screen.findByRole("button",{name:"编辑 另一份设定"});
+});
 let changed: (() => void) | undefined;
 let stop: ReturnType<typeof vi.fn>;
 
@@ -76,6 +89,7 @@ describe("UserProfilePanel", () => {
     const saving = deferred<UserProfile>();
     api.update.mockReturnValueOnce(saving.promise);
     await loadPanel();
+    fireEvent.click(screen.getByRole("button",{name:profile.name}));
     fireEvent.click(screen.getByRole("button", { name: `编辑 ${profile.name}` }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: " 改后名称 " } });
     fireEvent.change(screen.getByLabelText("内容"), { target: { value: " 草稿正文 " } });
@@ -100,6 +114,7 @@ describe("UserProfilePanel", () => {
   it("删除确认说明会话与聊天记忆保留，REQUEST_BUSY 不删除卡片，确认重试才刷新", async () => {
     api.delete.mockRejectedValueOnce({ code: "REQUEST_BUSY", message: "请先停止使用此设定的请求" });
     await loadPanel();
+    fireEvent.click(screen.getByRole("button",{name:profile.name}));
     fireEvent.click(screen.getByRole("button", { name: `删除 ${profile.name}` }));
     const modal = within(screen.getByRole("dialog"));
     expect(modal.getByText(/绑定它的会话不会被删除，只会变为未绑定；聊天与记忆保留/)).toBeTruthy();
@@ -135,6 +150,7 @@ describe("UserProfilePanel", () => {
 
   it("保存使旧列表失效，操作中配置事件延后补查，不复活保存前内容", async () => {
     await loadPanel();
+    fireEvent.click(screen.getByRole("button",{name:profile.name}));
     fireEvent.click(screen.getByRole("button", { name: `编辑 ${profile.name}` }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "已保存名称" } });
     const older = deferred<UserProfile[]>();

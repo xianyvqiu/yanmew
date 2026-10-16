@@ -42,7 +42,7 @@ fn protected_overflow_sends_no_network_request() {
         runtime
             .read(|s, _| {
                 s.connection.execute(
-                    "UPDATE providers SET context_window_override=100 WHERE is_active=1",
+                    "UPDATE provider_models SET context_window_override=100 WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
                     [],
                 )?;
                 Ok(())
@@ -178,7 +178,7 @@ fn known_budget_removes_whole_optional_parts_and_keeps_large_persona_and_tool_pa
     runtime
         .read(|s, _| {
             s.connection.execute(
-                "UPDATE providers SET context_window_override=90000 WHERE is_active=1",
+                "UPDATE provider_models SET context_window_override=90000 WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
                 [],
             )?;
             s.connection.execute(
@@ -201,6 +201,7 @@ fn known_budget_removes_whole_optional_parts_and_keeps_large_persona_and_tool_pa
                 json!({"id":"x","type":"function","function":{"name":"read_notebook","arguments":"{}"}}),
             ]),
             tool_call_id: None,
+            images:vec![],
         },
         Message::tool_result("x", json!({"ok":true})),
     ];

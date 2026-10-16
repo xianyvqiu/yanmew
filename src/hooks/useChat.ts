@@ -1,3 +1,4 @@
+import type {ChatImageInput} from "../types";
 import { useEffect, useRef, useState } from "react";
 import { chatApi, errorMessage, sessionApi } from "../api";
 import type { ChatContextBudget, ChatReplyEvent, ChatRequestSnapshot, CurrentContext, Message, RoundSnapshot } from "../types";
@@ -21,9 +22,11 @@ const interruptedNotice = (round: RoundSnapshot) => {
 };
 
 /** 页面只渲染后端保存结果；未保存增量单独展示，不另发消息写入命令。 */
-export function useChat(context: CurrentContext) {
+export function useChat(context: CurrentContext, options: { onSubmitted?: (receipt: ChatRequestSnapshot) => void } = {}) {
+  const submittedCallback = useRef(options.onSubmitted);
+  submittedCallback.current = options.onSubmitted;
   const [view, setView] = useState<ChatView>(empty);
-  const actions = useRef({ send: async (_input: string): Promise<boolean> => false, continueReply: async (): Promise<boolean> => false,
+  const actions = useRef({ send: async (_input: string,_images?:ChatImageInput[]): Promise<boolean> => false, continueReply: async (): Promise<boolean> => false,
     regenerateReply: async (): Promise<boolean> => false, editMessage: async (_message:Message,_content:string): Promise<boolean> => false,
     deleteTail: async (_message:Message): Promise<boolean> => false, cancel: async () => {}, reload: async () => {}, more: async () => {} });
   useEffect(() => {
@@ -42,6 +45,7 @@ export function useChat(context: CurrentContext) {
     let unlistenMessages: (() => void) | undefined;
     const rows = new Map<string, Message>();
     const ended = new Set<string>();
+    const ownedRequests = new Set<string>();
     const publish = () => {
       if (disposed) return;
       state = { ...state, messages: [...rows.values()].sort((a, b) => {
@@ -184,6 +188,8 @@ export function useChat(context: CurrentContext) {
         try {
           const receipt = await request();
           if (disposed) { void chatApi.cancel(receipt).catch(() => {}); return true; }
+          ownedRequests.add(receipt.requestId);
+          submittedCallback.current?.(receipt);
           state.active = receipt; state.lastRound = receipt.round; save(receipt.round);
           state.notice = receipt.notice ?? ""; state.budget = receipt.budget ?? null;
           submitting = false; replay(); publish();
@@ -195,7 +201,7 @@ export function useChat(context: CurrentContext) {
         } finally { submitting = false; buffered = []; publish(); }
     };
     actions.current = {
-      send: async input => input.trim() ? submitRequest(() => chatApi.submit(context, input)) : false,
+      send: async (input,images=[]) => input.trim() || images.length ? submitRequest(() => images.length?chatApi.submit(context,input,images):chatApi.submit(context,input)) : false,
       continueReply: async () => {
         const lastRound = state.lastRound;
         if (lastRound?.round.status !== "interrupted" || lastRound.round.stopReason !== "length_limit" || !lastRound.assistantMessage) return false;
@@ -262,9 +268,11 @@ export function useChat(context: CurrentContext) {
       },
     };
     const receive = (event: ChatReplyEvent) => {
-      if (disposed || !matches(event)) return;
+      if (disposed || !matches(event) || ended.has(event.requestId)) return;
       if (submitting || syncing || mutating) buffered.push(event);
       else if (state.active && event.requestId === state.active.requestId && event.seq > state.active.seq + 1) {
+        buffered.push(event); void synchronize();
+      } else if (!state.active && ["text", "expression"].includes(event.type)) {
         buffered.push(event); void synchronize();
       } else apply(event);
     };
@@ -288,10 +296,11 @@ export function useChat(context: CurrentContext) {
     void connect();
     return () => {
       disposed = true; unlisten?.(); unlistenMessages?.(); window.removeEventListener("focus", focus);
-      if (state.active) void chatApi.cancel(state.active).catch(() => {});
+      // 旁观窗口卸载不取消其他入口发起的回复。
+      if (state.active && ownedRequests.has(state.active.requestId)) void chatApi.cancel(state.active).catch(() => {});
     };
   }, [context.personaId, context.sessionId, context.contextRevision]);
-  return { ...view, send: (input: string) => actions.current.send(input), continueReply: () => actions.current.continueReply(), cancel: () => actions.current.cancel(),
+  return { ...view, send: (input: string,images?:ChatImageInput[]) => actions.current.send(input,images), continueReply: () => actions.current.continueReply(), cancel: () => actions.current.cancel(),
     regenerateReply: () => actions.current.regenerateReply(),editMessage: (message:Message,content:string)=>actions.current.editMessage(message,content),deleteTail:(message:Message)=>actions.current.deleteTail(message),
     reload: () => actions.current.reload(), loadMore: () => actions.current.more() };
 }

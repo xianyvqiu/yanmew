@@ -22,29 +22,31 @@
 .pet-visibility {
   position: absolute; top: 6px; right: 6px; width: 100px; height: 32px;
   border-radius: var(--ym-radius-pill); padding-inline: 6px;
-  box-shadow: var(--ym-shadow-sm); opacity: .78;
+  box-shadow:none; opacity: .78;
 }
 .pet-visibility:hover, .pet-visibility:focus-visible,
 .pet-window[data-hidden="true"] .pet-visibility,
 .pet-window[data-error="true"] .pet-visibility { opacity: 1; }
-.pet-open-chat, .pet-open-settings { position: absolute; top: 6px; width: 46px; height: 32px; padding-inline: 4px; border-radius: var(--ym-radius-pill); }
-.pet-open-chat { right: 164px; }
-.pet-open-settings { right: 112px; }
 .pet-error {
-  position: absolute; top: 48px; left: 16px; right: 16px; max-height: 92px; padding: 10px 12px;
+  position: absolute; z-index:3; top:48px; left:16px; right:16px;
+  display:flex; flex-direction:column; gap:4px; padding:8px 10px;
+  /* 为本体行高、上下内边距及间隔留空；展开输入不侵占同一上方区域。 */
+  max-height:min(112px, calc(100% - var(--pet-chat-extra) - var(--ym-font-pet) * 1.4 - 118px));
+  overflow:hidden;
   border: 1px solid var(--ym-danger); border-radius: var(--ym-radius-lg);
-  box-shadow: var(--ym-shadow-md); background: var(--ym-surface);
+  box-shadow:none; background:transparent;
   color: var(--ym-text-secondary); font-size: var(--ym-font-caption); line-height: 1.55;
   animation: ym-appear var(--ym-duration-slow) var(--ym-ease-standard);
 }
-.pet-error strong { display: flex; gap: 6px; align-items: center; color: var(--ym-danger); font-weight: 600; }
+.pet-error strong { display:flex; flex:0 0 auto; gap:6px; align-items:center; color:var(--ym-danger); font-weight:600; line-height:1.4; }
 .pet-error svg { width: 16px; height: 16px; flex: 0 0 16px; }
-.pet-error p { max-height: 46px; overflow: auto; overflow-wrap: anywhere; margin: 4px 0 0; user-select: text; scrollbar-width: thin; }
-.pet-error { z-index: 3; max-height: 140px; overflow: auto; }
+.pet-error p { flex:1 1 auto; min-height:0; max-height:3.1em; overflow:auto; overflow-wrap:anywhere; margin:0; user-select:text; scrollbar-width:thin; }
+.pet-error-actions { display:flex; flex:0 0 auto; flex-wrap:wrap; gap:6px; }
+.pet-error-actions .ym-button { min-height:26px; padding:2px 7px; font-size:var(--ym-font-caption); }
 .pet-health { position: absolute; top: 6px; left: 16px; width: 32px; height: 32px; border-radius: var(--ym-radius-pill); }
 .pet-menu { position: absolute; z-index: 4; top: 44px; right: 12px; width: min(200px, calc(100% - 24px));
   padding: 10px; border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-lg);
-  background: var(--ym-surface); box-shadow: var(--ym-shadow-md); color: var(--ym-text); }
+  background:transparent; box-shadow:none; color: var(--ym-text); }
 .pet-menu p { margin: 0 0 8px; font-size: var(--ym-font-caption); color: var(--ym-text-secondary); }
 .pet-menu .ym-button { width: 100%; margin-top: 4px; }
 .pet-face[data-away="true"] { font-size: 20px; white-space: normal; overflow-wrap: anywhere; text-align: center; }
@@ -53,14 +55,75 @@
 .pet-reminder-slot { transform: translate(var(--ym-wander-x, 0px), var(--ym-wander-y, 0px)); }
 .pet-reminder-slot .ym-reminder-notification { min-height: 0; flex: 1; }
 .pet-reminder-retry { flex: 0 0 auto; max-width: 100%; font-size: var(--ym-font-caption); padding: 2px 6px; overflow: hidden; text-overflow: ellipsis; }
-/* 普通状态提示只使用主题表面；不影响透明窗口和提醒的独立外观。 */
+/* 宠窗提示透明无底色，主题只控制正文、描边及状态颜色。 */
 .pet-state-bubble {
   max-width: 100%; padding: 12px 16px; border: 1px solid var(--ym-border-strong);
-  border-radius: var(--ym-radius-lg); background: var(--ym-surface); color: var(--ym-text);
-  box-shadow: var(--ym-shadow-sm); font-size: var(--ym-font-body); line-height: 1.55;
+  border-radius: var(--ym-radius-lg); background:transparent; color: var(--ym-text);
+  box-shadow:none; font-size: var(--ym-font-body); line-height: 1.55;
   pointer-events: none; animation: ym-appear var(--ym-duration-slow) var(--ym-ease-standard);
 }
 .pet-state-bubble[data-activity="hungry"] { border-color: var(--ym-warning); }
 .pet-state-bubble[data-activity="bored"] { border-color: var(--ym-accent); }
 .pet-state-bubble p { margin: 0; overflow-wrap: anywhere; }
 .pet-reminder-slot > .pet-state-bubble { pointer-events: none; }
+
+.pet-window { --pet-chat-extra:0px; }
+.pet-window[data-chat-open="true"]:not([data-hidden="true"]) { --pet-chat-extra:120px; }
+.pet-face { bottom:calc(36px + var(--pet-chat-extra)); }
+.pet-reminder-slot { bottom:calc(114px + var(--pet-chat-extra)); }
+.pet-more { position:absolute; top:6px; right:112px; height:32px; width:36px; padding:0; letter-spacing:2px; border-radius:var(--ym-radius-pill); }
+.pet-options-menu { position:absolute; right:112px; top:44px; z-index:6; width:136px; padding:6px; display:grid; gap:4px; background:transparent; color:var(--ym-text); border:1px solid var(--ym-border-strong); border-radius:var(--ym-radius-lg); box-shadow:none; }
+.pet-options-menu .ym-button { width:100%; justify-content:flex-start; border-color:transparent; }
+.pet-chat-entry { position:absolute; left:50%; bottom:calc(4px + var(--pet-chat-extra)); transform:translateX(-50%); z-index:4; }
+.pet-chat-toggle { width:30px; height:30px; padding:6px; border-radius:50%; box-shadow:none; }
+.pet-chat-toggle svg { width:17px; height:17px; }
+.pet-chat-toggle[aria-expanded="true"] { background:transparent; border-color:var(--ym-accent); }
+.pet-chat-tooltip { position:absolute; bottom:calc(100% + 4px); left:50%; transform:translateX(-50%); visibility:visible; pointer-events:none; white-space:nowrap; padding:3px 8px; border:1px solid var(--ym-border); border-radius:8px; background:transparent; color:var(--ym-text); font-size:12px; }
+.pet-chat-entry:hover .pet-chat-tooltip,.pet-chat-entry:focus-within .pet-chat-tooltip { visibility:visible; }
+.pet-chat-input { position:absolute; bottom:8px; left:10px; right:10px; height:106px; overflow-y:auto; background:transparent; color:var(--ym-text); border:1px solid var(--ym-border-strong); border-radius:16px; box-shadow:none; user-select:text; }
+.pet-chat-input .chat-composer { min-height:100%; }
+.pet-chat-input .chat-composer--compact { height:100%; align-items:stretch; }
+.pet-chat-input .chat-composer--compact .chat-composer__input { height:100%; max-height:none; }
+.pet-chat-empty { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:10px; height:100%; padding:12px; font:13px/1.5 var(--ym-font-ui); }
+.pet-chat-bubble { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; border:1px solid var(--ym-border-strong); border-radius:16px; background:transparent; color:var(--ym-text); box-shadow:none; user-select:text; }
+.pet-chat-bubble::after { content:""; position:absolute; left:calc(50% - 5px); bottom:-6px; width:10px; height:10px; background:transparent; border-right:1px solid var(--ym-border-strong); border-bottom:1px solid var(--ym-border-strong); transform:rotate(45deg); }
+.pet-chat-bubble__body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:9px 12px 4px; font:13px/1.55 var(--ym-font-ui); overflow-wrap:anywhere; }
+.pet-chat-bubble__body p { margin:0 0 5px; }
+.pet-chat-bubble__actions { display:flex; justify-content:flex-end; gap:6px; padding:3px 7px 6px; }
+.pet-chat-bubble__actions .ym-button { min-height:22px; padding:2px 7px; font-size:11px; }
+.pet-chat-message-error,.pet-chat-note { margin:4px 8px; font:12px/1.5 var(--ym-font-ui); overflow-wrap:anywhere; }
+.pet-chat-message-error { color:var(--ym-danger); }
+.pet-chat-note { color:var(--ym-text-secondary); }
+
+/* 宠窗内统一仅描边；透明优先于通用组件的悬浮、选中和禁用底色。 */
+.pet-window .ym-button {
+  background:transparent !important;
+  box-shadow:none;
+  border-color:var(--ym-border-strong);
+  color:var(--ym-text);
+}
+.pet-window .ym-button:hover:not(:disabled),
+.pet-window .ym-button:focus-visible,
+.pet-window .ym-button[aria-expanded="true"] { border-color:var(--ym-focus); color:var(--ym-accent-strong); }
+.pet-window .ym-button.chat-composer__submit { color:var(--ym-text); }
+.pet-window .ym-button.chat-composer__submit:hover:not(:disabled) { border-color:var(--ym-focus); color:var(--ym-accent-strong); }
+.pet-window .ym-button:disabled { color:var(--ym-text-secondary); cursor:not-allowed; }
+.pet-window .ym-button[data-variant="danger"],
+.pet-window .ym-button[data-variant="danger"]:hover:not(:disabled) { color:var(--ym-danger); border-color:var(--ym-danger); }
+.pet-window .pet-visibility { opacity:1; }
+.pet-window :is(.chat-composer, .chat-composer__input, .ym-reminder-notification, .ym-accessory-craft-pet, .ym-page-error) {
+  background:transparent;
+  box-shadow:none;
+}
+
+.pet-expression-image { --ym-pet-image-size:clamp(64px, calc(var(--ym-font-pet) * 2.4), 128px); width:var(--ym-pet-image-size); height:var(--ym-pet-image-size); display:grid; place-items:center; }
+.pet-expression-image img { width:100%; height:100%; object-fit:contain; pointer-events:none; }
+.pet-window:has(.pet-expression-image) .pet-error { max-height:min(112px,calc(100% - var(--pet-chat-extra) - clamp(64px, calc(var(--ym-font-pet) * 2.4), 128px) - 118px)); }
+
+/* 图片及自定义饰品按可见上边界避让；旧颜文字默认头顶布局保持。 */
+.pet-window:has(.pet-expression-image) .pet-reminder-slot { bottom:calc(66px + clamp(64px, calc(var(--ym-font-pet) * 2.4), 128px) + var(--pet-chat-extra)); }
+.pet-window:has(.pet-accessory-layer[data-positioned="true"]) .pet-reminder-slot { bottom:max(calc(114px + var(--pet-chat-extra)), calc(100% - var(--ym-accessory-top, 140px) + 8px)); }
+.pet-window:has(.pet-expression-image):has(.pet-accessory-layer) .pet-reminder-slot { bottom:max(calc(66px + clamp(64px, calc(var(--ym-font-pet) * 2.4), 128px) + var(--pet-chat-extra)), calc(100% - var(--ym-accessory-top, 140px) + 8px)); }
+.pet-window:has(.pet-error) .pet-expression-image { width:64px;height:64px; }
+.pet-window:has(.pet-accessory-layer[data-positioned="true"]) .pet-error { max-height:min(112px,calc(100% - var(--pet-chat-extra) - var(--ym-font-pet) * 1.4 - 118px)); }
+.pet-window:has(.pet-expression-image) .pet-error,.pet-window:has(.pet-expression-image):has(.pet-accessory-layer) .pet-error { max-height:min(112px,calc(100% - var(--pet-chat-extra) - 182px)); }

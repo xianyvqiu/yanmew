@@ -1,6 +1,8 @@
+import CardBrowserControls from "./CardBrowserControls";
+import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, travelApi, travelJournalsApi } from "../api";
-import type { CurrentContext, JournalGenerationStatus, TravelJournal, TravelJournalSummary } from "../types";
+import type { CurrentContext, JournalGenerationStatus, TravelJournal } from "../types";
 import { travelTime } from "./travelTime";
 
 type Confirmation = { kind: "delete"; journal: TravelJournal } | { kind: "discard"; next: string | null; reload: boolean };
@@ -9,8 +11,8 @@ export default function TravelJournalPanel({ context }: { context: CurrentContex
 }
 function JournalPage(props: { context: CurrentContext }) {
   const [context] = useState(props.context);
-  const [items, setItems] = useState<TravelJournalSummary[]>([]);
   const [status, setStatus] = useState<JournalGenerationStatus | null>(null);
+  const browser=useRemoteCardBrowser<import("../types").TravelJournal>("journals",context);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TravelJournal | null>(null);
   const [editing, setEditing] = useState(false);
@@ -21,7 +23,6 @@ function JournalPage(props: { context: CurrentContext }) {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [more, setMore] = useState(false);
   const [readError, setReadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -30,8 +31,6 @@ function JournalPage(props: { context: CurrentContext }) {
   const locked = useRef(false);
   const listGeneration = useRef(0);
   const detailGeneration = useRef(0);
-  const pageDepth = useRef(1);
-  const rows = useRef<TravelJournalSummary[]>([]);
   const current = useRef({ selected, detail, editing });
   current.current = { selected, detail, editing };
   const dirty = editing && detail !== null && (title !== detail.title || content !== detail.content);
@@ -58,29 +57,14 @@ function JournalPage(props: { context: CurrentContext }) {
       if ((cause as { code?: string })?.code === "NOT_FOUND") { setMissing(true); if (!current.current.editing) setDetail(null); }
     } finally { if (alive.current && token === detailGeneration.current) setDetailLoading(false); }
   }, [context, accept]);
-  const load = useCallback(async (append = false) => {
+  const load = useCallback(async () => {
     if (!alive.current || locked.current) return;
     if (!context.sessionId) { setLoading(false); return; }
     const token = ++listGeneration.current; setLoading(true);
     try {
-      let cursor = append ? rows.current[rows.current.length - 1]?.id ?? null : null;
-      const records: TravelJournalSummary[] = [];
-      let lastCount = 0;
-      const progress = travelJournalsApi.status(context).then(value => ({ value, error: null as unknown })).catch(error => ({ value: null, error }));
-      // 刷新保留已展开页数，旧篇目不会因首页补查而丢失。
-      for (let page = 0; page < (append ? 1 : pageDepth.current); page++) {
-        const result = await travelJournalsApi.list(context, cursor);
-        if (!alive.current || token !== listGeneration.current || locked.current) return;
-        records.push(...result); lastCount = result.length;
-        cursor = result[result.length - 1]?.id ?? null;
-        if (lastCount < 30) break;
-      }
-      const nextStatus = await progress;
-      if (nextStatus.error) throw nextStatus.error;
+      const nextStatus = await travelJournalsApi.status(context);
       if (!alive.current || token !== listGeneration.current || locked.current) return;
-      if (append) pageDepth.current++;
-      rows.current = append ? [...rows.current, ...records.filter(row => !rows.current.some(old => old.id === row.id))] : records;
-      setItems(rows.current); setStatus(nextStatus.value); setMore(lastCount === 30); setReadError("");
+      setStatus(nextStatus); setReadError("");
       if (current.current.selected) void readDetail(current.current.selected);
     } catch (cause) { if (alive.current && token === listGeneration.current && !locked.current) setReadError(errorMessage(cause)); }
     finally { if (alive.current && token === listGeneration.current) setLoading(false); }
@@ -118,7 +102,7 @@ function JournalPage(props: { context: CurrentContext }) {
         if ((cause as { code?: string })?.code === "JOURNAL_CONFLICT") setRemoteChanged(true);
         if ((cause as { code?: string })?.code === "NOT_FOUND") setMissing(true);
       }
-    } finally { locked.current = false; if (alive.current) { setBusy(false); await load(); } }
+    } finally { locked.current = false; if (alive.current) { setBusy(false); browser.refresh(); await load(); } }
   };
   const discard = () => {
     if (!detail) return;
@@ -127,7 +111,7 @@ function JournalPage(props: { context: CurrentContext }) {
   };
   if (!context.sessionId) return <section className="ym-page-card"><h2>旅行游记</h2><p>当前没有会话，请先在聊天窗口创建会话。</p></section>;
   return <section className="ym-page-card" aria-label="旅行游记">
-    <div className="ym-page-heading"><h2>旅行游记</h2><button className="ym-button" disabled={busy || loading} onClick={() => { void load(); }}>刷新游记</button></div>
+    <div className="ym-page-heading"><h2>旅行游记</h2><button className="ym-button" disabled={busy || loading || browser.loading} onClick={() => { browser.refresh(); void load(); }}>刷新游记</button></div>
     <p className="ym-page-note">游记以人设口吻总结旅行，不参与聊天记忆整合。可以手动修改标题和正文，不提供 AI 重新生成。</p>
     {status?.active && <p role="status">正在生成旅行游记…</p>}
     {status && status.pendingCount > 0 && !status.active && <p className="ym-page-note">有 {status.pendingCount} 篇游记待生成，行程与返回礼物准备好后会继续。</p>}
@@ -136,10 +120,12 @@ function JournalPage(props: { context: CurrentContext }) {
     {status?.notice && <p role="status" className="ym-page-note">{status.notice}</p>}
     {readError && <p role="alert" className="ym-page-error">{readError}</p>}
     {actionError && <p role="alert" className="ym-page-error">{actionError}</p>}
-    {loading && <p role="status">正在读取游记列表…</p>}
-    {!loading && !items.length && <p className="ym-page-note">还没有游记。正常旅行返回后会自动生成；已删除的游记不会补回。</p>}
-    <div className="ym-mailbox-layout"><ul className="ym-letter-list">{items.map(item => <li key={item.id}>
-      <button className="ym-letter-item" disabled={busy} aria-pressed={selected === item.id} onClick={() => choose(item.id)}><strong>{item.title}</strong><time>生成：{travelTime(item.createdAt)}</time></button>
+    {(loading || browser.loading) && <p role="status">正在读取游记列表…</p>}
+    {!loading && !browser.loading && !browser.total && !browser.search && !browser.error && <p className="ym-page-note">还没有游记。正常旅行返回后会自动生成；已删除的游记不会补回。</p>}
+    {!selected&&<CardBrowserControls browser={browser} label="游记" timeLabel="生成时间" disabled={busy}/>}
+    {browser.error&&<p role="alert" className="ym-page-error">{browser.error}</p>}
+    <div className="ym-mailbox-layout" data-detail={!!selected}><ul className="ym-letter-list ym-object-grid">{browser.items.map(item => <li key={item.id}>
+      <button className="ym-letter-item" disabled={busy} aria-pressed={selected === item.id} onClick={() => choose(item.id)}><strong>{item.title}</strong><p className="ym-card-summary">{item.content}</p><time>生成：{travelTime(item.createdAt)}</time></button>
     </li>)}</ul>
       <div className="ym-letter-detail" aria-label="游记详情">{detailLoading ? <p role="status">正在读取游记…</p> : detail ? <>
         <div className="ym-page-heading"><h3>{editing ? "编辑游记" : detail.title}</h3><button className="ym-button" disabled={busy} onClick={() => choose(null)}>关闭详情</button></div>
@@ -164,7 +150,7 @@ function JournalPage(props: { context: CurrentContext }) {
         </div></>}
       </> : <p className="ym-page-note">{selected ? "游记详情暂不可用，请刷新后重试。" : "选择一篇游记，查看完整内容。"}</p>}</div>
     </div>
-    {more && <button className="ym-button" disabled={busy || loading} onClick={() => { void load(true); }}>更多游记</button>}
+
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="journal-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       <h2 id="journal-confirm-title">{confirmation?.kind === "delete" ? "删除这篇游记？" : "放弃未保存的修改？"}</h2>
       <div className="ym-session-dialog-body"><p>{confirmation?.kind === "delete" ? "删除后不可恢复，也不会重新生成。出行记录、信件、伴手礼和饰品仍保留，不改变喵币。" : "当前草稿尚未保存。确认后会放弃这些修改。"}</p>{confirmation && actionError && <p role="alert" className="ym-page-error">{actionError}</p>}</div>

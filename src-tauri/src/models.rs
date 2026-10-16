@@ -14,6 +14,9 @@ pub struct Accessory {
     pub source: AccessorySource,
     pub travel_id: Option<String>,
     pub is_worn: bool,
+    pub position_x: Option<i32>,
+    pub position_y: Option<i32>,
+    pub scale: i32,
     pub created_at: String,
 }
 
@@ -339,6 +342,7 @@ pub struct Session {
     pub created_at: String,
     pub updated_at: String,
     pub is_current: bool,
+    pub is_pinned: bool,
 }
 
 /// 全局用户设定资料，可被多个会话引用，删除仅解除引用。
@@ -409,6 +413,7 @@ pub struct Message {
     pub content: String,
     pub expression: Option<String>,
     pub created_at: String,
+    pub images:Vec<crate::chat_images::Image>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

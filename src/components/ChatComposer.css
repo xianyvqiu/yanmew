@@ -52,7 +52,7 @@
   min-width: 0;
 }
 
-.chat-composer__submit {
+.ym-button.chat-composer__submit {
   min-height: 36px;
   max-width: 100%;
   background: var(--ym-accent);
@@ -61,11 +61,12 @@
   overflow-wrap: anywhere;
 }
 
-.chat-composer__submit:hover:not(:disabled) {
+.ym-button.chat-composer__submit:hover:not(:disabled) {
   background: var(--ym-accent-strong);
   border-color: var(--ym-accent-strong);
   color: var(--ym-surface);
 }
+.ym-button.chat-composer__submit:disabled { background:var(--ym-surface-muted); border-color:var(--ym-border-strong); color:var(--ym-text-secondary); cursor:not-allowed; }
 
 @media (max-width: 520px) {
   .chat-composer__actions {
@@ -76,3 +77,18 @@
     flex: 1 1 100%;
   }
 }
+
+.ym-image-drafts { display:flex;gap:12px;flex-wrap:wrap; }
+.ym-image-drafts figure { margin:0;max-width:130px;display:grid;gap:6px; }
+.ym-image-drafts img { width:100px;height:80px;object-fit:contain;background:var(--ym-surface-muted);border-radius:10px; }
+.ym-image-drafts figcaption,.ym-chat-image figcaption { color:var(--ym-text-muted);font-size:12px;overflow-wrap:anywhere; }
+.ym-chat-image { margin:12px 0;max-width:100%; }
+.ym-chat-image button { border:0;background:transparent;cursor:zoom-in;padding:0;max-width:100%; }
+.ym-chat-image img { display:block;max-width:min(100%,280px);max-height:220px;object-fit:contain;border-radius:12px; }
+.ym-chat-image img[data-expanded="true"] { max-width:100%;max-height:none; }
+
+.chat-composer--compact { grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:6px; padding:8px; border:0; border-radius:14px; }
+.chat-composer--compact .chat-composer__label { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.chat-composer--compact .chat-composer__input { min-height:52px; max-height:52px; resize:none; padding:7px 8px; font-size:13px; user-select:text; }
+.chat-composer--compact .chat-composer__actions { margin:0; align-self:stretch; align-items:center; }
+.chat-composer--compact .chat-composer__submit { min-height:32px; padding:5px 8px; font-size:12px; white-space:nowrap; }

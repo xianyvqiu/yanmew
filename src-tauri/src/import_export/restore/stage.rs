@@ -118,6 +118,10 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
         expected.remove("festival_id");
         expected.insert("festival_code".into());
     }
+    if ["providers", "personas"].contains(&table) {
+        row.entry("created_at").or_insert(Value::Null);
+        row.entry("updated_at").or_insert(Value::Null);
+    }
     if table == "accessories" && !row.contains_key("image_file") {
         row.insert("image_file".into(), Value::Null);
     }
@@ -131,11 +135,15 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
         }
     }
     if table == "settings" {
-        let key = value(&row, "key")?;
-        if !super::super::protocol::setting_allowed(key) {
+        let key = value(&row, "key")?.to_owned();
+        if !super::super::protocol::setting_allowed(&key) {
             return Err(fail());
         }
-        if ["image_generation_config", "web_search_config"].contains(&key) {
+        if key == "reminder_email_config" {
+            let safe = crate::reminder_email::public_config(value(&row, "value")?)?;
+            row.insert("value".into(), Value::String(safe));
+        }
+        if ["image_generation_config", "web_search_config"].contains(&key.as_str()) {
             let safe = super::super::protocol::public_config(
                 value(&row, "value")?,
                 key == "image_generation_config",
@@ -246,6 +254,7 @@ impl<R: Read> Read for HashReader<R> {
 struct Data<'a> {
     c: &'a Connection,
     scope: &'a super::super::snapshot::Scope,
+    schema_version: i64,
 }
 impl<'de> DeserializeSeed<'de> for Data<'_> {
     type Value = BTreeMap<String, u64>;
@@ -272,6 +281,7 @@ impl<'de> Visitor<'de> for Data<'_> {
             let count = map.next_value_seed(Rows {
                 c: self.c,
                 table: &table,
+                schema_version: self.schema_version,
             })?;
             counts.insert(table, count);
         }
@@ -281,6 +291,7 @@ impl<'de> Visitor<'de> for Data<'_> {
 struct Rows<'a> {
     c: &'a Connection,
     table: &'a str,
+    schema_version: i64,
 }
 impl<'de> DeserializeSeed<'de> for Rows<'_> {
     type Value = u64;
@@ -295,9 +306,80 @@ impl<'de> Visitor<'de> for Rows<'_> {
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<u64, A::Error> {
         let mut count = 0;
-        while let Some(row) = seq.next_element_seed(RecordSeed)? {
+        while let Some(mut row) = seq.next_element_seed(RecordSeed)? {
+            if self.schema_version<12 {if self.table=="personas"{row.entry("pet_image_enabled").or_insert(Value::from(0));row.entry("pet_image_revision").or_insert(Value::from(0));}if self.table=="accessories"{row.entry("position_x").or_insert(Value::Null);row.entry("position_y").or_insert(Value::Null);row.entry("scale").or_insert(Value::from(1000));}}
+            if self.table == "sessions" && self.schema_version < 11 {
+                row.entry("is_pinned").or_insert(Value::from(0));
+            }
+            if self.table == "personas" && self.schema_version < 10 {
+                row.entry("chat_bubble_style").or_insert(Value::String("solid".into()));
+                row.entry("chat_user_text_color").or_insert(Value::Null);
+                row.entry("chat_assistant_text_color").or_insert(Value::Null);
+            }
+            let legacy = if self.table == "providers" && self.schema_version < 8 {
+                row.entry("created_at").or_insert(Value::Null);
+                row.entry("updated_at").or_insert(Value::Null);
+                let expected = "id,name,base_url,model,is_active,memory_is_active,max_output_tokens,context_window_override,created_at,updated_at".split(',').map(str::to_owned).collect::<BTreeSet<_>>();
+                if row.keys().cloned().collect::<BTreeSet<_>>() != expected {
+                    return Err(A::Error::custom("旧连接字段不完整"));
+                }
+                let id = value(&row, "id").map_err(A::Error::custom)?.to_owned();
+                let model = value(&row, "model").map_err(A::Error::custom)?.to_owned();
+                let output = row
+                    .get("max_output_tokens")
+                    .and_then(Value::as_i64)
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| A::Error::custom("旧输出预算无效"))?;
+                let capacity = row
+                    .get("context_window_override")
+                    .cloned()
+                    .ok_or_else(|| A::Error::custom("旧容量字段缺失"))?;
+                if !capacity.is_null() && capacity.as_i64().is_none_or(|n| n <= 0) {
+                    return Err(A::Error::custom("旧容量无效"));
+                }
+                let active = row
+                    .get("is_active")
+                    .and_then(Value::as_i64)
+                    .filter(|n| *n == 0 || *n == 1)
+                    .ok_or_else(|| A::Error::custom("旧当前项无效"))?;
+                let memory = row
+                    .get("memory_is_active")
+                    .and_then(Value::as_i64)
+                    .filter(|n| *n == 0 || *n == 1)
+                    .ok_or_else(|| A::Error::custom("旧记忆当前项无效"))?;
+                for key in [
+                    "model",
+                    "is_active",
+                    "memory_is_active",
+                    "max_output_tokens",
+                    "context_window_override",
+                ] {
+                    row.remove(key);
+                }
+                Some((id, model, output, capacity, active, memory))
+            } else {
+                None
+            };
+            let legacy_role = if self.table == "provider_roles" && self.schema_version < 8 {
+                Some(
+                    row.remove("model")
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .filter(|v| !v.trim().is_empty())
+                        .ok_or_else(|| A::Error::custom("旧用途模型无效"))?,
+                )
+            } else {
+                None
+            };
             let row = normalize(self.c, self.table, row).map_err(A::Error::custom)?;
             insert(self.c, self.table, &row).map_err(A::Error::custom)?;
+            if let Some(model) = legacy_role {
+                self.c.execute("INSERT INTO import_legacy_role_models(purpose,provider_id,model) VALUES(?1,?2,?3)",rusqlite::params![value(&row,"purpose").map_err(A::Error::custom)?,crate::error::parse_id(value(&row,"provider_id").map_err(A::Error::custom)?).map_err(A::Error::custom)?,model]).map_err(A::Error::custom)?;
+            }
+            if let Some((id, model, output, capacity, active, memory)) = legacy {
+                let id = crate::error::parse_id(&id).map_err(A::Error::custom)?;
+                self.c.execute("INSERT INTO provider_models(provider_id,purpose,model,max_output_tokens,context_window_override) VALUES(?1,'chat',?2,?3,?4)",rusqlite::params![id,model,output,capacity.as_i64()]).map_err(A::Error::custom)?;
+                self.c.execute("INSERT INTO import_legacy_provider_flags(provider_id,is_active,memory_is_active) VALUES(?1,?2,?3)",rusqlite::params![id,active,memory]).map_err(A::Error::custom)?;
+            }
             count += 1;
         }
         Ok(count)
@@ -357,7 +439,9 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     let manifest: Manifest =
         serde_json::from_reader(zip.by_name("manifest.json").map_err(|_| fail())?)
             .map_err(|_| fail())?;
-    if manifest.format_version != FORMAT_VERSION || manifest.schema_version != SCHEMA_VERSION {
+    if manifest.format_version != FORMAT_VERSION
+        || ![6, 7, 8, 9, 10, 11, SCHEMA_VERSION].contains(&manifest.schema_version)
+    {
         return Err(AppError::new(
             "BACKUP_VERSION_UNSUPPORTED",
             "备份格式或数据库版本不兼容，原数据未修改",
@@ -389,7 +473,8 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     for name in triggers {
         c.execute_batch(&format!("DROP TRIGGER \"{}\"", name.replace('"', "\"\"")))?;
     }
-    c.execute_batch("PRAGMA foreign_keys=OFF; PRAGMA user_version=6; CREATE TABLE import_plugin_flags(plugin_id TEXT PRIMARY KEY,is_enabled INTEGER); CREATE TABLE import_files(path TEXT PRIMARY KEY,disk_name TEXT NOT NULL); BEGIN;")?;
+    c.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    c.execute_batch("PRAGMA foreign_keys=OFF; CREATE TABLE import_plugin_flags(plugin_id TEXT PRIMARY KEY,is_enabled INTEGER); CREATE TABLE import_files(path TEXT PRIMARY KEY,disk_name TEXT NOT NULL); CREATE TABLE import_legacy_provider_flags(provider_id INTEGER PRIMARY KEY,is_active INTEGER,memory_is_active INTEGER); CREATE TABLE import_legacy_role_models(purpose TEXT PRIMARY KEY,provider_id INTEGER,model TEXT); BEGIN;")?;
     let scope = super::super::snapshot::Scope {
         request: manifest.selection.clone(),
     };
@@ -407,6 +492,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         let counts = Data {
             c: &c,
             scope: &scope,
+            schema_version: manifest.schema_version,
         }
         .deserialize(&mut deserializer)
         .map_err(|_| fail())?;
@@ -420,13 +506,26 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     };
     let expected = super::super::protocol::COLUMNS
         .iter()
-        .filter(|(n, _)| scope.includes(n))
+        .filter(|(n, _)| {
+            scope.includes(n)
+                && (manifest.schema_version >= 7
+                    || !["provider_roles", "message_images"].contains(n))
+                && (manifest.schema_version >= 8 || *n != "provider_models")
+                && (manifest.schema_version>=12 || *n!="pet_artworks")
+        })
         .map(|(n, _)| n.to_string())
         .collect::<BTreeSet<_>>();
     if counts != manifest.record_counts
         || counts.keys().cloned().collect::<BTreeSet<_>>() != expected
     {
         return Err(fail());
+    }
+    if manifest.schema_version < 8 && manifest.package_type == PackageKind::Full {
+        if manifest.schema_version == 6 {
+            c.execute_batch("INSERT INTO provider_models(provider_id,purpose,model) SELECT f.provider_id,'memory',m.model FROM import_legacy_provider_flags f JOIN provider_models m ON m.provider_id=f.provider_id AND m.purpose='chat' WHERE f.memory_is_active=1; INSERT INTO provider_roles(purpose,provider_id) SELECT 'chat',provider_id FROM import_legacy_provider_flags WHERE is_active=1; INSERT INTO provider_roles(purpose,provider_id) SELECT 'memory',provider_id FROM import_legacy_provider_flags WHERE memory_is_active=1;")?;
+        } else {
+            c.execute_batch("INSERT INTO provider_models(provider_id,purpose,model) SELECT provider_id,purpose,model FROM import_legacy_role_models WHERE 1 ON CONFLICT(provider_id,purpose) DO UPDATE SET model=excluded.model;")?;
+        }
     }
     c.execute_batch("COMMIT; PRAGMA foreign_keys=ON;")?;
     let scope = super::super::snapshot::initialize(&c, &manifest.selection)?;
@@ -456,7 +555,13 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     }
     crate::config::validate(&crate::config::get(&c)?)?;
     let mut used = BTreeSet::new();
-    for (table, column) in [("personas", "chat_bg_file"), ("accessories", "image_file")] {
+    for (table, column) in [
+        ("personas", "chat_bg_file"),
+        ("accessories", "image_file"),
+        ("pet_artworks", "image_file"),
+        ("pet_artworks", "preview_file"),
+        ("message_images", "image_file"),
+    ] {
         let mut stmt = c.prepare(&format!(
             "SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"
         ))?;
@@ -478,11 +583,18 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
             |r| r.get(0),
         )?;
         let accessory: bool = c.query_row(
-            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1)",
+            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
             [&entry.path],
             |r| r.get(0),
         )?;
-        let max = if background {
+        let chat: bool = c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM message_images WHERE image_file=?1)",
+            [&entry.path],
+            |r| r.get(0),
+        )?;
+        let max = if chat {
+            usize::MAX - 1
+        } else if background {
             crate::persona::background::MAX_BYTES
         } else {
             crate::accessories::images::MAX_BYTES
@@ -502,6 +614,19 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         let filename = entry.path.strip_prefix("files/").ok_or_else(fail)?;
         if background {
             crate::persona::background::validate(filename, &bytes)?;
+        }
+        if chat {
+            let format = image::guess_format(&bytes).map_err(|_| fail())?;
+            if ![
+                image::ImageFormat::Png,
+                image::ImageFormat::Jpeg,
+                image::ImageFormat::WebP,
+            ]
+            .contains(&format)
+            {
+                return Err(fail());
+            }
+            image::load_from_memory_with_format(&bytes, format).map_err(|_| fail())?;
         }
         if accessory {
             crate::accessories::images::validate_png(&bytes)?;
@@ -533,6 +658,9 @@ fn validate_business(c: &Connection, kind: PackageKind) -> AppResult<()> {
         "SELECT 1 FROM long_memory_sources s JOIN short_memories m ON m.id=s.short_memory_id JOIN long_memories l ON l.id=s.long_memory_id WHERE m.round_id>=l.activated_by_round_id LIMIT 1",
         "SELECT 1 FROM travel_journals j JOIN travels t ON t.id=j.travel_id WHERE t.journal_state<>'done' OR length(trim(j.title))=0 OR length(trim(j.content))=0 LIMIT 1",
         "SELECT 1 FROM letters child JOIN letters parent ON parent.id=child.reply_to_id WHERE child.travel_id IS NOT parent.travel_id LIMIT 1",
+        "SELECT 1 FROM personas p WHERE pet_image_enabled=1 AND NOT EXISTS(SELECT 1 FROM pet_artworks a WHERE a.persona_id=p.id AND a.kind='base' AND a.image_file IS NOT NULL) LIMIT 1",
+        "SELECT 1 FROM pet_artworks WHERE length(name)>80 OR length(prompt)>8000 OR length(description)>1000 LIMIT 1",
+        "SELECT 1 FROM accessories WHERE (position_x IS NULL)<>(position_y IS NULL) LIMIT 1",
         "SELECT 1 FROM game_plugin_data d JOIN game_plugins p ON p.plugin_id=d.plugin_id WHERE d.storage_version<>p.storage_version LIMIT 1",
         "SELECT 1 FROM game_permissions a JOIN game_plugins p ON p.plugin_id=a.plugin_id WHERE a.plugin_version<>p.installed_version LIMIT 1",
     ] {
@@ -581,10 +709,14 @@ fn validate_business(c: &Connection, kind: PackageKind) -> AppResult<()> {
             crate::souvenirs::generation::validated_snapshot(&snapshot, &r.get::<_, String>(5)?)?;
         }
     }
-    let mut stmt=c.prepare("SELECT base_url,model FROM providers UNION ALL SELECT base_url,model FROM embedding_providers WHERE kind='online'")?;
-    for r in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+    let mut stmt=c.prepare("SELECT base_url,model FROM provider_effective UNION ALL SELECT base_url,model FROM embedding_providers WHERE kind='online'")?;
+    for r in stmt.query_map([], |r| {
+        Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?))
+    })? {
         let (url, model) = r?;
-        crate::providers::validate_url(&url)?;
+        if let Some(url) = url {
+            crate::providers::validate_url(&url)?;
+        }
         if model.trim().is_empty() {
             return Err(fail());
         }

@@ -334,9 +334,7 @@ fn disk_reopen_keeps_elapsed_branch_and_sleep_deadline() {
             .unwrap()
             .as_nanos()
     ));
-    let paths = crate::platform::contracts::AppPaths {
-        data_root: root.clone(),
-    };
+    let paths = crate::platform::contracts::AppPaths::portable(root.clone());
     let sleeping;
     {
         let (mut connection, _) = crate::db::open(&paths).unwrap();

@@ -205,11 +205,15 @@ fn assets(
     for (table, key, role) in [
         ("personas", "chat_bg_file", "background"),
         ("accessories", "image_file", "accessory"),
+        ("pet_artworks", "image_file", "accessory"),
+        ("pet_artworks", "preview_file", "accessory"),
+        ("message_images", "image_file", "chat"),
     ] {
         rows(&source.connection, table, |r| {
             if table == "personas" && personas.get(&id(&r, "id")?).is_some_and(Option::is_some) {
                 return Ok(());
             }
+            if table=="pet_artworks" && personas.get(&id(&r,"persona_id")?).is_some_and(Option::is_some){return Ok(());}
             let Some(path) = r.get(key).and_then(Value::as_str) else {
                 return Ok(());
             };
@@ -234,6 +238,7 @@ fn assets(
                     &bytes,
                 )?;
                 crate::persona::background::publish(runtime, ext, &bytes)?
+            } else if role=="chat" {crate::chat_images::publish(runtime.paths.as_ref().map_err(Clone::clone)?,&bytes,value(&r,"filename")?)?
             } else {
                 crate::accessories::images::publish(
                     runtime.paths.as_ref().map_err(Clone::clone)?,
@@ -262,6 +267,8 @@ fn resource(source: &Connection, r: &mut Record, key: &str, role: &str) -> AppRe
 }
 fn foreign(source: &Connection, r: &mut Record) -> AppResult<()> {
     for (key, table) in [
+        ("provider_id", "providers"),
+        ("message_id", "messages"),
         ("persona_id", "personas"),
         ("user_profile_id", "user_profiles"),
         ("session_id", "sessions"),
@@ -547,6 +554,7 @@ pub(super) fn commit(
         crate::travel::cancel_current(&tx, &date)?;
         // 保留本机程序登记供兼容存档关联；不沿用其旧使用数据。
         for table in [
+            "reminder_email_deliveries",
             "currency_ledger",
             "game_runs",
             "game_permissions",
@@ -554,6 +562,8 @@ pub(super) fn commit(
             "game_plugin_data",
             "reminder_occurrences",
             "reminders",
+            "provider_roles",
+            "provider_models",
             "providers",
             "settings",
             "user_state",
@@ -578,6 +588,7 @@ pub(super) fn commit(
         resource(source, &mut r, "chat_bg_file", "background")?;
         put(&tx, "personas", &r, false)
     })?;
+    rows(source,"pet_artworks",|mut r|{let old_persona=id(&r,"persona_id")?;if persona.get(&old_persona).is_some_and(Option::is_some){return Ok(());}map_field(source,&mut r,"id","pet_artworks")?;foreign(source,&mut r)?;resource(source,&mut r,"image_file","accessory")?;resource(source,&mut r,"preview_file","accessory")?;put(&tx,"pet_artworks",&r,false)})?;
     rows(source, "user_profiles", |mut r| {
         let old = id(&r, "id")?;
         if let Some(Some(target)) = profiles.get(&old) {
@@ -604,6 +615,7 @@ pub(super) fn commit(
         "session_pet_states",
         "chat_rounds",
         "messages",
+        "message_images",
         "short_memories",
         "long_memories",
         "long_memory_sources",
@@ -620,6 +632,8 @@ pub(super) fn commit(
                 map_field(source, &mut r, "id", table)?;
             }
             foreign(source, &mut r)?;
+            if table=="messages" {if let Some(old)=r.get("expression").and_then(Value::as_str).and_then(|s|s.strip_prefix("@pet-image:")){if let Ok(old)=old.parse::<i64>(){let new:Option<i64>=source.query_row("SELECT target_id FROM import_id_map WHERE table_name='pet_artworks' AND source_id=?1",[old],|r|r.get(0)).optional()?;let new=new.filter(|n|tx.query_row("SELECT EXISTS(SELECT 1 FROM pet_artworks WHERE id=?1)",[n],|r|r.get::<_,bool>(0)).unwrap_or(false));r.insert("expression".into(),new.map(|n|Value::String(crate::pet_creation::marker(&n.to_string()))).unwrap_or(Value::Null));}}}
+
             if table == "chat_rounds" && r.get("status") == Some(&Value::String("pending".into())) {
                 r.insert("status".into(), Value::String("interrupted".into()));
                 r.insert("completed_at".into(), Value::String(date.clone()));
@@ -628,6 +642,7 @@ pub(super) fn commit(
                     Value::String("recovered_after_restart".into()),
                 );
             }
+            if table == "message_images" {resource(source,&mut r,"image_file","chat")?;}
             if table == "accessories" {
                 resource(source, &mut r, "image_file", "accessory")?;
             }
@@ -659,6 +674,8 @@ pub(super) fn commit(
     if full {
         for table in [
             "providers",
+            "provider_models",
+            "provider_roles",
             "embedding_providers",
             "reminders",
             "reminder_occurrences",
@@ -667,10 +684,11 @@ pub(super) fn commit(
             "currency_ledger",
         ] {
             rows(source, table, |mut r| {
-                if table != "user_state" {
+                if table != "user_state" && table!="provider_roles" && table!="provider_models" {
                     map_field(source, &mut r, "id", table)?;
                 }
                 foreign(source, &mut r)?;
+                if table=="provider_roles" && r.get("purpose")==Some(&Value::String("image".into())){r.insert("enabled".into(),Value::from(0));}
                 if table == "currency_ledger" && r.get("ref_id").is_some_and(|v| !v.is_null()) {
                     map_field(source, &mut r, "ref_id", "accessories")?;
                 }
@@ -691,6 +709,10 @@ pub(super) fn commit(
                     "value".into(),
                     Value::String(mapped(source, "sessions", current)?.to_string()),
                 );
+            }
+            if key == "reminder_email_config" {
+                let safe = crate::reminder_email::public_config(value(&r, "value")?)?;
+                r.insert("value".into(), Value::String(safe));
             }
             if key == "image_generation_config" || key == "web_search_config" {
                 let mut config: Value =
@@ -716,6 +738,9 @@ pub(super) fn commit(
             [mapped(source, "personas", active)?],
         )?;
         crate::config::get(&tx)?;
+        crate::provider_roles::migrate_legacy(&tx)?;
+        crate::provider_roles::image_changed(&tx)?;
+        crate::provider_roles::changed(&tx)?;
         crate::image_generation::get(&tx)?;
         install_plugins(&tx, p, true, &mut warnings)?;
         // 未列入备份的第三方登记不保留；当前便携版内置程序仍可作为无使用数据的插件。

@@ -66,6 +66,8 @@
   font-size: var(--ym-font-body);
   overflow-wrap: anywhere;
 }
+.ym-context-link { border:0; padding:0; background:transparent; color:var(--ym-text); font:inherit; cursor:pointer; text-align:inherit; overflow-wrap:anywhere; }
+.ym-context-link:hover { color:var(--ym-accent-strong); text-decoration:underline; text-underline-offset:3px; }
 
 .ym-window-shell__layout {
   display: grid;
@@ -163,3 +165,12 @@
 
   .ym-window-shell__content { padding: 16px 12px; }
 }
+
+/* 聊天详情使用紧凑外壳，其他内容窗口保持原布局。 */
+.ym-window-shell--compact .ym-window-shell__header { padding:8px 14px; gap:10px; }
+.ym-window-shell--compact .ym-window-shell__title { font-size:16px; }
+.ym-window-shell--compact .ym-window-shell__subtitle { display:none; }
+.ym-window-shell--compact .ym-window-shell__context { font-size:12px; }
+.ym-window-shell--compact .ym-window-shell__content { display:flex; flex-direction:column; overflow:hidden; padding:12px; }
+.ym-window-shell--compact .ym-chat-background-host { flex:1; height:100%; min-height:0; }
+.ym-window-shell--compact .ym-window-shell__content > .ym-page-error { flex-shrink:0; }

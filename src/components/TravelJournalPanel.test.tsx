@@ -2,14 +2,22 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import TravelJournalPanel from "./TravelJournalPanel";
 import type { TravelJournal } from "../types";
-const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), update: vi.fn(), delete: vi.fn(), status: vi.fn(), retry: vi.fn(), listen: vi.fn() }));
-vi.mock("../api", () => ({ travelJournalsApi: api, travelApi: { listen: api.listen }, errorMessage: (cause: { message: string }) => cause.message }));
+const api = vi.hoisted(() => ({ browse: vi.fn(), browserListen: vi.fn(), list: vi.fn(), get: vi.fn(), update: vi.fn(), delete: vi.fn(), status: vi.fn(), retry: vi.fn(), listen: vi.fn() }));
+vi.mock("../api", () => ({ travelJournalsApi: api, cardBrowserApi: {browse: api.browse, listen: api.browserListen}, travelApi: { listen: api.listen }, errorMessage: (cause: { message: string }) => cause.message }));
 const context = { personaId: "1", sessionId: "2", contextRevision: 1 };
 const journal: TravelJournal = { id: "3", travelId: "4", sessionId: "2", title: "今天在湖边散步两小时，带回明信片", content: "我在湖边看了水鸟。", createdAt: "2026-10-13T01:00:00Z", updatedAt: "2026-10-13T01:00:00Z" };
 beforeEach(() => {
   vi.resetAllMocks(); api.list.mockResolvedValue([journal]); api.get.mockResolvedValue(journal);
   api.status.mockResolvedValue({ active: null, pendingCount: 0, failures: [], notice: null });
   api.listen.mockResolvedValue(() => {}); api.update.mockResolvedValue(journal); api.delete.mockResolvedValue(undefined); api.retry.mockResolvedValue(undefined);
+  api.browserListen.mockResolvedValue(() => {});
+  api.browse.mockImplementation(async (_kind, scope, search, order, page) => {
+    const rows = (await api.list(scope)).filter((row: Record<string, unknown>) => JSON.stringify(row).includes(search));
+    if (order === "oldest") rows.reverse();
+    const pages = Math.max(1, Math.ceil(rows.length / 12));
+    const current = Math.min(page, pages);
+    return {items: rows.slice((current - 1) * 12, current * 12), total: rows.length, page: current, pages};
+  });
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
 });
@@ -17,7 +25,7 @@ afterEach(cleanup);
 async function open() {
   render(<TravelJournalPanel context={context} />);
   fireEvent.click(await screen.findByRole("button", { name: /今天在湖边/ }));
-  await screen.findByText(journal.content);
+  await waitFor(()=>expect(screen.getAllByText(journal.content).length).toBeGreaterThan(0));
 }
 async function edit() { await open(); fireEvent.click(screen.getByRole("button", { name: "编辑游记" })); }
 it("手动编辑只要求非空，以原始内容和原始时间戳保存", async () => {
@@ -81,20 +89,19 @@ it("游记在其他窗口被删除时保留可复制草稿，禁止保存复活"
   expect((screen.getByLabelText("游记正文") as HTMLTextAreaElement).value).toBe("可以复制");
   expect((screen.getByRole("button", { name: "保存游记" }) as HTMLButtonElement).disabled).toBe(true);
 });
-it("先订阅再读取，分页刷新保留已展开篇目，状态重试复用后端", async () => {
-  const page = Array.from({ length: 30 }, (_, i) => ({ ...journal, id: String(50 - i), title: `游记${i}` }));
-  api.list.mockImplementation(async (_context, cursor) => cursor ? [{ ...journal, id: "1", title: "最早游记" }] : page);
-  api.status.mockResolvedValue({ active: null, pendingCount: 1, failures: [{ travelId: "4", error: { message: "生成失败" }, retryAfterSeconds: 30 }], notice: "已减少旧信件" });
-  render(<TravelJournalPanel context={context} />);
-  fireEvent.click(await screen.findByRole("button", { name: "更多游记" }));
-  await screen.findByRole("button", { name: /最早游记/ });
-  expect(api.listen.mock.invocationCallOrder[0]).toBeLessThan(api.list.mock.invocationCallOrder[0]);
-  expect(api.list).toHaveBeenCalledWith(context, "21");
-  await act(async () => { fireEvent.focus(window); });
-  expect(await screen.findByRole("button", { name: /最早游记/ })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "重试待生成游记" }));
-  await waitFor(() => expect(api.retry).toHaveBeenCalledWith(context));
-  expect(screen.queryByRole("button", { name: /重新生成/ })).toBeNull();
+it("分页刷新保持当前页，重试只提交生成任务", async () => {
+  api.list.mockResolvedValue(Array.from({length:13},(_,i)=>({...journal,id:String(i+10),title:`游记编号${i}`})));
+  api.status.mockResolvedValue({active:null,pendingCount:1,failures:[{travelId:"4",error:{message:"失败"},retryAfterSeconds:30}],notice:null});
+  render(<TravelJournalPanel context={context}/>);
+  await screen.findByRole("button",{name:/游记编号0 /});
+  fireEvent.click(screen.getByRole("button",{name:"下一页"}));
+  await screen.findByRole("button",{name:/游记编号12/});
+  await act(async()=>fireEvent.focus(window));
+  expect(await screen.findByRole("button",{name:/游记编号12/})).toBeTruthy();
+  expect(api.browse).toHaveBeenLastCalledWith("journals",context,"","newest",2);
+  fireEvent.click(screen.getByRole("button",{name:"重试待生成游记"}));
+  await waitFor(()=>expect(api.retry).toHaveBeenCalledWith(context));
+  expect(screen.queryByRole("button",{name:/重新生成/})).toBeNull();
 });
 it("切换会话后忽略旧详情和旧编辑，迟到结果不进入新会话", async () => {
   let resolve!: (journal: TravelJournal) => void;

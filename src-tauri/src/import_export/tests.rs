@@ -139,12 +139,14 @@ fn six_kinds_have_closed_scopes_and_preserve_states() {
         let output = export(&runtime, input).unwrap();
         let (manifest, tables, _) = unpack(&output);
         assert_eq!(manifest.format_version, 1);
-        assert_eq!(manifest.schema_version, 6);
+        assert_eq!(manifest.schema_version, SCHEMA_VERSION);
         assert!(!tables.contains_key("long_memory_embeddings"));
         assert!(!tables.contains_key("festival_catalog"));
         if kind != PackageKind::Full {
             for table in [
                 "providers",
+                "provider_models",
+                "provider_roles",
                 "embedding_providers",
                 "settings",
                 "reminders",
@@ -324,9 +326,7 @@ impl Drop for Directory {
 fn referenced_images_are_hashed_once_and_missing_images_fall_back_without_db_changes() {
     let dir = Directory::new();
     let mut runtime = runtime();
-    runtime.paths = Ok(crate::platform::contracts::AppPaths {
-        data_root: dir.0.clone(),
-    });
+    runtime.paths = Ok(crate::platform::contracts::AppPaths::portable(dir.0.clone()));
     fs::create_dir(dir.0.join("chat_background")).unwrap();
     image::RgbaImage::from_pixel(2, 2, image::Rgba([255, 0, 0, 255]))
         .save(dir.0.join("chat_background/test.png"))
@@ -562,4 +562,20 @@ fn disk_snapshot_releases_main_database_before_compression_and_is_cleaned() {
         })
         .unwrap();
     drop(runtime);
+}
+
+#[test]
+fn reminder_email_backup_excludes_secrets_binding_and_outbox() {
+    let runtime=runtime();
+    runtime.read(|s,p| {
+        let input=crate::reminder_email::Input {revision:0,secret:crate::crypto::SecretUpdate::Set {value:"EMAIL-SECRET-MUST-NOT-EXPORT".into()},connection:crate::reminder_email::ConnectionConfig {email:"u@qq.com".into(),host:"smtp.qq.com".into(),port:465,encryption:"tls".into(),username:"u@qq.com".into(),from:"u@qq.com".into(),to:"u@qq.com".into()}};
+        crate::reminder_email::save(&mut s.connection,p,input)?;
+        s.connection.execute("INSERT INTO reminder_email_deliveries(kind,recipient,subject,body,config_revision,state,created_at) VALUES('due','u@qq.com','private subject','private body',1,'pending',?1)",[NOW])?;Ok(())
+    }).unwrap();
+    let backup=export(&runtime,request(PackageKind::Full,&[],false)).unwrap();
+    let (_,tables,raw)=unpack(&backup);
+    let text=String::from_utf8(raw).unwrap();assert!(!text.contains("EMAIL-SECRET-MUST-NOT-EXPORT"));assert!(!text.contains("reminder_email_secret"));assert!(!text.contains("private subject"));
+    assert!(!tables.contains_key("reminder_email_deliveries"));assert!(!tables.contains_key("reminder_email_items"));
+    let email=tables["settings"].iter().find(|r|r["key"]=="reminder_email_config").unwrap();
+    let config:Value=serde_json::from_str(email["value"].as_str().unwrap()).unwrap();assert_eq!(config["enabled"],false);assert_eq!(config["verified"],false);assert_eq!(config["revision"],0);
 }

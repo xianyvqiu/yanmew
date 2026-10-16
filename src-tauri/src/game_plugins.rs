@@ -286,6 +286,7 @@ pub fn clear_private_data(c: &mut Connection, id: &str, version: &str) -> AppRes
     }
     tx.execute("DELETE FROM game_plugin_data WHERE plugin_id=?1", [id])?;
     tx.execute("DELETE FROM game_plugin_settings WHERE plugin_id=?1", [id])?;
+    tx.execute("UPDATE game_permissions SET decision='pending',decided_at=NULL WHERE plugin_id=?1", [id])?;
     tx.commit()?;
     Ok(())
 }

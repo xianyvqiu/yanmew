@@ -16,7 +16,7 @@ export default function MemoryWindow() {
     {snapshot && (error || appearance.error) && <div role="alert" className="ym-page-error">
       {error || appearance.error}<button className="ym-button" type="button" onClick={refresh}>重新加载</button>
     </div>}
-    {snapshot && <MemoryManagementPanel context={snapshot.context} />}
     {snapshot && <MemoryGenerationPanel key={`generation:${snapshot.context.contextRevision}`} context={snapshot.context} />}
+    {snapshot && <MemoryManagementPanel context={snapshot.context} />}
   </ResponsiveWindowShell>;
 }

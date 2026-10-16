@@ -164,3 +164,14 @@ pub(crate) async fn generate(
 }
 #[cfg(test)]
 mod tests;
+
+/// 单张参考图编辑；手工构造标准multipart，沿用现有HTTP/超时/响应解码，无额外依赖。
+pub(crate) async fn edit(client:&AiClient,snapshot:&Snapshot,image:&[u8],requirement:&str,cancel:&Cancellation)->AppResult<Vec<u8>> {
+ let boundary=format!("yanmew-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_|AppError::storage())?.as_nanos());
+ let prompt=format!("保持参考图同一角色、造型、配色和画风，制作单独的桌宠动作/表情：{requirement}。主体完整，保持相近大小和画布位置，真正透明背景，四边留透明空间，不要文字、水印、棋盘格、底板或场景。输出透明PNG。");
+ let mut payload=Vec::new();
+ for (key,value) in [("model",snapshot.provider.model.as_str()),("prompt",prompt.as_str()),("n","1"),("size","1024x1024"),("background","transparent"),("output_format","png")] {payload.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{value}\r\n").as_bytes());}
+ payload.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"reference.png\"\r\nContent-Type: image/png\r\n\r\n").as_bytes());payload.extend_from_slice(image);payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+ cancel.wait(TIMEOUT,async{cancel.check()?;let response=client.search_http().post(format!("{}/images/edits",snapshot.provider.base_url)).bearer_auth(&snapshot.key).header(reqwest::header::CONTENT_TYPE,format!("multipart/form-data; boundary={boundary}")).body(payload).send().await.map_err(network)?;
+ if !response.status().is_success(){return Err(failed("参考图生成失败：请确认所选生图服务和模型支持图像编辑及透明输出，检查Key和额度；不会自动付费重试"));}let value=serde_json::from_slice(&body(response,MAX_RESPONSE).await?).map_err(|_|failed("参考图生成响应格式无效"))?;parse(value,cancel).await}).await
+}

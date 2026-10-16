@@ -9,7 +9,7 @@ impl Fixture {
     fn new()->Self {
         let mut runtime=crate::runtime::test_runtime("http://localhost");
         let root=std::env::temp_dir().join(format!("yanmew-craft-{}-{}",std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
-        std::fs::create_dir_all(&root).unwrap();runtime.paths=Ok(crate::platform::contracts::AppPaths {data_root:root.clone()});
+        std::fs::create_dir_all(&root).unwrap();runtime.paths=Ok(crate::platform::contracts::AppPaths::portable(root.clone()));
         runtime.read(|s,_| {s.connection.execute("UPDATE sessions SET intimacy=300 WHERE id=1",[])?;s.connection.execute("UPDATE user_state SET coins=2000",[])?;Ok(())}).unwrap();
         let lease=Arc::new(runtime.requests.start("chat:1".into(),1).unwrap());
         Self {runtime,lease,root,context:Context {persona_id:"1".into(),session_id:"1".into(),context_revision:0}}

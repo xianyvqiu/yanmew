@@ -2,14 +2,22 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SouvenirPanel from "./SouvenirPanel";
 import type { Souvenir } from "../types";
-const api = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), favorite: vi.fn(), delete: vi.fn(), status: vi.fn(), retry: vi.fn(), listen: vi.fn() }));
-vi.mock("../api", () => ({ souvenirsApi: api, travelApi: { listen: api.listen }, errorMessage: (cause: Error) => cause.message }));
+const api = vi.hoisted(() => ({ browse: vi.fn(), browserListen: vi.fn(), list: vi.fn(), get: vi.fn(), favorite: vi.fn(), delete: vi.fn(), status: vi.fn(), retry: vi.fn(), listen: vi.fn() }));
+vi.mock("../api", () => ({ souvenirsApi: api, cardBrowserApi: {browse: api.browse, listen: api.browserListen}, travelApi: { listen: api.listen }, errorMessage: (cause: Error) => cause.message }));
 const context = { personaId: "1", sessionId: "2", contextRevision: 1 };
 const gift: Souvenir = { id: "3", sessionId: "2", travelId: "4", content: "湖边明信片", note: "挑了最漂亮的一张给你。", isFavorite: false, createdAt: "2026-10-13T01:00:00Z" };
 beforeEach(() => {
   vi.resetAllMocks(); api.list.mockResolvedValue([gift]); api.get.mockResolvedValue(gift);
   api.status.mockResolvedValue({ active: null, pendingCount: 0, failures: [], notice: null });
   api.listen.mockResolvedValue(() => {}); api.favorite.mockResolvedValue(gift); api.delete.mockResolvedValue(undefined); api.retry.mockResolvedValue(undefined);
+  api.browserListen.mockResolvedValue(() => {});
+  api.browse.mockImplementation(async (_kind, scope, search, order, page) => {
+    const rows = (await api.list(scope)).filter((row: Record<string, unknown>) => JSON.stringify(row).includes(search));
+    if (order === "oldest") rows.reverse();
+    const pages = Math.max(1, Math.ceil(rows.length / 12));
+    const current = Math.min(page, pages);
+    return {items: rows.slice((current - 1) * 12, current * 12), total: rows.length, page: current, pages};
+  });
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
 });
@@ -56,30 +64,30 @@ it("切换会话卸载旧确认和迟到详情，不允许删除新会话的旧I
   expect(screen.queryByText("挑了最漂亮的一张给你。")).toBeNull();
   expect(screen.queryByRole("button", { name: "删除伴手礼" })).toBeNull();
 });
-it("通知先订阅，窗口聚焦补查，同步较旧分页结果", async () => {
-  const page = Array.from({ length: 30 }, (_, i) => ({ ...gift, id: String(50 - i), content: `明信片${i}` }));
-  api.list.mockResolvedValueOnce(page).mockResolvedValueOnce([{ ...gift, id: "1", content: "最早的一件" }]).mockResolvedValue([gift]);
-  render(<SouvenirPanel context={context} />);
-  fireEvent.click(await screen.findByRole("button", { name: "更多伴手礼" }));
-  await screen.findByRole("button", { name: /最早的一件/ });
-  expect(api.list).toHaveBeenCalledWith(context, "21");
-  expect(api.listen.mock.invocationCallOrder[0]).toBeLessThan(api.list.mock.invocationCallOrder[0]);
-  await act(async () => { fireEvent.focus(window); });
-  await screen.findByRole("button", { name: /湖边明信片/ });
+it("翻页和聚焦保持页码，搜索覆盖首屏之外的数据", async () => {
+  const records = Array.from({length: 25}, (_, i) => ({...gift,id: String(100-i),content: `礼物编号${100-i}`}));
+  api.list.mockResolvedValue(records);
+  render(<SouvenirPanel context={context}/>);
+  await screen.findByRole("button", {name:/礼物编号100/});
+  fireEvent.click(screen.getByRole("button", {name:"下一页"}));
+  await screen.findByRole("button", {name:/礼物编号88/});
+  await act(async () => fireEvent.focus(window));
+  expect(await screen.findByRole("button", {name:/礼物编号88/})).toBeTruthy();
+  expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",2);
+  fireEvent.change(screen.getByRole("searchbox"), {target:{value:"礼物编号76"}});
+  expect(await screen.findByRole("button", {name:/礼物编号76/})).toBeTruthy();
+  expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"礼物编号76","newest",1);
 });
-it("聚焦与旅行更新保留展开的伴手礼并读取新增记录", async () => {
-  let receive!: (event: { sessionId: string }) => void;
-  api.listen.mockImplementation(async cb => { receive = cb; return () => {}; });
-  let records = Array.from({ length: 31 }, (_, i) => ({ ...gift, id: String(100 - i), content: `礼物编号${100 - i}` }));
-  api.list.mockImplementation(async (_context, before) => records.filter(row => !before || BigInt(row.id) < BigInt(before)).slice(0, 30));
-  render(<SouvenirPanel context={context} />);
-  fireEvent.click(await screen.findByRole("button", { name: "更多伴手礼" }));
-  await screen.findByRole("button", { name: /礼物编号70/ });
-  await act(async () => { fireEvent.focus(window); });
-  expect(screen.getByRole("button", { name: /礼物编号70/ })).toBeTruthy();
-  records = [{ ...gift, id: "101", content: "新礼物" }, ...records];
-  await act(async () => { receive({ sessionId: "2" }); });
-  expect(screen.getByRole("button", { name: /新礼物/ })).toBeTruthy();
-  expect(screen.getByRole("button", { name: /礼物编号70/ })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "更多伴手礼" })).toBeNull();
+it("通知后保留当前筛选并更新收藏详情", async () => {
+  let notify!: () => void;
+  api.browserListen.mockImplementation(async (_kind, cb) => {notify=cb;return () => {};});
+  render(<SouvenirPanel context={context}/>);
+  await screen.findByRole("button",{name:/湖边明信片/});
+  fireEvent.change(screen.getByRole("searchbox"),{target:{value:"湖边"}});
+  fireEvent.click(await screen.findByRole("button",{name:/湖边明信片/}));
+  await screen.findByRole("button",{name:"收藏"});
+  api.get.mockResolvedValue({...gift,isFavorite:true});
+  await act(async () => {notify();fireEvent.focus(window);});
+  await screen.findByRole("button",{name:"取消收藏"});
+  expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"湖边","newest",1);
 });

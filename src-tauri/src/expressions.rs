@@ -67,7 +67,7 @@ pub fn validate_library(value: &ExpressionLibrary) -> AppResult<()> {
 type ProviderStamp = (i64, Option<String>, String, Option<String>);
 fn provider_stamp(c: &Connection) -> AppResult<ProviderStamp> {
     c.query_row(
-        "SELECT id,base_url,model,api_key_encrypted FROM providers WHERE is_active=1",
+        "SELECT id,base_url,model,api_key_encrypted FROM provider_effective WHERE is_active=1",
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
     )
@@ -230,7 +230,7 @@ mod tests {
         runtime
             .read(|s, _| {
                 s.connection
-                    .execute("UPDATE providers SET model='new-model'", [])?;
+                    .execute("UPDATE provider_models SET model='new-model' WHERE purpose='chat'", [])?;
                 Ok(())
             })
             .unwrap();

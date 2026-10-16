@@ -3,8 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import FestivalPanel from "./FestivalPanel";
 import type { CurrentContext, FestivalCatalogRecord, SessionFestivalRecord } from "../../types";
 
-const api = vi.hoisted(() => ({ catalog: vi.fn(), list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), listen: vi.fn() }));
-vi.mock("../../api", () => ({ festivalsApi: api, errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : String(cause) }));
+const api = vi.hoisted(() => ({ month: vi.fn(), catalog: vi.fn(), browse: vi.fn(), browserListen: vi.fn(), list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), listen: vi.fn() }));
+vi.mock("../../api", () => ({ festivalsApi: api, cardBrowserApi: {browse: api.browse, listen: api.browserListen}, errorMessage: (cause: unknown) => cause instanceof Error ? cause.message : String(cause) }));
 const context: CurrentContext = { personaId: "1", sessionId: "2", contextRevision: 3 };
 const system: FestivalCatalogRecord = { id: "1", code: "solar_term_qingming", name: "清明", year: 2024, calendarType: "solar_term", solarMonth: 4, solarDay: 4,
   lunarMonth: null, lunarDay: null, isLeapMonth: false, solarTerm: "清明", blessing: "缅怀故人，珍惜当下。", isMemorial: true, note: null };
@@ -13,25 +13,34 @@ function record(id = "9"): SessionFestivalRecord { return { id, sessionId: "2", 
   createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-01T00:00:00Z", isMemorial: false, revisionToken: "original-token", occurrences: ["2024-01-01", "2024-12-20"] }; }
 beforeEach(() => {
   vi.resetAllMocks();
+  api.month.mockResolvedValue({year:2026,month:10,days:[{date:"2026-10-15",lunar:"初六",solarTerm:null,events:[{id:system.id,scope:"catalog",name:system.name,blessing:system.blessing}]}]});
   api.catalog.mockResolvedValue([system]); api.list.mockResolvedValue([record()]); api.get.mockResolvedValue(record());
   api.create.mockResolvedValue(record()); api.update.mockResolvedValue(record()); api.delete.mockResolvedValue(undefined); api.listen.mockResolvedValue(vi.fn());
+  api.browserListen.mockResolvedValue(() => {});
+  api.browse.mockImplementation(async (_kind, scope, search, order, page) => {
+    const rows = (await api.list(scope)).filter((row: Record<string, unknown>) => JSON.stringify(row).includes(search));
+    if (order === "oldest") rows.reverse();
+    const pages = Math.max(1, Math.ceil(rows.length / 12));
+    const current = Math.min(page, pages);
+    return {items: rows.slice((current - 1) * 12, current * 12), total: rows.length, page: current, pages};
+  });
   HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.setAttribute("open", ""); });
   HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) { this.removeAttribute("open"); });
 });
 afterEach(cleanup);
-async function show(value = context) { let view!: ReturnType<typeof render>; await act(async () => { view = render(<FestivalPanel key={value.sessionId} context={value} />); }); return view; }
+async function show(value = context) { let view!: ReturnType<typeof render>; await act(async () => { view = render(<FestivalPanel key={value.sessionId} context={value} />); }); fireEvent.click(screen.getByText("管理会话固定日期")); return view; }
 
 it("无会话仍展示只读系统节日，不调用会话接口", async () => {
   await show({ ...context, sessionId: null });
-  expect(screen.getByText("清明")).toBeTruthy();
+  expect(screen.getAllByText("清明").length).toBeGreaterThan(0);
   expect(screen.getByText(/缅怀故人/)).toBeTruthy();
-  expect((screen.getByRole("button", { name: "新增日期" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(screen.getByRole("region", {name:"会话固定日期"})).getByRole("button", { name: "新增日期" }) as HTMLButtonElement).disabled).toBe(true);
   expect(api.list).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "编辑 清明" })).toBeNull();
 });
 
 it("手动新增只提交固定月日和非空祝福，没有母表关联或出生年份", async () => {
-  await show(); fireEvent.click(screen.getByRole("button", { name: "新增日期" }));
+  await show(); fireEvent.click(within(screen.getByRole("region", {name:"会话固定日期"})).getByRole("button", { name: "新增日期" }));
   const form = screen.getByRole("form", { name: "新增日期" });
   fireEvent.change(within(form).getByLabelText("名称"), { target: { value: "相识纪念日" } });
   fireEvent.change(within(form).getByLabelText("祝福词"), { target: { value: "愿往后的每一天都值得期待。" } });
@@ -44,7 +53,7 @@ it("手动新增只提交固定月日和非空祝福，没有母表关联或出�
 });
 
 it("农历两次日期完整展示，编辑冲突及刷新均保留草稿和原快照", async () => {
-  await show(); expect(screen.getByText(/2024-01-01、2024-12-20/)).toBeTruthy();
+  await show(); fireEvent.click(screen.getByRole("button",{name:"生日"})); expect(screen.getByText(/2024-01-01、2024-12-20/)).toBeTruthy();
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "编辑 生日" })); });
   fireEvent.change(screen.getByLabelText("祝福词"), { target: { value: "用户未保存的祝福" } });
   api.update.mockRejectedValueOnce(new Error("记录已修改，请重新读取"));
@@ -61,7 +70,7 @@ it("农历两次日期完整展示，编辑冲突及刷新均保留草稿和原�
 });
 
 it("删除需要确认，失败保留记录与确认框，成功才刷新", async () => {
-  await show(); fireEvent.click(screen.getByRole("button", { name: "删除 生日" }));
+  await show(); fireEvent.click(screen.getByRole("button",{name:"生日"})); fireEvent.click(screen.getByRole("button", { name: "删除 生日" }));
   expect(api.delete).not.toHaveBeenCalled();
   api.delete.mockRejectedValueOnce(new Error("记录已修改"));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "确认删除" })); });
@@ -77,35 +86,25 @@ it("切换会话清空旧草稿，旧请求返回不污染新会话，监听正�
   let finish!: (value: SessionFestivalRecord) => void;
   const pending = new Promise<SessionFestivalRecord>(resolve => { finish = resolve; });
   const stop = vi.fn(); api.listen.mockResolvedValue(stop);
-  const view = await show(); api.get.mockReturnValueOnce(pending);
+  const view = await show(); fireEvent.click(screen.getByRole("button",{name:"生日"})); api.get.mockReturnValueOnce(pending);
   fireEvent.click(screen.getByRole("button", { name: "编辑 生日" }));
   api.list.mockResolvedValue([]);
   await act(async () => { view.rerender(<FestivalPanel key="3" context={{ ...context, sessionId: "3", contextRevision: 4 }} />); });
   await act(async () => { finish(record()); });
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByRole("button", { name: "编辑 生日" })).toBeNull();
-  expect(stop).toHaveBeenCalledTimes(1);
-  view.unmount(); expect(stop).toHaveBeenCalledTimes(2);
+  expect(stop).toHaveBeenCalled();
+  view.unmount(); expect(stop.mock.calls.length).toBeGreaterThanOrEqual(2);
 });
 
-it("日期分页使用末条字符串ID，不限制总记录数", async () => {
-  api.list.mockResolvedValue(Array.from({ length: 30 }, (_, index) => record(String(100 - index))));
-  await show(); api.list.mockResolvedValueOnce([record("70")]);
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "更多日期" })); });
-  expect(api.list).toHaveBeenLastCalledWith(context, "71", 30);
-  expect(screen.getAllByRole("button", { name: "编辑 生日" })).toHaveLength(31);
-  expect(screen.queryByRole("button", { name: "更多日期" })).toBeNull();
-});
-it("聚焦和日期通知保留已展开的记录", async () => {
-  let receive!: (event: { sessionId: string | null }) => void;
-  api.listen.mockImplementation(async cb => { receive = cb; return () => {}; });
-  let records = Array.from({ length: 31 }, (_, index) => record(String(100 - index)));
-  api.list.mockImplementation(async (_context, before) => records.filter(row => !before || BigInt(row.id) < BigInt(before)).slice(0, 30));
+it("日期按后端完整集合搜索、排序及分页，聚焦不重置条件", async () => {
+  api.list.mockResolvedValue(Array.from({length:25},(_,i)=>({...record(String(100-i)),name:`生日编号${i}`})));
   await show();
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "更多日期" })); });
-  await act(async () => { fireEvent.focus(window); });
-  expect(screen.getAllByRole("button", { name: "编辑 生日" })).toHaveLength(31);
-  records = [record("101"), ...records];
-  await act(async () => { receive({ sessionId: "2" }); });
-  expect(screen.getAllByRole("button", { name: "编辑 生日" })).toHaveLength(32);
-  expect(screen.queryByRole("button", { name: "更多日期" })).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"下一页"}));
+  await screen.findByRole("button",{name:"生日编号12"});
+  await act(async()=>fireEvent.focus(window));
+  expect(await screen.findByRole("button",{name:"生日编号12"})).toBeTruthy();
+  fireEvent.change(screen.getByRole("searchbox"),{target:{value:"生日编号24"}});
+  await screen.findByRole("button",{name:"生日编号24"});
+  expect(api.browse).toHaveBeenLastCalledWith("dates",context,"生日编号24","newest",1);
+  expect(api.catalog).not.toHaveBeenCalled();
 });

@@ -40,11 +40,16 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.c.execute("PRAGMA integrity_check").fetchone()[0],'ok')
         self.c.execute("INSERT INTO long_memories_fts(long_memories_fts) VALUES('rebuild')")
     def test_chat_budget_and_stop_reason_constraints(self):
-        self.c.execute("INSERT INTO providers(name,model) VALUES('测试','model')")
-        self.assertEqual(self.c.execute("SELECT max_output_tokens,context_window_override FROM providers").fetchone(),(32768,None))
+        self.c.execute("INSERT INTO providers(name) VALUES('测试')")
+        self.c.execute("INSERT INTO provider_models(provider_id,purpose,model) VALUES(1,'chat','model')")
+        self.c.execute("INSERT INTO provider_roles(purpose,provider_id) VALUES('chat',1)")
+        self.assertEqual(self.c.execute("SELECT max_output_tokens,context_window_override FROM provider_models").fetchone(),(32768,None))
         for statement in (
-            "UPDATE providers SET max_output_tokens=0",
-            "UPDATE providers SET context_window_override=0",
+            "UPDATE provider_models SET max_output_tokens=0",
+            "UPDATE provider_models SET context_window_override=0",
+            "DELETE FROM providers WHERE id=1",
+            "DELETE FROM provider_models WHERE provider_id=1",
+            "INSERT INTO provider_roles(purpose,provider_id) VALUES('memory',1)",
             "INSERT INTO chat_rounds(session_id,status,created_at) VALUES(1,'interrupted','a')",
             "INSERT INTO chat_rounds(session_id,status,created_at,stop_reason) VALUES(1,'pending','a','unknown')",
             "INSERT INTO chat_rounds(session_id,status,created_at,stop_reason) VALUES(1,'interrupted','a','bad')",
@@ -67,8 +72,11 @@ class SchemaTests(unittest.TestCase):
                 DROP TRIGGER chat_rounds_stop_reason_insert;
                 DROP TRIGGER chat_rounds_stop_reason_update;
                 ALTER TABLE chat_rounds DROP COLUMN stop_reason;
-                ALTER TABLE providers DROP COLUMN context_window_override;
-                ALTER TABLE providers DROP COLUMN max_output_tokens;
+                DROP VIEW provider_effective;
+                DROP TABLE provider_roles;
+                DROP TABLE provider_models;
+                DROP TABLE providers;
+                CREATE TABLE providers(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,base_url TEXT,api_key_encrypted TEXT,model TEXT NOT NULL,is_active INTEGER NOT NULL DEFAULT 0,memory_is_active INTEGER NOT NULL DEFAULT 0);
                 PRAGMA user_version=3;
                 INSERT INTO providers(name,model,api_key_encrypted,is_active) VALUES('旧提供商','model','opaque-secret',1);
                 INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(1,'人设','设定','设定');
@@ -89,12 +97,17 @@ class SchemaTests(unittest.TestCase):
                 c.commit()
                 self.assertEqual(c.execute("SELECT max_output_tokens,context_window_override,api_key_encrypted,is_active FROM providers").fetchone(),(32768,None,'opaque-secret',1))
                 self.assertEqual(c.execute("SELECT status,stop_reason FROM chat_rounds").fetchone(),('interrupted','unknown'))
-                for table in ('providers','chat_rounds'):
+                for table in ('chat_rounds',):
                     self.assertEqual(c.execute('PRAGMA table_info('+table+')').fetchall(),self.c.execute('PRAGMA table_info('+table+')').fetchall())
             self.assertEqual(c.execute("SELECT content FROM messages WHERE id=2").fetchone()[0],'部分正文 ')
             self.assertEqual(c.execute("PRAGMA foreign_key_check").fetchall(),[])
             self.assertEqual(c.execute("PRAGMA integrity_check").fetchone()[0],'ok')
             c.close()
+    def test_provider_connection_has_no_duplicated_model_fields(self):
+        columns={row[1] for row in self.c.execute("PRAGMA table_info(providers)")}
+        self.assertFalse(columns & {'model','is_active','memory_is_active','max_output_tokens','context_window_override'})
+        role_columns={row[1] for row in self.c.execute("PRAGMA table_info(provider_roles)")}
+        self.assertNotIn('model',role_columns)
     def test_pet_state_lifecycle_and_constraints(self):
         self.assertEqual(self.c.execute("SELECT session_id,hunger_elapsed_ms,idle_elapsed_ms,idle_branch,sleep_until FROM session_pet_states ORDER BY session_id").fetchall(),[(1,0,0,'none',None),(2,0,0,'none',None)])
         for statement in (

@@ -123,7 +123,7 @@ fn capture(runtime: &Runtime, key: WorkKey) -> AppResult<Option<(MergeSnapshot, 
                 "尚无可用记忆提供商，请选择记忆专用项或配置聊天提供商",
             )
         })?;
-        let target = providers::connection_test_config(&store.connection, provider.id, secrets)?;
+        let target = crate::provider_roles::connection(&store.connection, provider.id, "memory", secrets)?;
         let lease = runtime.requests.start(
             TaskKey {
                 scope: key,

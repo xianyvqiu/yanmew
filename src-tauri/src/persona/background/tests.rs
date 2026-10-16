@@ -13,9 +13,7 @@ impl Fixture {
         ));
         fs::create_dir_all(&root).unwrap();
         let mut runtime = crate::runtime::test_runtime("http://localhost");
-        runtime.paths = Ok(crate::platform::contracts::AppPaths {
-            data_root: root.clone(),
-        });
+        runtime.paths = Ok(crate::platform::contracts::AppPaths::portable(root.clone()));
         Self { runtime, root }
     }
     fn record(&self) -> Background {
@@ -28,6 +26,7 @@ impl Fixture {
             blur: 4,
             image,
             reset: false,
+            appearance: None,
         }
     }
 }
@@ -52,6 +51,36 @@ fn upload(format: image::ImageFormat) -> Upload {
         file_name: format!("背景.{}", format.extensions_str()[0]),
         base64: base64::engine::general_purpose::STANDARD.encode(bytes.into_inner()),
     }
+}
+
+#[test]
+fn appearance_persists_is_scoped_and_survives_background_reset() {
+    let f = Fixture::new();
+    f.runtime.read(|s,_| { s.connection.execute("INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(2,'另一只','设定','设定')",[])?; Ok(()) }).unwrap();
+    let mut input = f.input(None);
+    let expected = Appearance { bubble_style: "frosted".into(), user_text_color: Some("#123456".into()), assistant_text_color: Some("#AbCdEf".into()) };
+    input.appearance = Some(expected.clone());
+    save(&f.runtime,1,None,input).unwrap();
+    assert_eq!(f.record().appearance, expected);
+    assert_eq!(get(&f.runtime,2,None).unwrap().record.appearance, Appearance::default());
+    let mut input = f.input(None); input.reset = true;
+    assert_eq!(save(&f.runtime,1,None,input).unwrap().appearance, expected);
+    assert_eq!(f.runtime.read(|s,_| Ok(crate::persona::list(&s.connection)?.remove(0).chat_appearance)).unwrap(), expected);
+}
+
+#[test]
+fn invalid_appearance_is_rejected_and_concurrent_style_changes_conflict() {
+    let f = Fixture::new();
+    for (style,color) in [("unknown","#123456"),("solid","red"),("outline","#12345g")] {
+        let mut input=f.input(None);
+        input.appearance=Some(Appearance { bubble_style:style.into(),user_text_color:Some(color.into()),assistant_text_color:None });
+        assert_eq!(save(&f.runtime,1,None,input).unwrap_err().code,"VALIDATION_ERROR");
+        assert_eq!(f.record().appearance,Appearance::default());
+    }
+    let stale=f.input(None);
+    let mut input=f.input(None); input.appearance=Some(Appearance { bubble_style:"outline".into(),..Appearance::default() });
+    save(&f.runtime,1,None,input).unwrap();
+    assert_eq!(save(&f.runtime,1,None,stale).unwrap_err().code,"CONFLICT");
 }
 
 #[test]
@@ -250,6 +279,7 @@ fn reset_uses_defaults_and_preserves_files_referenced_by_another_persona() {
         blur: 0,
         image: None,
         reset: true,
+        appearance: None,
     };
     save(&f.runtime, 2, None, input).unwrap();
     assert_eq!(

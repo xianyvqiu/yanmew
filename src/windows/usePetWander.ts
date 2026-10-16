@@ -52,7 +52,10 @@ export function usePetWander(root: RefObject<HTMLDivElement>, face: RefObject<HT
         right = Math.max(right, r.right - canvasRect.left - p.x);
         bottom = Math.max(bottom, r.bottom - canvasRect.top - p.y);
       }
-      const area = { x: 4, y: 44, width: canvasRect.width - 8, height: canvasRect.height - 48 };
+      // 底部聊天入口有独立命中区域，颜文字游走不得进入按钮上方的留白。
+      const chatEntry = canvas.querySelector<HTMLElement>(".pet-chat-entry");
+      const footerTop = chatEntry ? chatEntry.getBoundingClientRect().top - canvasRect.top - 12 : canvasRect.height - 4;
+      const area = { x: 4, y: 44, width: canvasRect.width - 8, height: Math.max(1, Math.min(canvasRect.height - 4, footerTop) - 44) };
       const clamp = (value: number, low: number, high: number) => low > high ? 0 : Math.min(high, Math.max(low, value));
       const bounded = { x: clamp(p.x, area.x - left, area.x + area.width - right),
         y: clamp(p.y, area.y - top, area.y + area.height - bottom) };

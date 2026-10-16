@@ -366,7 +366,7 @@ pub async fn preview(
         let value=detail(&store.connection,session,kind,id)?;
         let configuration=configuration(&store.connection)?;
         let provider=configuration.provider.as_ref().ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","尚无可用记忆提供商，请先配置提供商"))?;
-        let target=providers::connection_test_config(&store.connection,provider.id,secrets)?;
+        let target=crate::provider_roles::connection(&store.connection,provider.id,"memory",secrets)?;
         let round_fingerprint=fingerprint(&store.connection,&context,&value)?;
         let (minimum,maximum,payload,description,shape)=match kind {
             Kind::Short=>{

@@ -28,7 +28,7 @@ pub(crate) const INITIAL_GUIDE: &str = r#"欢迎来到颜喵，我是电子小�
 点击我可以互动，右键可以摸摸、喂食，拖动我可以调整宠窗位置。聊天和互动会增加当前会话的亲密度，最高 999。我会饿、会睡觉，也可能在无聊时主动找你聊聊。提醒可以在设置里管理，也可以在聊天中请我创建；时间、天气和定位相关选项在「时间与天气」里配置。
 
 6. 喵币、小游戏和小饰品
-「桌宠状态」里可以每日签到、查看亲密度和喵币，遇到节日还会有祝福。「游戏中心与插件管理」提供内置石头剪刀布，也能安装其他小游戏插件。插件获得你的喵币授权后才能增减余额；联网权限也由你决定。亲密度达到档位后，我可能请求制作饰品，经过你确认才会花费喵币；饰品可以佩戴、卸下和管理。
+「桌宠状态」里可以每日签到、查看亲密度和喵币，遇到节日还会有祝福。「小游戏插件」提供内置石头剪刀布，也能安装其他小游戏插件。插件获得你的喵币授权后才能增减余额；联网权限也由你决定。亲密度达到档位后，我可能请求制作饰品，经过你确认才会花费喵币；饰品可以佩戴、卸下和管理。
 
 7. 我也会出门旅行
 当前会话在家空闲一段时间后，我可能出门，默认等待范围为 2–4 小时有效在线时间。出门期间可以写信，回信需要等待；回来后可以查看信件、游记和伴手礼。旅行途中切换会话或人设会取消这次旅行和待回信，回来后也不能继续回信。删除一篇游记不会连带删除信件或伴手礼。
@@ -66,6 +66,7 @@ fn session_from_row(row: &Row<'_>) -> rusqlite::Result<Session> {
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
         is_current: row.get(8)?,
+        is_pinned: row.get(9)?,
     })
 }
 
@@ -85,6 +86,7 @@ fn message_from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
         role,
         content: row.get(4)?,
         expression: row.get(5)?,
+        images:vec![],
         created_at: row.get(6)?,
     })
 }
@@ -127,7 +129,7 @@ pub fn get(connection: &Connection, persona_id: i64, session_id: i64) -> AppResu
     connection
         .query_row(
             "SELECT s.id,s.persona_id,s.user_profile_id,s.title,s.memory_revision,s.intimacy,s.created_at,s.updated_at,
-                    EXISTS(SELECT 1 FROM settings WHERE key='current_session_id' AND value=CAST(s.id AS TEXT))
+                    EXISTS(SELECT 1 FROM settings WHERE key='current_session_id' AND value=CAST(s.id AS TEXT)),s.is_pinned
              FROM sessions s WHERE s.id=?1 AND s.persona_id=?2",
             params![session_id, persona_id],
             session_from_row,
@@ -147,13 +149,23 @@ pub fn list(connection: &Connection, persona_id: i64) -> AppResult<Vec<Session>>
     }
     let mut statement = connection.prepare(
         "SELECT s.id,s.persona_id,s.user_profile_id,s.title,s.memory_revision,s.intimacy,s.created_at,s.updated_at,
-                EXISTS(SELECT 1 FROM settings WHERE key='current_session_id' AND value=CAST(s.id AS TEXT))
-         FROM sessions s WHERE s.persona_id=?1 ORDER BY s.updated_at DESC,s.id DESC",
+                EXISTS(SELECT 1 FROM settings WHERE key='current_session_id' AND value=CAST(s.id AS TEXT)),s.is_pinned
+         FROM sessions s WHERE s.persona_id=?1 ORDER BY s.is_pinned DESC,s.updated_at DESC,s.id DESC",
     )?;
     let sessions = statement
         .query_map([persona_id], session_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(sessions)
+}
+
+/// 置顶只改变列表排序，不变更聊天更新时间、当前选择或上下文版本。
+pub fn set_pinned(connection: &mut Connection, persona_id: i64, session_id: i64, pinned: bool) -> AppResult<Session> {
+    let tx = connection.transaction()?;
+    require_session(&tx, persona_id, session_id)?;
+    tx.execute("UPDATE sessions SET is_pinned=?1 WHERE id=?2 AND persona_id=?3", params![pinned, session_id, persona_id])?;
+    let session = get(&tx, persona_id, session_id)?;
+    tx.commit()?;
+    Ok(session)
 }
 
 /// 切换人设或会话时，已出发旅行与待回信都取消；未出发倒计时保留在会话行。
@@ -367,6 +379,7 @@ pub fn messages(
     if has_more {
         items.pop();
     }
+    crate::chat_images::hydrate(connection,&mut items)?;
     let next_after_id = has_more.then(|| items.last().expect("non-empty page").id.clone());
     Ok(MessagePage {
         items,
@@ -374,14 +387,18 @@ pub fn messages(
     })
 }
 
-pub fn start_round(
+pub fn start_round(connection:&mut Connection,persona_id:i64,session_id:i64,content:&str)->AppResult<RoundSnapshot> {
+    start_round_with_images(connection,persona_id,session_id,content,&[])
+}
+pub(crate) fn start_round_with_images(
     connection: &mut Connection,
     persona_id: i64,
     session_id: i64,
     content: &str,
+    images:&[crate::chat_images::NewImage],
 ) -> AppResult<RoundSnapshot> {
     let content = content.trim();
-    if content.is_empty() {
+    if content.is_empty() && images.is_empty() {
         return Err(AppError::validation("content", "消息不能为空"));
     }
     let created_at = now();
@@ -408,6 +425,8 @@ pub fn start_round(
         params![session_id, round_id, content, created_at],
     )?;
     let message_id = transaction.last_insert_rowid();
+    crate::chat_images::publish_staged(images)?;
+    crate::chat_images::insert(&transaction,message_id,images,&created_at)?;
     transaction.execute(
         "UPDATE sessions SET memory_revision=memory_revision+1,updated_at=?1 WHERE id=?2",
         params![created_at, session_id],
@@ -442,9 +461,10 @@ pub(crate) fn round_snapshot(
         "SELECT id,session_id,round_id,role,content,expression,created_at
          FROM messages WHERE round_id=?1 AND session_id=?2 ORDER BY id",
     )?;
-    let messages = statement
+    let mut messages = statement
         .query_map(params![round_id, session_id], message_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
+    crate::chat_images::hydrate(connection,&mut messages)?;
     let user_message = messages
         .iter()
         .find(|message| message.role == MessageRole::User)
@@ -758,6 +778,26 @@ mod tests {
     fn database() -> Connection {
         let connection = crate::db::test_database();
         connection
+    }
+
+    #[test]
+    fn session_pinning_orders_list_without_touching_chat_or_current_selection() {
+        let mut c=database();
+        let first=create(&mut c,1).unwrap();
+        let second=create(&mut c,1).unwrap();
+        let (first_id,second_id)=(first.id.parse::<i64>().unwrap(),second.id.parse::<i64>().unwrap());
+        c.execute("UPDATE sessions SET updated_at='2026-01-01' WHERE id=?1",[first_id]).unwrap();
+        c.execute("UPDATE sessions SET updated_at='2026-10-01' WHERE id=?1",[second_id]).unwrap();
+        let before=get(&c,1,first_id).unwrap();
+        set_pinned(&mut c,1,first_id,true).unwrap();
+        let after=get(&c,1,first_id).unwrap();
+        assert_eq!(list(&c,1).unwrap()[0].id,first.id);
+        assert_eq!((after.updated_at,after.memory_revision),(before.updated_at,before.memory_revision));
+        assert!(get(&c,1,second_id).unwrap().is_current);
+        assert!(set_pinned(&mut c,999,first_id,false).is_err());
+        assert!(get(&c,1,first_id).unwrap().is_pinned);
+        set_pinned(&mut c,1,first_id,false).unwrap();
+        assert_eq!(list(&c,1).unwrap()[0].id,second.id);
     }
 
     #[test]

@@ -3,6 +3,7 @@ use crate::{error::AppResult, lunar};
 use chrono::{Datelike, NaiveDate};
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 mod dates;
+pub(crate) mod calendar;
 pub(crate) mod session;
 pub(crate) mod tools;
 pub(crate) fn current_scope(store: &crate::runtime::Store, context: &crate::memory::management::Context) -> AppResult<i64> {

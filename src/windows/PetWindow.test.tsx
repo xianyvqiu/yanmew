@@ -81,6 +81,7 @@ describe("PetWindow", () => {
   beforeEach(() => {
     startDragging.mockReset().mockResolvedValue(undefined);
     invoke.mockReset().mockImplementation(async (command, args) => {
+      if (command === "set_pet_chat_open") return {hidden:false,revision:3,chatOpen:args.open};
       if (command === "get_pet_activity") return initialActivity;
       if (command === "get_memory_generation_status") return initialMemory;
       if (command === "interact_pet") return {...initialActivity,intimacy:999,revision:2,expression:"(^_^)"};
@@ -287,6 +288,7 @@ describe("PetWindow", () => {
     let recovered = false;
     let attempts = 0;
     invoke.mockImplementation(async (command, args) => {
+      if (command === "set_pet_chat_open") return {hidden:false,revision:3,chatOpen:args.open};
       if (command === "get_pet_activity") return recovered ? { ...initialActivity, revision: 3 }
         : { ...initialActivity, activity: "dormant", error: "模型服务无法连接", canWander: false };
       if (command === "refresh_pet_provider") {
@@ -314,6 +316,7 @@ describe("PetWindow", () => {
     const fallback = invoke.getMockImplementation()!;
     let changed = false;
     invoke.mockImplementation(async (command, args) => {
+      if (command === "set_pet_chat_open") return {hidden:false,revision:3,chatOpen:args.open};
       if (command === "get_pet_activity") return changed ? { ...initialActivity, revision: 4 }
         : { ...initialActivity, activity: "dormant", error: "旧提供商连接失败", canWander: false };
       if (command === "refresh_pet_provider") {
@@ -351,8 +354,12 @@ describe("PetWindow", () => {
   it("聊天与设置入口只导航，不触发桌宠互动或拖动", async () => {
     await act(async () => { render(<PetWindow />); });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "聊天" }));
-      fireEvent.click(screen.getByRole("button", { name: "设置" }));
+      fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    });
+    await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: "聊天详情" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "更多操作" })); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: "设置" }));
     });
     expect(invoke).toHaveBeenCalledWith("focus_or_create_window", { page: "chat" });
     expect(invoke).toHaveBeenCalledWith("focus_or_create_window", { page: "settings" });
@@ -360,15 +367,29 @@ describe("PetWindow", () => {
     expect(startDragging).not.toHaveBeenCalled();
   });
 
-it("出门时聊天入口变为写信且不触发互动",async()=> {
+it("出门时快捷区只提供写信且不触发互动",async()=> {
   const previous=invoke.getMockImplementation()!;
   invoke.mockImplementation(async(command,args)=>command==="get_current_travel"?{id:"3"}:previous(command,args));
   await act(async()=>{render(<PetWindow />);});
   await act(async()=>{receiveActivity({payload:{...initialActivity,revision:4,activity:"away",expression:"小喵出门啦",canInteract:false,canWander:false}});});
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"聊天"}));});
   await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"写信"}));});
   expect(invoke).toHaveBeenCalledWith("open_letter_window",{personaId:"1",sessionId:"1",contextRevision:0,travelId:"3",replyToId:null});
   expect(invoke.mock.calls.some(([command])=>command==="interact_pet")).toBe(false);
   expect(startDragging).not.toHaveBeenCalled();
 });
+
+  it("右上更多菜单按需展开，聊天图标仅悬浮时显示标签并展开快捷输入",async()=>{
+    await act(async()=>{render(<PetWindow/>);});
+    expect(screen.queryByRole("menu")).toBeNull();
+    const toggle=screen.getByRole("button",{name:"聊天"});
+    expect(screen.queryByText("聊天")).toBeNull();
+    fireEvent.pointerEnter(toggle);expect(screen.getByText("聊天")).toBeTruthy();
+    fireEvent.pointerLeave(toggle);expect(screen.queryByText("聊天")).toBeNull();
+    await act(async()=>{fireEvent.click(toggle);});
+    expect(invoke).toHaveBeenCalledWith("set_pet_chat_open",{open:true});
+    expect(screen.getByRole("region",{name:"宠窗快捷聊天"})).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalledWith("focus_or_create_window",{page:"chat"});
+  });
 
 });

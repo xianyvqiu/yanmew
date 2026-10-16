@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import CardBrowserControls from "../CardBrowserControls";
+import {useRemoteCardBrowser} from "../../hooks/useRemoteCardBrowser";
+import { useEffect, useRef, useState } from "react";
 import { errorMessage, festivalsApi } from "../../api";
-import type { CurrentContext, FestivalCatalogRecord, SessionFestivalInput, SessionFestivalRecord } from "../../types";
+import type { CurrentContext, SessionFestivalInput, SessionFestivalRecord } from "../../types";
 import "./FestivalPanel.css";
+import CalendarView from "./CalendarView";
 
-const pageSize = 30;
 const kinds = { birthday: "生日", anniversary: "纪念日", festival: "固定节日", custom: "自定义日期" };
 const emptyDraft = (): SessionFestivalInput => ({ kind: "birthday", name: "", calendarType: "solar", month: 1, day: 1, isLeapMonth: false, blessing: "", note: null });
 function draftOf(record: SessionFestivalRecord): SessionFestivalInput {
@@ -12,20 +14,17 @@ function draftOf(record: SessionFestivalRecord): SessionFestivalInput {
     day: (record.calendarType === "solar" ? record.solarDay : record.lunarDay) ?? 1,
     isLeapMonth: record.isLeapMonth, blessing: record.blessing, note: record.note };
 }
-function definition(record: FestivalCatalogRecord | SessionFestivalRecord) {
-  if (record.calendarType === "solar_term") return `节气 · ${(record as FestivalCatalogRecord).solarTerm ?? record.name}`;
+function definition(record: SessionFestivalRecord) {
   if (record.calendarType === "lunar") return `农历 ${record.isLeapMonth ? "闰" : ""}${record.lunarMonth ?? "—"} 月 ${record.lunarDay ?? "—"} 日`;
   return `公历 ${record.solarMonth ?? "—"} 月 ${record.solarDay ?? "—"} 日`;
 }
 
 /** 当前会话切换由设置页key重新挂载；普通刷新不覆盖编辑快照和草稿。 */
 export default function FestivalPanel({ context }: { context: CurrentContext }) {
-  const [catalog, setCatalog] = useState<FestivalCatalogRecord[]>([]);
-  const [items, setItems] = useState<SessionFestivalRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [more, setMore] = useState(false);
+  const browser=useRemoteCardBrowser<SessionFestivalRecord>("dates",context);
+  const [dateSelection,setDateSelection]=useState<string|null>(null);
+  const [calendarRevision,setCalendarRevision]=useState(0);
   const [error, setError] = useState("");
-  const [readError, setReadError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<SessionFestivalInput | null>(null);
@@ -33,106 +32,62 @@ export default function FestivalPanel({ context }: { context: CurrentContext }) 
   const [removing, setRemoving] = useState<SessionFestivalRecord | null>(null);
   const alive = useRef(false);
   const locked = useRef(false);
-  const generation = useRef(0);
-  const pageDepth = useRef(1);
-  const pendingRefresh = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const { personaId, sessionId, contextRevision } = context;
-  const refresh = useCallback(async () => {
-    if (locked.current) { pendingRefresh.current = true; return; }
-    const request = ++generation.current;
-    setLoading(true);
-    try {
-      const readDates = async () => {
-        const records: SessionFestivalRecord[] = [];
-        let cursor: string | null = null;
-        let lastCount = 0;
-        if (sessionId) for (let page = 0; page < pageDepth.current; page++) {
-          const rows = await festivalsApi.list({ personaId, sessionId, contextRevision }, cursor, pageSize);
-          if (!alive.current || request !== generation.current) return { records: [], lastCount: 0 };
-          records.push(...rows); lastCount = rows.length;
-          cursor = rows[rows.length - 1]?.id ?? null;
-          if (lastCount < pageSize) break;
-        }
-        return { records, lastCount };
-      };
-      const [system, personal] = await Promise.all([festivalsApi.catalog(), readDates()]);
-      if (!alive.current || request !== generation.current) return;
-      setCatalog(system); setItems(personal.records); setMore(personal.lastCount === pageSize); setReadError("");
-    } catch (cause) { if (alive.current && request === generation.current) setReadError(errorMessage(cause)); }
-    finally { if (alive.current && request === generation.current) setLoading(false); }
-  }, [personaId, sessionId, contextRevision]);
   useEffect(() => {
     alive.current = true;
-    let disposed = false;
-    let stop: (() => void) | undefined;
-    const reload = () => { if (!disposed) void refresh(); };
-    void festivalsApi.listen(event => { if (event.sessionId === null || event.sessionId === sessionId) reload(); })
-      .then(unlisten => { if (disposed) unlisten(); else { stop = unlisten; reload(); } })
-      .catch(cause => { if (!disposed) { setReadError(`日期变更通知连接失败：${errorMessage(cause)}。请手动刷新。`); setLoading(false); } });
-    reload(); window.addEventListener("focus", reload);
-    return () => { disposed = true; alive.current = false; generation.current++; stop?.(); window.removeEventListener("focus", reload); };
-  }, [refresh, sessionId]);
+    return () => { alive.current = false; };
+  }, []);
   useEffect(() => { if (removing) dialog.current?.showModal(); else dialog.current?.close(); }, [removing]);
 
   const act = async (operation: () => Promise<void>) => {
     if (locked.current) return;
-    locked.current = true; generation.current++; setBusy(true); setError(""); setNotice("");
+    locked.current = true; setBusy(true); setError(""); setNotice("");
     try { await operation(); }
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally {
       locked.current = false;
       if (alive.current) {
-        setBusy(false); setLoading(false);
-        if (pendingRefresh.current) { pendingRefresh.current = false; void refresh(); }
+        setBusy(false);
       }
     }
   };
-  const edit = (record: SessionFestivalRecord) => { void act(async () => {
-    const current = await festivalsApi.get(context, record.id);
+  const edit = (id: string) => { void act(async () => {
+    const current = await festivalsApi.get(context, id);
     if (alive.current) { setEditing(current); setDraft(draftOf(current)); }
   }); };
   const save = () => { if (!draft) return; const input = draft; const original = editing;
     void act(async () => {
       if (original) await festivalsApi.update(context, original.id, original.revisionToken, input);
       else await festivalsApi.create(context, input);
-      if (alive.current) { setDraft(null); setEditing(null); setNotice("日期已保存。"); pendingRefresh.current = true; }
-    });
-  };
-  const loadMore = () => { const last = items[items.length - 1]; if (!last || !more) return;
-    void act(async () => {
-      const next = await festivalsApi.list(context, last.id, pageSize);
-      if (alive.current) { pageDepth.current++; setItems(previous => [...previous, ...next.filter(item => !previous.some(old => old.id === item.id))]); setMore(next.length === pageSize); }
+      if (alive.current) { setDraft(null); setEditing(null); setNotice("日期已保存。"); browser.refresh(); setCalendarRevision(value=>value+1); }
     });
   };
 
   return <div className="ym-festival-panel">
-    <section className="ym-page-card" aria-label="系统节日">
-      <div className="ym-page-heading"><div><h2>系统节日</h2><p className="ym-page-note">内置节日只读，每年自动换算。当天命中任意节日或当前会话固定日期，签到固定获得 10 喵币。</p></div>
-        <button className="ym-button" disabled={busy || loading} onClick={() => { void refresh(); }}>刷新日期</button></div>
-      {loading && <p role="status">正在读取日期…</p>}
-      {readError && <p role="alert" className="ym-page-error">{readError}</p>}
-      {error && !draft && !removing && <p role="alert" className="ym-page-error">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-      <ul className="ym-festival-list">{catalog.map(record => <li key={record.id}>
-        <div className="ym-page-heading"><h3>{record.name}</h3><span className="ym-page-note">{definition(record)}{record.isMemorial && " · 纪念性节日"}</span></div>
-        <p className="ym-page-note">{record.year} 年 · {record.solarMonth && record.solarDay ? `${record.solarMonth} 月 ${record.solarDay} 日` : "本年无对应日期"}</p>
-        <p className="ym-festival-text">{record.blessing}</p>{record.note && <p className="ym-page-note">{record.note}</p>}
-      </li>)}</ul>
-    </section>
-    <section className="ym-page-card" aria-label="会话固定日期">
+    <CalendarView canAdd={!!sessionId&&!busy&&!draft} revision={`${personaId}:${sessionId}:${contextRevision}:${calendarRevision}`} onAdd={date=>{
+      if(!sessionId||busy||draft)return;
+      const [,month,day]=date.split("-").map(Number); setEditing(null);setDraft({...emptyDraft(),calendarType:"solar",month,day});setError("");
+    }} onEdit={id=>{if(!busy&&!draft)edit(id);}}/>
+    {error&&!draft&&<p role="alert" className="ym-page-error">{error}</p>}
+    {notice&&<p role="status">{notice}</p>}
+    <details className="ym-page-card" open={draft!==null||undefined}><summary>管理会话固定日期</summary><section aria-label="会话固定日期">
       <div className="ym-page-heading"><div><h2>会话固定日期</h2><p className="ym-page-note">只属于当前会话。生日、纪念日按固定月日重复，不填写出生年份；农历同年出现两次均生效，不存在的日期跳过。</p></div>
         <button className="ym-button" disabled={!sessionId || busy || draft !== null} onClick={() => { setEditing(null); setDraft(emptyDraft()); setError(""); }}>新增日期</button></div>
       {!sessionId ? <p className="ym-page-empty">当前没有会话，请先在聊天窗口创建会话。</p> : <>
-        {!loading && !items.length && <p className="ym-page-empty">当前会话还没有固定日期。</p>}
-        <ul className="ym-festival-list">{items.map(record => <li key={record.id}>
-          <div className="ym-page-heading"><h3>{record.name}</h3><span className="ym-page-note">{kinds[record.kind]} · {definition(record)}</span></div>
+        {!browser.loading && !browser.total && !browser.search && !browser.error && <p className="ym-page-empty">当前会话还没有固定日期。</p>}
+        <CardBrowserControls browser={browser} label="自定义日期" timeLabel="创建时间" disabled={busy||draft!==null}/>
+        {browser.error&&<p role="alert" className="ym-page-error">{browser.error}</p>}
+        <ul className="ym-festival-list ym-object-grid">{browser.items.map(record => <li key={record.id}>
+          <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={busy||draft!==null} onClick={()=>setDateSelection(dateSelection===record.id?null:record.id)}>{record.name}</button></h3><span className="ym-page-note">{kinds[record.kind]} · {definition(record)}</span></div>
           <p className="ym-page-note">{record.year} 年：{record.occurrences.length ? record.occurrences.join("、") : "本年无对应日期"} · {record.source === "ai" ? "AI记录" : "手动记录"}</p>
+          {dateSelection===record.id&&<>
           <p className="ym-festival-text">{record.blessing}</p>{record.note && <p className="ym-page-note">{record.note}</p>}
-          <div className="ym-inline-form"><button className="ym-button" disabled={busy || draft !== null} onClick={() => edit(record)}>编辑 {record.name}</button>
+          <div className="ym-inline-form"><button className="ym-button" disabled={busy || draft !== null} onClick={() => edit(record.id)}>编辑 {record.name}</button>
             <button className="ym-button" data-variant="danger" disabled={busy || draft !== null} onClick={() => { setRemoving(record); setError(""); }}>删除 {record.name}</button></div>
+          </>}
         </li>)}</ul>
-        {more && <button className="ym-button" disabled={busy || loading} onClick={loadMore}>更多日期</button>}
+
       </>}
       {draft && <form className="ym-festival-form" aria-label={editing ? "编辑日期" : "新增日期"} onSubmit={event => { event.preventDefault(); save(); }}>
         <h3>{editing ? `编辑：${editing.name}` : "新增固定日期"}</h3>
@@ -149,17 +104,17 @@ export default function FestivalPanel({ context }: { context: CurrentContext }) 
           <label className="ym-field">备注<textarea rows={2} value={draft.note ?? ""} onChange={event => setDraft({ ...draft, note: event.target.value || null })} /></label>
           <div className="ym-inline-form"><button className="ym-button" type="submit">{busy ? "正在保存…" : "保存日期"}</button>
             <button className="ym-button" type="button" onClick={() => { setDraft(null); setEditing(null); setError(""); }}>取消编辑</button>
-            {editing && <button className="ym-button" type="button" onClick={() => edit(editing)}>放弃草稿并重新读取</button>}</div>
+            {editing && <button className="ym-button" type="button" onClick={() => edit(editing.id)}>放弃草稿并重新读取</button>}</div>
         </fieldset>
         <p className="ym-page-note">普通刷新保留草稿。如果其他窗口或AI修改了同一记录，保存会提示冲突；可复制草稿后重新读取。固定日期不替代到点提醒。</p>
       </form>}
-    </section>
+    </section></details>
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="festival-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setRemoving(null); }}>
       <h2 id="festival-delete-title">删除这条固定日期？</h2><div className="ym-session-dialog-body"><p>{removing?.name}删除后不可恢复，不影响聊天、记忆或已领取的签到奖励。</p>{error && <p className="ym-page-error">{error}</p>}</div>
       <div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy} onClick={() => setRemoving(null)}>取消删除</button>
         <button className="ym-button" data-variant="danger" disabled={busy || !removing} onClick={() => { if (!removing) return; const target = removing; void act(async () => {
           await festivalsApi.delete(context, target.id, target.revisionToken);
-          if (alive.current) { setRemoving(null); setNotice("日期已删除。"); pendingRefresh.current = true; }
+          if (alive.current) { setRemoving(null); setNotice("日期已删除。"); browser.refresh(); setCalendarRevision(value=>value+1); }
         }); }}>{busy ? "正在删除…" : "确认删除"}</button></div>
     </dialog>
   </div>;

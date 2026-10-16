@@ -1,90 +1,94 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2640" height="6615" viewBox="0 0 2640 6615">
+<svg xmlns="http://www.w3.org/2000/svg" width="2640" height="8121" viewBox="0 0 2640 8121">
 <style>text{font-family:"Microsoft YaHei",Arial,sans-serif} .mono{font-family:Consolas,monospace} .edge{opacity:.28} .edge:hover{opacity:1;stroke-width:4} .card:hover rect{stroke-width:3}</style>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#64748b"/></marker></defs>
 <rect width="100%" height="100%" fill="#f5f7fb"/>
 <text x="60" y="65" font-size="34" fill="#172554" font-weight="700">颜喵 · 数据库完整类图</text>
 <text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 30 张业务表 + 1 张 FTS5 虚拟表 · V1 设计蓝图 · 来源 db/schema.sql</text>
 <text x="60" y="174" fill="#6366f1" font-size="25" font-weight="700">人设与全局配置</text>
-<text x="60" y="1232" fill="#0284c7" font-size="25" font-weight="700">聊天、记忆与检索</text>
-<text x="60" y="2095" fill="#0d9488" font-size="25" font-weight="700">出行与旅行内容</text>
-<text x="60" y="3278" fill="#d97706" font-size="25" font-weight="700">小游戏插件与钱包</text>
-<text x="60" y="4516" fill="#db2777" font-size="25" font-weight="700">提醒与节日</text>
+<text x="60" y="1728" fill="#0284c7" font-size="25" font-weight="700">聊天、记忆与检索</text>
+<text x="60" y="2882" fill="#0d9488" font-size="25" font-weight="700">出行与旅行内容</text>
+<text x="60" y="4065" fill="#d97706" font-size="25" font-weight="700">小游戏插件与钱包</text>
+<text x="60" y="5303" fill="#db2777" font-size="25" font-weight="700">提醒与节日</text>
 <g id="edges">
-<path class="edge" data-child="sessions" data-parent="user_profiles" d="M1275 248 H2560 V248 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="sessions" data-parent="personas" d="M1275 248 H1295 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="session_pet_states" data-parent="sessions" d="M1910 248 H1935 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="chat_rounds" data-parent="sessions" d="M640 1306 H1305 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="messages" data-parent="chat_rounds" d="M1275 1306 H1310 V1306 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="messages" data-parent="sessions" d="M1275 1306 H1315 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="short_memories" data-parent="chat_rounds" d="M1910 1306 H1955 V1306 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="short_memories" data-parent="sessions" d="M1910 1306 H1925 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="long_memories" data-parent="chat_rounds" d="M2545 1306 H2565 V1306 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="long_memories" data-parent="sessions" d="M2545 1306 H2570 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="long_memory_embeddings" data-parent="sessions" d="M1275 1722 H1305 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="long_memory_embeddings" data-parent="long_memories" d="M1275 1722 H2580 V1306 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="long_memory_sources" data-parent="short_memories" d="M640 1722 H1950 V1306 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</title></path>
-<path class="edge" data-child="long_memory_sources" data-parent="long_memories" d="M640 1722 H2590 V1306 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="notebooks" data-parent="sessions" d="M2545 1722 H2560 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="reminder_occurrences" data-parent="reminders" d="M1275 4590 H1295 V4590 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="game_permissions" data-parent="game_plugins" d="M1275 3352 H1300 V3352 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="game_plugin_settings" data-parent="game_plugins" d="M1910 3352 H1940 V3352 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="game_plugin_data" data-parent="game_plugins" d="M2545 3352 H2580 V3352 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="game_runs" d="M1275 4043 H1315 V4043 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="game_runs" d="M1275 4043 H1320 V4043 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
-<path class="edge" data-child="travels" data-parent="sessions" d="M640 2169 H1290 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="travel_journals" data-parent="travels" d="M1275 2169 H1295 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="travel_journals" data-parent="sessions" d="M1275 2169 H1300 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="travel_journals" data-parent="travels" d="M1275 2169 H1305 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</title></path>
-<path class="edge" data-child="accessories" data-parent="travels" d="M2545 2169 H2580 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="accessories" data-parent="sessions" d="M2545 2169 H2585 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="accessories" data-parent="travels" d="M2545 2169 H2590 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
-<path class="edge" data-child="letters" data-parent="letters" d="M1910 2169 h35 v65 h-35" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="letters" data-parent="travels" d="M1910 2169 H1930 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="letters" data-parent="sessions" d="M1910 2169 H1935 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="letters" data-parent="travels" d="M1910 2169 H1940 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
-<path class="edge" data-child="souvenirs" data-parent="travels" d="M640 2905 H675 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="souvenirs" data-parent="sessions" d="M640 2905 H1315 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="souvenirs" data-parent="travels" d="M640 2905 H685 V2169 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
-<path class="edge" data-child="session_festivals" data-parent="festival_catalog" d="M2545 4590 H2560 V4590 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R36  session_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
-<path class="edge" data-child="session_festivals" data-parent="sessions" d="M2545 4590 H2565 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R37  session_festivals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="settings" data-parent="sessions" d="M1910 809 H1935 V248 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</title></path>
-<path class="edge" data-child="game_runs" data-parent="game_plugins" d="M640 4043 H670 V3352 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="game_plugins" d="M1275 4043 H1310 V3352 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="user_state" d="M1275 4043 H1950 V4043 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="accessories" d="M1275 4043 H2590 V2169 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</title></path>
-<path class="edge" data-child="long_memories_fts" data-parent="long_memories" d="M1910 1722 H2560 V1306 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</title></path>
-<path class="edge" data-child="long_memory_embeddings" data-parent="embedding_providers" d="M1275 1722 H1295 V809 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</title></path>
+<path class="edge" data-child="sessions" data-parent="user_profiles" d="M1910 248 H1925 V964 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="sessions" data-parent="personas" d="M1910 248 H1930 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="session_pet_states" data-parent="sessions" d="M2545 248 H2570 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="chat_rounds" data-parent="sessions" d="M640 1802 H1940 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="messages" data-parent="chat_rounds" d="M1275 1802 H1310 V1802 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="messages" data-parent="sessions" d="M1275 1802 H1950 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="short_memories" data-parent="chat_rounds" d="M2545 1802 H2590 V1802 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="short_memories" data-parent="sessions" d="M2545 1802 H2560 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="long_memories" data-parent="chat_rounds" d="M640 2193 H660 V1802 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="long_memories" data-parent="sessions" d="M640 2193 H1935 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="long_memory_embeddings" data-parent="sessions" d="M1910 2193 H1940 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="long_memory_embeddings" data-parent="long_memories" d="M1910 2193 H1945 V2193 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="long_memory_sources" data-parent="short_memories" d="M1275 2193 H2585 V1802 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="long_memory_sources" data-parent="long_memories" d="M1275 2193 H1320 V2193 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="notebooks" data-parent="sessions" d="M640 2609 H1925 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="reminder_occurrences" data-parent="reminders" d="M1275 5377 H1295 V5377 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="game_permissions" data-parent="game_plugins" d="M1275 4139 H1300 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="game_plugin_settings" data-parent="game_plugins" d="M1910 4139 H1940 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="game_plugin_data" data-parent="game_plugins" d="M2545 4139 H2580 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="game_runs" d="M1275 4830 H1315 V4830 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="game_runs" d="M1275 4830 H1320 V4830 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
+<path class="edge" data-child="travels" data-parent="sessions" d="M640 2956 H1925 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="travel_journals" data-parent="travels" d="M1275 2956 H1295 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="travel_journals" data-parent="sessions" d="M1275 2956 H1935 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="travel_journals" data-parent="travels" d="M1275 2956 H1305 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</title></path>
+<path class="edge" data-child="accessories" data-parent="travels" d="M2545 2956 H2580 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="accessories" data-parent="sessions" d="M2545 2956 H2585 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="accessories" data-parent="travels" d="M2545 2956 H2590 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
+<path class="edge" data-child="letters" data-parent="letters" d="M1910 2956 h35 v65 h-35" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="letters" data-parent="travels" d="M1910 2956 H1930 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="letters" data-parent="sessions" d="M1910 2956 H1935 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="letters" data-parent="travels" d="M1910 2956 H1940 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
+<path class="edge" data-child="souvenirs" data-parent="travels" d="M640 3692 H675 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="souvenirs" data-parent="sessions" d="M640 3692 H1950 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="souvenirs" data-parent="travels" d="M640 3692 H685 V2956 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</title></path>
+<path class="edge" data-child="session_festivals" data-parent="festival_catalog" d="M1275 5893 H1290 V5893 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R36  session_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="session_festivals" data-parent="sessions" d="M1275 5893 H1930 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R37  session_festivals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="provider_models" data-parent="providers" d="M1910 964 H1935 V964 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R38  provider_models (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="provider_roles" data-parent="provider_models" d="M2545 964 H2575 V964 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R39  provider_roles (provider_id, purpose) → provider_models (provider_id, purpose) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="provider_roles" data-parent="providers" d="M2545 964 H2580 V964 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R40  provider_roles (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="message_images" data-parent="messages" d="M1910 1802 H1950 V1802 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R41  message_images (message_id) → messages (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="reminder_email_items" data-parent="reminder_occurrences" d="M2545 5377 H2590 V5377 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R42  reminder_email_items (occurrence_id) → reminder_occurrences (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="reminder_email_items" data-parent="reminder_email_deliveries" d="M2545 5377 H2560 V5377 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R43  reminder_email_items (delivery_id) → reminder_email_deliveries (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="pet_artworks" data-parent="personas" d="M1275 248 H1295 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R44  pet_artworks (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="settings" data-parent="sessions" d="M1275 1330 H1935 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</title></path>
+<path class="edge" data-child="game_runs" data-parent="game_plugins" d="M640 4830 H670 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="game_plugins" d="M1275 4830 H1310 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="user_state" d="M1275 4830 H1950 V4830 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="accessories" d="M1275 4830 H2590 V2956 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</title></path>
+<path class="edge" data-child="long_memories_fts" data-parent="long_memories" d="M2545 2193 H2560 V2193 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</title></path>
+<path class="edge" data-child="long_memory_embeddings" data-parent="embedding_providers" d="M1910 2193 H1930 V1330 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</title></path>
 </g>
-<g class="card" id="table-providers" data-table="providers"><rect x="60" y="767" width="580" height="341" rx="10" fill="white" stroke="#6366f1"/>
-<path d="M60 845 H640" stroke="#6366f1"/>
-<text x="78" y="796" font-size="20" font-weight="700" fill="#6366f1">聊天及记忆提供商 «table»</text>
-<text x="78" y="824" font-size="20" class="mono" fill="#0f172a">providers</text>
-<text x="78" y="870" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="78" y="895" font-size="16" class="mono" fill="#334155">name: TEXT<title>显示名称，用户自定义</title></text>
-<text x="78" y="920" font-size="16" class="mono" fill="#334155">base_url: TEXT?<title>自定义接口地址；官方 OpenAI 为 NULL</title></text>
-<text x="78" y="945" font-size="16" class="mono" fill="#334155">api_key_encrypted: TEXT?<title>DPAPI Base64；未配置或导入后 NULL，不存明文</title></text>
-<text x="78" y="970" font-size="16" class="mono" fill="#334155">model: TEXT<title>模型名，如 gpt-4o-mini / deepseek-chat</title></text>
-<text x="78" y="995" font-size="16" class="mono" fill="#334155">is_active: INTEGER = 0<title>1=聊天当前提供商（全局唯一），0=非当前聊天提供商</title></text>
-<text x="78" y="1020" font-size="16" class="mono" fill="#334155">memory_is_active: INTEGER = 0<title>1=记忆整合专用当前项，0=非当前项；全表无 1 时跟随聊天提供商</title></text>
-<text x="78" y="1045" font-size="16" class="mono" fill="#334155">max_output_tokens: INTEGER = 32768<title>单次聊天最大输出，实际预算不回写此配置</title></text>
-<text x="78" y="1070" font-size="16" class="mono" fill="#334155">context_window_override: INTEGER?<title>NULL=自动解析或未知；正整数=用户手动容量</title></text>
-<text x="78" y="1095" font-size="13" fill="#64748b">关系：独立表</text>
+<g class="card" id="table-providers" data-table="providers"><rect x="695" y="922" width="580" height="266" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M695 1000 H1275" stroke="#6366f1"/>
+<text x="713" y="951" font-size="20" font-weight="700" fill="#6366f1">通用提供商连接 «table»</text>
+<text x="713" y="979" font-size="20" class="mono" fill="#0f172a">providers</text>
+<text x="713" y="1025" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="713" y="1050" font-size="16" class="mono" fill="#334155">name: TEXT<title>显示名称，用户自定义</title></text>
+<text x="713" y="1075" font-size="16" class="mono" fill="#334155">base_url: TEXT?<title>自定义接口地址；官方 OpenAI 为 NULL</title></text>
+<text x="713" y="1100" font-size="16" class="mono" fill="#334155">api_key_encrypted: TEXT?<title>DPAPI Base64；未配置或导入后 NULL，不存明文</title></text>
+<text x="713" y="1125" font-size="16" class="mono" fill="#334155">created_at: TEXT?<title>创建UTC时间；升级前未知时间保留NULL</title></text>
+<text x="713" y="1150" font-size="16" class="mono" fill="#334155">updated_at: TEXT?<title>最近编辑UTC时间；升级前未知时间保留NULL</title></text>
+<text x="713" y="1175" font-size="13" fill="#64748b">关系：R38 / R40</text>
 </g>
-<g class="card" id="table-embedding_providers" data-table="embedding_providers"><rect x="695" y="767" width="580" height="316" rx="10" fill="white" stroke="#6366f1"/>
-<path d="M695 845 H1275" stroke="#6366f1"/>
-<text x="713" y="796" font-size="20" font-weight="700" fill="#6366f1">向量模型提供商 «table»</text>
-<text x="713" y="824" font-size="20" class="mono" fill="#0f172a">embedding_providers</text>
-<text x="713" y="870" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>Embedding 提供商自增主键</title></text>
-<text x="713" y="895" font-size="16" class="mono" fill="#334155">name: TEXT<title>设置页显示名称</title></text>
-<text x="713" y="920" font-size="16" class="mono" fill="#334155">kind: TEXT<title>local=本地模型，online=联网 Embedding API</title></text>
-<text x="713" y="945" font-size="16" class="mono" fill="#334155">base_url: TEXT?<title>联网 API 地址；本地项为 NULL</title></text>
-<text x="713" y="970" font-size="16" class="mono" fill="#334155">api_key_encrypted: TEXT?<title>联网 API Key 的 DPAPI Base64 密文；本地项或无密钥时为 NULL</title></text>
-<text x="713" y="995" font-size="16" class="mono" fill="#334155">model: TEXT<title>模型标识；内置项默认 BAAI/bge-small-zh-v1.5</title></text>
-<text x="713" y="1020" font-size="16" class="mono" fill="#334155">is_builtin: INTEGER = 0<title>1=随应用提供且不可删除，0=用户配置</title></text>
-<text x="713" y="1045" font-size="16" class="mono" fill="#334155">is_active: INTEGER = 0<title>1=当前使用项，0=未使用；全局最多一个 1</title></text>
-<text x="713" y="1070" font-size="13" fill="#64748b">关系：L07</text>
+<g class="card" id="table-embedding_providers" data-table="embedding_providers"><rect x="60" y="1288" width="580" height="316" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M60 1366 H640" stroke="#6366f1"/>
+<text x="78" y="1317" font-size="20" font-weight="700" fill="#6366f1">向量模型提供商 «table»</text>
+<text x="78" y="1345" font-size="20" class="mono" fill="#0f172a">embedding_providers</text>
+<text x="78" y="1391" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>Embedding 提供商自增主键</title></text>
+<text x="78" y="1416" font-size="16" class="mono" fill="#334155">name: TEXT<title>设置页显示名称</title></text>
+<text x="78" y="1441" font-size="16" class="mono" fill="#334155">kind: TEXT<title>local=本地模型，online=联网 Embedding API</title></text>
+<text x="78" y="1466" font-size="16" class="mono" fill="#334155">base_url: TEXT?<title>联网 API 地址；本地项为 NULL</title></text>
+<text x="78" y="1491" font-size="16" class="mono" fill="#334155">api_key_encrypted: TEXT?<title>联网 API Key 的 DPAPI Base64 密文；本地项或无密钥时为 NULL</title></text>
+<text x="78" y="1516" font-size="16" class="mono" fill="#334155">model: TEXT<title>模型标识；内置项默认 BAAI/bge-small-zh-v1.5</title></text>
+<text x="78" y="1541" font-size="16" class="mono" fill="#334155">is_builtin: INTEGER = 0<title>1=随应用提供且不可删除，0=用户配置</title></text>
+<text x="78" y="1566" font-size="16" class="mono" fill="#334155">is_active: INTEGER = 0<title>1=当前使用项，0=未使用；全局最多一个 1</title></text>
+<text x="78" y="1591" font-size="13" fill="#64748b">关系：L07</text>
 </g>
-<g class="card" id="table-personas" data-table="personas"><rect x="60" y="206" width="580" height="441" rx="10" fill="white" stroke="#6366f1"/>
+<g class="card" id="table-personas" data-table="personas"><rect x="60" y="206" width="580" height="616" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M60 284 H640" stroke="#6366f1"/>
 <text x="78" y="235" font-size="20" font-weight="700" fill="#6366f1">人设 «table»</text>
 <text x="78" y="263" font-size="20" class="mono" fill="#0f172a">personas</text>
@@ -101,460 +105,559 @@
 <text x="78" y="559" font-size="16" class="mono" fill="#334155">is_active: INTEGER = 0<title>1=当前使用人设（全局唯一），0=非当前人设</title></text>
 <text x="78" y="584" font-size="16" class="mono" fill="#334155">is_builtin: INTEGER = 0<title>1=系统内置默认人设且不可删除，0=用户人设</title></text>
 <text x="78" y="609" font-size="16" class="mono" fill="#334155">expressions: TEXT?<title>分类表情库 JSON；未生成时为 NULL</title></text>
-<text x="78" y="634" font-size="13" fill="#64748b">关系：R02</text>
+<text x="78" y="634" font-size="16" class="mono" fill="#334155">created_at: TEXT?<title>创建UTC时间；升级前未知时间保留NULL</title></text>
+<text x="78" y="659" font-size="16" class="mono" fill="#334155">updated_at: TEXT?<title>最近编辑UTC时间；升级前未知时间保留NULL</title></text>
+<text x="78" y="684" font-size="16" class="mono" fill="#334155">chat_bubble_style: TEXT = &#x27;solid&#x27;<title>人设级消息气泡：solid默认；transparent透明；outline仅描边；frosted毛玻璃。</title></text>
+<text x="78" y="709" font-size="16" class="mono" fill="#334155">chat_user_text_color: TEXT?<title>用户正文颜色，#RRGGBB；NULL跟随主题。</title></text>
+<text x="78" y="734" font-size="16" class="mono" fill="#334155">chat_assistant_text_color: TEXT?<title>AI正文颜色，#RRGGBB；NULL跟随主题。</title></text>
+<text x="78" y="759" font-size="16" class="mono" fill="#334155">pet_image_enabled: INTEGER = 0<title>0颜文字/1图片模式，开启前要求正式初始图</title></text>
+<text x="78" y="784" font-size="16" class="mono" fill="#334155">pet_image_revision: INTEGER = 0<title>创作库版本，淘汰旧请求</title></text>
+<text x="78" y="809" font-size="13" fill="#64748b">关系：R02 / R44</text>
 </g>
-<g class="card" id="table-user_profiles" data-table="user_profiles"><rect x="1965" y="206" width="580" height="241" rx="10" fill="white" stroke="#6366f1"/>
-<path d="M1965 284 H2545" stroke="#6366f1"/>
-<text x="1983" y="235" font-size="20" font-weight="700" fill="#6366f1">用户设定 «table»</text>
-<text x="1983" y="263" font-size="20" class="mono" fill="#0f172a">user_profiles</text>
-<text x="1983" y="309" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="1983" y="334" font-size="16" class="mono" fill="#334155">name: TEXT<title>用户设定名称</title></text>
-<text x="1983" y="359" font-size="16" class="mono" fill="#334155">content: TEXT<title>用户设定正文</title></text>
-<text x="1983" y="384" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="1983" y="409" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
-<text x="1983" y="434" font-size="13" fill="#64748b">关系：R01</text>
+<g class="card" id="table-user_profiles" data-table="user_profiles"><rect x="60" y="922" width="580" height="241" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M60 1000 H640" stroke="#6366f1"/>
+<text x="78" y="951" font-size="20" font-weight="700" fill="#6366f1">用户设定 «table»</text>
+<text x="78" y="979" font-size="20" class="mono" fill="#0f172a">user_profiles</text>
+<text x="78" y="1025" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="78" y="1050" font-size="16" class="mono" fill="#334155">name: TEXT<title>用户设定名称</title></text>
+<text x="78" y="1075" font-size="16" class="mono" fill="#334155">content: TEXT<title>用户设定正文</title></text>
+<text x="78" y="1100" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="78" y="1125" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
+<text x="78" y="1150" font-size="13" fill="#64748b">关系：R01</text>
 </g>
-<g class="card" id="table-sessions" data-table="sessions"><rect x="695" y="206" width="580" height="461" rx="10" fill="white" stroke="#6366f1"/>
-<path d="M695 284 H1275" stroke="#6366f1"/>
-<text x="713" y="235" font-size="20" font-weight="700" fill="#6366f1">会话 «table»</text>
-<text x="713" y="263" font-size="20" class="mono" fill="#0f172a">sessions</text>
-<text x="713" y="309" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="713" y="334" font-size="16" class="mono" fill="#334155">FK persona_id: INTEGER<title>所属人设 -&gt; personas.id</title></text>
-<text x="713" y="359" font-size="16" class="mono" fill="#334155">FK user_profile_id: INTEGER?<title>绑定的用户设定 -&gt; user_profiles.id，可空</title></text>
-<text x="713" y="384" font-size="16" class="mono" fill="#334155">title: TEXT<title>会话标题，可 AI 生成、用户重命名</title></text>
-<text x="713" y="409" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="713" y="434" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
-<text x="713" y="459" font-size="16" class="mono" fill="#334155">memory_revision: INTEGER = 0<title>消息/记忆变更版本，事务提交前校验</title></text>
-<text x="713" y="484" font-size="16" class="mono" fill="#334155">craft_tier_1_used: INTEGER = 0<title>1=第一档制作机会已使用，0=尚未使用</title></text>
-<text x="713" y="509" font-size="16" class="mono" fill="#334155">craft_tier_2_used: INTEGER = 0<title>1=第二档制作机会已使用，0=尚未使用</title></text>
-<text x="713" y="534" font-size="16" class="mono" fill="#334155">craft_tier_3_used: INTEGER = 0<title>1=第三档制作机会已使用，0=尚未使用</title></text>
-<text x="713" y="559" font-size="16" class="mono" fill="#334155">intimacy: INTEGER = 0<title>当前会话亲密度，整数 0–999；上下限及整数类型由下方触发器共同保护</title></text>
-<text x="713" y="584" font-size="16" class="mono" fill="#334155">last_return_at: TEXT?<title>最近一次旅行回来时间 RFC3339，可空</title></text>
-<text x="713" y="609" font-size="16" class="mono" fill="#334155">travel_trigger_remaining_seconds: INTEGER?<title>下次出行剩余的有效在线秒数；出门中可空</title></text>
-<text x="713" y="634" font-size="13" fill="#64748b">关系：R01 / R02 / R03 / R04 / R06 / R08 / R10 / R11</text>
-<text x="713" y="654" font-size="13" fill="#64748b">　　　R15 / R22 / R24 / R27 / R31 / R34 / R37 / L01</text>
-</g>
-<g class="card" id="table-session_pet_states" data-table="session_pet_states"><rect x="1330" y="206" width="580" height="391" rx="10" fill="white" stroke="#6366f1"/>
+<g class="card" id="table-sessions" data-table="sessions"><rect x="1330" y="206" width="580" height="486" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M1330 284 H1910" stroke="#6366f1"/>
-<text x="1348" y="235" font-size="20" font-weight="700" fill="#6366f1">会话桌宠状态 «table»</text>
-<text x="1348" y="263" font-size="20" class="mono" fill="#0f172a">session_pet_states</text>
-<text x="1348" y="309" font-size="16" class="mono" fill="#334155">PK FK session_id: INTEGER<title>所属会话，主键兼外键；一会话一行，删除会话级联删除</title></text>
-<text x="1348" y="334" font-size="16" class="mono" fill="#334155">hunger_elapsed_ms: INTEGER = 0<title>距上次喂食累计的有效运行毫秒，离线及非当前时间不累计</title></text>
-<text x="1348" y="359" font-size="16" class="mono" fill="#334155">idle_elapsed_ms: INTEGER = 0<title>本周期无互动的有效运行毫秒，合法互动或醒来归零</title></text>
-<text x="1348" y="384" font-size="16" class="mono" fill="#334155">idle_branch: TEXT = &#x27;none&#x27;<title>none=尚未选择；bored=本周期无聊；sleeping=本周期睡眠</title></text>
-<text x="1348" y="409" font-size="16" class="mono" fill="#334155">sleep_until: TEXT?<title>睡眠结束 UTC RFC3339，仅 sleeping 非空；关闭与切换期间仍自然经过</title></text>
-<text x="1348" y="434" font-size="16" class="mono" fill="#334155">last_fed_at: TEXT?<title>最近实际喂食 UTC RFC3339；未知为 NULL，不用于推算离线计时</title></text>
-<text x="1348" y="459" font-size="16" class="mono" fill="#334155">last_interacted_at: TEXT?<title>最近实际互动 UTC RFC3339；未知为 NULL，点击不清饥饿</title></text>
-<text x="1348" y="484" font-size="16" class="mono" fill="#334155">state_revision: INTEGER = 0<title>本状态写入版本，拒绝重复或迟到提交，不影响 memory_revision</title></text>
-<text x="1348" y="509" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近状态提交 UTC RFC3339；初始值取会话创建时刻</title></text>
-<text x="1348" y="534" font-size="16" class="mono" fill="#334155">proactive_next_check_idle_ms: INTEGER?<title>下一次抽签对应的 idle_elapsed_ms；bored 时 NULL 表示本周期已成功发送，其他分支为 NULL</title></text>
-<text x="1348" y="559" font-size="16" class="mono" fill="#334155">last_proactive_sent_at: TEXT?<title>最近主动消息成功保存的 UTC RFC3339；用于同会话 30 分钟冷却，互动及删除消息不清除</title></text>
-<text x="1348" y="584" font-size="13" fill="#64748b">关系：R03</text>
+<text x="1348" y="235" font-size="20" font-weight="700" fill="#6366f1">会话 «table»</text>
+<text x="1348" y="263" font-size="20" class="mono" fill="#0f172a">sessions</text>
+<text x="1348" y="309" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="1348" y="334" font-size="16" class="mono" fill="#334155">FK persona_id: INTEGER<title>所属人设 -&gt; personas.id</title></text>
+<text x="1348" y="359" font-size="16" class="mono" fill="#334155">FK user_profile_id: INTEGER?<title>绑定的用户设定 -&gt; user_profiles.id，可空</title></text>
+<text x="1348" y="384" font-size="16" class="mono" fill="#334155">title: TEXT<title>会话标题，可 AI 生成、用户重命名</title></text>
+<text x="1348" y="409" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="1348" y="434" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
+<text x="1348" y="459" font-size="16" class="mono" fill="#334155">memory_revision: INTEGER = 0<title>消息/记忆变更版本，事务提交前校验</title></text>
+<text x="1348" y="484" font-size="16" class="mono" fill="#334155">craft_tier_1_used: INTEGER = 0<title>1=第一档制作机会已使用，0=尚未使用</title></text>
+<text x="1348" y="509" font-size="16" class="mono" fill="#334155">craft_tier_2_used: INTEGER = 0<title>1=第二档制作机会已使用，0=尚未使用</title></text>
+<text x="1348" y="534" font-size="16" class="mono" fill="#334155">craft_tier_3_used: INTEGER = 0<title>1=第三档制作机会已使用，0=尚未使用</title></text>
+<text x="1348" y="559" font-size="16" class="mono" fill="#334155">intimacy: INTEGER = 0<title>当前会话亲密度，整数 0–999；上下限及整数类型由下方触发器共同保护</title></text>
+<text x="1348" y="584" font-size="16" class="mono" fill="#334155">last_return_at: TEXT?<title>最近一次旅行回来时间 RFC3339，可空</title></text>
+<text x="1348" y="609" font-size="16" class="mono" fill="#334155">travel_trigger_remaining_seconds: INTEGER?<title>下次出行剩余的有效在线秒数；出门中可空</title></text>
+<text x="1348" y="634" font-size="16" class="mono" fill="#334155">is_pinned: INTEGER = 0<title>会话列表置顶：0=普通，1=置顶；不改变更新时间或当前会话</title></text>
+<text x="1348" y="659" font-size="13" fill="#64748b">关系：R01 / R02 / R03 / R04 / R06 / R08 / R10 / R11</text>
+<text x="1348" y="679" font-size="13" fill="#64748b">　　　R15 / R22 / R24 / R27 / R31 / R34 / R37 / L01</text>
 </g>
-<g class="card" id="table-chat_rounds" data-table="chat_rounds"><rect x="60" y="1264" width="580" height="266" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M60 1342 H640" stroke="#0284c7"/>
-<text x="78" y="1293" font-size="20" font-weight="700" fill="#0284c7">聊天回合 «table»</text>
-<text x="78" y="1321" font-size="20" class="mono" fill="#0f172a">chat_rounds</text>
-<text x="78" y="1367" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>聊天回合自增主键</title></text>
-<text x="78" y="1392" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="78" y="1417" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;pending&#x27;<title>pending=只有用户消息、等待 AI；completed=AI 正常回复完成；interrupted=回复被中断或只保存部分回复，不生成短期记忆；pending 仅为新回合默认值</title></text>
-<text x="78" y="1442" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>用户消息落库并创建回合的时间 UTC RFC3339</title></text>
-<text x="78" y="1467" font-size="16" class="mono" fill="#334155">completed_at: TEXT?<title>进入 completed/interrupted 的时间；pending 时为 NULL</title></text>
-<text x="78" y="1492" font-size="16" class="mono" fill="#334155">stop_reason: TEXT?<title>仅 interrupted 非空：length_limit=输出长度上限；user_cancelled=用户暂停或编辑后不再续写；timeout=首响应/无进展/整轮超时；repetition=持续重复；invalid_encoding=非法编码；tool_limit=工具上限或无进展；provider_error=供应商错误；context_changed=上下文切换；app_shutdown=退出；recovered_after_restart=启动恢复未完成回合；unknown=旧库停止原因未知；pending/completed 为 NULL</title></text>
-<text x="78" y="1517" font-size="13" fill="#64748b">关系：R04 / R05 / R07 / R09</text>
+<g class="card" id="table-session_pet_states" data-table="session_pet_states"><rect x="1965" y="206" width="580" height="391" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M1965 284 H2545" stroke="#6366f1"/>
+<text x="1983" y="235" font-size="20" font-weight="700" fill="#6366f1">会话桌宠状态 «table»</text>
+<text x="1983" y="263" font-size="20" class="mono" fill="#0f172a">session_pet_states</text>
+<text x="1983" y="309" font-size="16" class="mono" fill="#334155">PK FK session_id: INTEGER<title>所属会话，主键兼外键；一会话一行，删除会话级联删除</title></text>
+<text x="1983" y="334" font-size="16" class="mono" fill="#334155">hunger_elapsed_ms: INTEGER = 0<title>距上次喂食累计的有效运行毫秒，离线及非当前时间不累计</title></text>
+<text x="1983" y="359" font-size="16" class="mono" fill="#334155">idle_elapsed_ms: INTEGER = 0<title>本周期无互动的有效运行毫秒，合法互动或醒来归零</title></text>
+<text x="1983" y="384" font-size="16" class="mono" fill="#334155">idle_branch: TEXT = &#x27;none&#x27;<title>none=尚未选择；bored=本周期无聊；sleeping=本周期睡眠</title></text>
+<text x="1983" y="409" font-size="16" class="mono" fill="#334155">sleep_until: TEXT?<title>睡眠结束 UTC RFC3339，仅 sleeping 非空；关闭与切换期间仍自然经过</title></text>
+<text x="1983" y="434" font-size="16" class="mono" fill="#334155">last_fed_at: TEXT?<title>最近实际喂食 UTC RFC3339；未知为 NULL，不用于推算离线计时</title></text>
+<text x="1983" y="459" font-size="16" class="mono" fill="#334155">last_interacted_at: TEXT?<title>最近实际互动 UTC RFC3339；未知为 NULL，点击不清饥饿</title></text>
+<text x="1983" y="484" font-size="16" class="mono" fill="#334155">state_revision: INTEGER = 0<title>本状态写入版本，拒绝重复或迟到提交，不影响 memory_revision</title></text>
+<text x="1983" y="509" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近状态提交 UTC RFC3339；初始值取会话创建时刻</title></text>
+<text x="1983" y="534" font-size="16" class="mono" fill="#334155">proactive_next_check_idle_ms: INTEGER?<title>下一次抽签对应的 idle_elapsed_ms；bored 时 NULL 表示本周期已成功发送，其他分支为 NULL</title></text>
+<text x="1983" y="559" font-size="16" class="mono" fill="#334155">last_proactive_sent_at: TEXT?<title>最近主动消息成功保存的 UTC RFC3339；用于同会话 30 分钟冷却，互动及删除消息不清除</title></text>
+<text x="1983" y="584" font-size="13" fill="#64748b">关系：R03</text>
 </g>
-<g class="card" id="table-messages" data-table="messages"><rect x="695" y="1264" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M695 1342 H1275" stroke="#0284c7"/>
-<text x="713" y="1293" font-size="20" font-weight="700" fill="#0284c7">消息原文 «table»</text>
-<text x="713" y="1321" font-size="20" class="mono" fill="#0f172a">messages</text>
-<text x="713" y="1367" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="713" y="1392" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="713" y="1417" font-size="16" class="mono" fill="#334155">FK round_id: INTEGER?<title>所属完整聊天轮次；主动消息为 NULL</title></text>
-<text x="713" y="1442" font-size="16" class="mono" fill="#334155">role: TEXT<title>user=用户消息，assistant=AI 消息</title></text>
-<text x="713" y="1467" font-size="16" class="mono" fill="#334155">content: TEXT<title>消息正文</title></text>
-<text x="713" y="1492" font-size="16" class="mono" fill="#334155">expression: TEXT?<title>AI 回复时使用的颜文字；用户消息为 NULL</title></text>
-<text x="713" y="1517" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="713" y="1542" font-size="13" fill="#64748b">关系：R05 / R06</text>
+<g class="card" id="table-chat_rounds" data-table="chat_rounds"><rect x="60" y="1760" width="580" height="266" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M60 1838 H640" stroke="#0284c7"/>
+<text x="78" y="1789" font-size="20" font-weight="700" fill="#0284c7">聊天回合 «table»</text>
+<text x="78" y="1817" font-size="20" class="mono" fill="#0f172a">chat_rounds</text>
+<text x="78" y="1863" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>聊天回合自增主键</title></text>
+<text x="78" y="1888" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="78" y="1913" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;pending&#x27;<title>pending=只有用户消息、等待 AI；completed=AI 正常回复完成；interrupted=回复被中断或只保存部分回复，不生成短期记忆；pending 仅为新回合默认值</title></text>
+<text x="78" y="1938" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>用户消息落库并创建回合的时间 UTC RFC3339</title></text>
+<text x="78" y="1963" font-size="16" class="mono" fill="#334155">completed_at: TEXT?<title>进入 completed/interrupted 的时间；pending 时为 NULL</title></text>
+<text x="78" y="1988" font-size="16" class="mono" fill="#334155">stop_reason: TEXT?<title>仅 interrupted 非空：length_limit=输出长度上限；user_cancelled=用户暂停或编辑后不再续写；timeout=首响应/无进展/整轮超时；repetition=持续重复；invalid_encoding=非法编码；tool_limit=工具上限或无进展；provider_error=供应商错误；context_changed=上下文切换；app_shutdown=退出；recovered_after_restart=启动恢复未完成回合；unknown=旧库停止原因未知；pending/completed 为 NULL</title></text>
+<text x="78" y="2013" font-size="13" fill="#64748b">关系：R04 / R05 / R07 / R09</text>
 </g>
-<g class="card" id="table-settings" data-table="settings"><rect x="1330" y="767" width="580" height="166" rx="10" fill="white" stroke="#6366f1"/>
-<path d="M1330 845 H1910" stroke="#6366f1"/>
-<text x="1348" y="796" font-size="20" font-weight="700" fill="#6366f1">全局设置 «table»</text>
-<text x="1348" y="824" font-size="20" class="mono" fill="#0f172a">settings</text>
-<text x="1348" y="870" font-size="16" class="mono" fill="#334155">PK key: TEXT<title>全局设置键；只允许本文件上方及《数据库与持久化设计》2.7 节登记的 V1 键名</title></text>
-<text x="1348" y="895" font-size="16" class="mono" fill="#334155">value: TEXT<title>设置值；按登记键解析为整数、枚举、HTTPS URL、专用版本化 JSON 或 DPAPI Base64 密文</title></text>
-<text x="1348" y="920" font-size="13" fill="#64748b">关系：L01</text>
+<g class="card" id="table-messages" data-table="messages"><rect x="695" y="1760" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M695 1838 H1275" stroke="#0284c7"/>
+<text x="713" y="1789" font-size="20" font-weight="700" fill="#0284c7">消息原文 «table»</text>
+<text x="713" y="1817" font-size="20" class="mono" fill="#0f172a">messages</text>
+<text x="713" y="1863" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="713" y="1888" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="713" y="1913" font-size="16" class="mono" fill="#334155">FK round_id: INTEGER?<title>所属完整聊天轮次；主动消息为 NULL</title></text>
+<text x="713" y="1938" font-size="16" class="mono" fill="#334155">role: TEXT<title>user=用户消息，assistant=AI 消息</title></text>
+<text x="713" y="1963" font-size="16" class="mono" fill="#334155">content: TEXT<title>消息正文</title></text>
+<text x="713" y="1988" font-size="16" class="mono" fill="#334155">expression: TEXT?<title>AI 回复时使用的颜文字；用户消息为 NULL</title></text>
+<text x="713" y="2013" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="713" y="2038" font-size="13" fill="#64748b">关系：R05 / R06 / R41</text>
 </g>
-<g class="card" id="table-short_memories" data-table="short_memories"><rect x="1330" y="1264" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M1330 1342 H1910" stroke="#0284c7"/>
-<text x="1348" y="1293" font-size="20" font-weight="700" fill="#0284c7">短期记忆 «table»</text>
-<text x="1348" y="1321" font-size="20" class="mono" fill="#0f172a">short_memories</text>
-<text x="1348" y="1367" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>短期记忆自增主键</title></text>
-<text x="1348" y="1392" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="1348" y="1417" font-size="16" class="mono" fill="#334155">FK round_id: INTEGER<title>来源完整回合 -&gt; chat_rounds.id；一个回合最多一条短期记忆</title></text>
-<text x="1348" y="1442" font-size="16" class="mono" fill="#334155">content: TEXT<title>该轮用户消息与 AI 回复的中性事实概括</title></text>
-<text x="1348" y="1467" font-size="16" class="mono" fill="#334155">integration_state: TEXT = &#x27;pending&#x27;<title>pending=尚未成为长期记忆来源；integrated=已被 long_memory_sources 引用；pending 仅为新短期记忆默认值</title></text>
-<text x="1348" y="1492" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
-<text x="1348" y="1517" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改或重新整合后的更新时间 UTC RFC3339</title></text>
-<text x="1348" y="1542" font-size="13" fill="#64748b">关系：R07 / R08 / R13</text>
+<g class="card" id="table-settings" data-table="settings"><rect x="695" y="1288" width="580" height="166" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M695 1366 H1275" stroke="#6366f1"/>
+<text x="713" y="1317" font-size="20" font-weight="700" fill="#6366f1">全局设置 «table»</text>
+<text x="713" y="1345" font-size="20" class="mono" fill="#0f172a">settings</text>
+<text x="713" y="1391" font-size="16" class="mono" fill="#334155">PK key: TEXT<title>全局设置键；只允许本文件上方及《数据库与持久化设计》2.7 节登记的 V1 键名</title></text>
+<text x="713" y="1416" font-size="16" class="mono" fill="#334155">value: TEXT<title>设置值；按登记键解析为整数、枚举、HTTPS URL、专用版本化 JSON 或 DPAPI Base64 密文</title></text>
+<text x="713" y="1441" font-size="13" fill="#64748b">关系：L01</text>
 </g>
-<g class="card" id="table-long_memories" data-table="long_memories"><rect x="1965" y="1264" width="580" height="316" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M1965 1342 H2545" stroke="#0284c7"/>
-<text x="1983" y="1293" font-size="20" font-weight="700" fill="#0284c7">长期记忆 «table»</text>
-<text x="1983" y="1321" font-size="20" class="mono" fill="#0f172a">long_memories</text>
-<text x="1983" y="1367" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>长期记忆自增主键</title></text>
-<text x="1983" y="1392" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="1983" y="1417" font-size="16" class="mono" fill="#334155">title: TEXT<title>用于列表和检索的一句简短中性标题</title></text>
-<text x="1983" y="1442" font-size="16" class="mono" fill="#334155">content: TEXT<title>由连续 k 条短期记忆整合出的中性事实正文</title></text>
-<text x="1983" y="1467" font-size="16" class="mono" fill="#334155">source_count: INTEGER<title>实际整合的短期记忆数量，正常等于生成时的 k</title></text>
-<text x="1983" y="1492" font-size="16" class="mono" fill="#334155">FK activated_by_round_id: INTEGER<title>触发本条长期记忆生成的第 k+1 回合 -&gt; chat_rounds.id</title></text>
-<text x="1983" y="1517" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
-<text x="1983" y="1542" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改或重新整合后的更新时间 UTC RFC3339</title></text>
-<text x="1983" y="1567" font-size="13" fill="#64748b">关系：R09 / R10 / R12 / R14 / L06</text>
+<g class="card" id="table-short_memories" data-table="short_memories"><rect x="1965" y="1760" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M1965 1838 H2545" stroke="#0284c7"/>
+<text x="1983" y="1789" font-size="20" font-weight="700" fill="#0284c7">短期记忆 «table»</text>
+<text x="1983" y="1817" font-size="20" class="mono" fill="#0f172a">short_memories</text>
+<text x="1983" y="1863" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>短期记忆自增主键</title></text>
+<text x="1983" y="1888" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="1983" y="1913" font-size="16" class="mono" fill="#334155">FK round_id: INTEGER<title>来源完整回合 -&gt; chat_rounds.id；一个回合最多一条短期记忆</title></text>
+<text x="1983" y="1938" font-size="16" class="mono" fill="#334155">content: TEXT<title>该轮用户消息与 AI 回复的中性事实概括</title></text>
+<text x="1983" y="1963" font-size="16" class="mono" fill="#334155">integration_state: TEXT = &#x27;pending&#x27;<title>pending=尚未成为长期记忆来源；integrated=已被 long_memory_sources 引用；pending 仅为新短期记忆默认值</title></text>
+<text x="1983" y="1988" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
+<text x="1983" y="2013" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改或重新整合后的更新时间 UTC RFC3339</title></text>
+<text x="1983" y="2038" font-size="13" fill="#64748b">关系：R07 / R08 / R13</text>
 </g>
-<g class="card" id="table-long_memories_fts" data-table="long_memories_fts"><rect x="1330" y="1680" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M1330 1758 H1910" stroke="#0284c7"/>
-<text x="1348" y="1709" font-size="20" font-weight="700" fill="#0284c7">全文检索索引 «FTS5»</text>
-<text x="1348" y="1737" font-size="20" class="mono" fill="#0f172a">long_memories_fts</text>
-<text x="1348" y="1783" font-size="16" class="mono" fill="#334155">title: FTS?<title>long_memories.title 的可重建全文索引列</title></text>
-<text x="1348" y="1808" font-size="16" class="mono" fill="#334155">content: FTS?<title>long_memories.content 的可重建全文索引列</title></text>
-<text x="1348" y="1833" font-size="16" class="mono" fill="#334155">session_id: FTS?<title>所属会话筛选值，不参与分词索引</title></text>
-<text x="1348" y="1858" font-size="13" fill="#64748b">关系：L06</text>
+<g class="card" id="table-long_memories" data-table="long_memories"><rect x="60" y="2151" width="580" height="316" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M60 2229 H640" stroke="#0284c7"/>
+<text x="78" y="2180" font-size="20" font-weight="700" fill="#0284c7">长期记忆 «table»</text>
+<text x="78" y="2208" font-size="20" class="mono" fill="#0f172a">long_memories</text>
+<text x="78" y="2254" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>长期记忆自增主键</title></text>
+<text x="78" y="2279" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="78" y="2304" font-size="16" class="mono" fill="#334155">title: TEXT<title>用于列表和检索的一句简短中性标题</title></text>
+<text x="78" y="2329" font-size="16" class="mono" fill="#334155">content: TEXT<title>由连续 k 条短期记忆整合出的中性事实正文</title></text>
+<text x="78" y="2354" font-size="16" class="mono" fill="#334155">source_count: INTEGER<title>实际整合的短期记忆数量，正常等于生成时的 k</title></text>
+<text x="78" y="2379" font-size="16" class="mono" fill="#334155">FK activated_by_round_id: INTEGER<title>触发本条长期记忆生成的第 k+1 回合 -&gt; chat_rounds.id</title></text>
+<text x="78" y="2404" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
+<text x="78" y="2429" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改或重新整合后的更新时间 UTC RFC3339</title></text>
+<text x="78" y="2454" font-size="13" fill="#64748b">关系：R09 / R10 / R12 / R14 / L06</text>
 </g>
-<g class="card" id="table-long_memory_embeddings" data-table="long_memory_embeddings"><rect x="695" y="1680" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M695 1758 H1275" stroke="#0284c7"/>
-<text x="713" y="1709" font-size="20" font-weight="700" fill="#0284c7">向量缓存 «table»</text>
-<text x="713" y="1737" font-size="20" class="mono" fill="#0f172a">long_memory_embeddings</text>
-<text x="713" y="1783" font-size="16" class="mono" fill="#334155">PK FK long_memory_id: INTEGER<title>对应长期记忆 -&gt; long_memories.id；每条长期记忆一份当前向量</title></text>
-<text x="713" y="1808" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id，便于按会话检索</title></text>
-<text x="713" y="1833" font-size="16" class="mono" fill="#334155">model_key: TEXT<title>local:&lt;manifest SHA256&gt;:&lt;维度&gt; 或 online:&lt;端点+模型 SHA256&gt;:&lt;维度&gt;；不含密钥</title></text>
-<text x="713" y="1858" font-size="16" class="mono" fill="#334155">dimensions: INTEGER<title>向量维度</title></text>
-<text x="713" y="1883" font-size="16" class="mono" fill="#334155">vector: BLOB<title>归一化 float32 向量二进制，字节数必须为 dimensions × 4</title></text>
-<text x="713" y="1908" font-size="16" class="mono" fill="#334155">content_hash: TEXT<title>标题与正文内容哈希，用于判断向量是否需要重建</title></text>
-<text x="713" y="1933" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近生成向量的时间 UTC RFC3339</title></text>
-<text x="713" y="1958" font-size="13" fill="#64748b">关系：R11 / R12 / L07</text>
+<g class="card" id="table-long_memories_fts" data-table="long_memories_fts"><rect x="1965" y="2151" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M1965 2229 H2545" stroke="#0284c7"/>
+<text x="1983" y="2180" font-size="20" font-weight="700" fill="#0284c7">全文检索索引 «FTS5»</text>
+<text x="1983" y="2208" font-size="20" class="mono" fill="#0f172a">long_memories_fts</text>
+<text x="1983" y="2254" font-size="16" class="mono" fill="#334155">title: FTS?<title>long_memories.title 的可重建全文索引列</title></text>
+<text x="1983" y="2279" font-size="16" class="mono" fill="#334155">content: FTS?<title>long_memories.content 的可重建全文索引列</title></text>
+<text x="1983" y="2304" font-size="16" class="mono" fill="#334155">session_id: FTS?<title>所属会话筛选值，不参与分词索引</title></text>
+<text x="1983" y="2329" font-size="13" fill="#64748b">关系：L06</text>
 </g>
-<g class="card" id="table-long_memory_sources" data-table="long_memory_sources"><rect x="60" y="1680" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M60 1758 H640" stroke="#0284c7"/>
-<text x="78" y="1709" font-size="20" font-weight="700" fill="#0284c7">长期记忆来源 «table»</text>
-<text x="78" y="1737" font-size="20" class="mono" fill="#0f172a">long_memory_sources</text>
-<text x="78" y="1783" font-size="16" class="mono" fill="#334155">PK FK long_memory_id: INTEGER<title>目标长期记忆 -&gt; long_memories.id</title></text>
-<text x="78" y="1808" font-size="16" class="mono" fill="#334155">PK FK short_memory_id: INTEGER<title>来源短期记忆 -&gt; short_memories.id；每条短期记忆最多被整合一次</title></text>
-<text x="78" y="1833" font-size="16" class="mono" fill="#334155">source_order: INTEGER<title>该短期记忆在本次 k 条来源中的顺序；最大值对应长期记忆的实际覆盖边界</title></text>
-<text x="78" y="1858" font-size="13" fill="#64748b">关系：R13 / R14</text>
+<g class="card" id="table-long_memory_embeddings" data-table="long_memory_embeddings"><rect x="1330" y="2151" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M1330 2229 H1910" stroke="#0284c7"/>
+<text x="1348" y="2180" font-size="20" font-weight="700" fill="#0284c7">向量缓存 «table»</text>
+<text x="1348" y="2208" font-size="20" class="mono" fill="#0f172a">long_memory_embeddings</text>
+<text x="1348" y="2254" font-size="16" class="mono" fill="#334155">PK FK long_memory_id: INTEGER<title>对应长期记忆 -&gt; long_memories.id；每条长期记忆一份当前向量</title></text>
+<text x="1348" y="2279" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id，便于按会话检索</title></text>
+<text x="1348" y="2304" font-size="16" class="mono" fill="#334155">model_key: TEXT<title>local:&lt;manifest SHA256&gt;:&lt;维度&gt; 或 online:&lt;端点+模型 SHA256&gt;:&lt;维度&gt;；不含密钥</title></text>
+<text x="1348" y="2329" font-size="16" class="mono" fill="#334155">dimensions: INTEGER<title>向量维度</title></text>
+<text x="1348" y="2354" font-size="16" class="mono" fill="#334155">vector: BLOB<title>归一化 float32 向量二进制，字节数必须为 dimensions × 4</title></text>
+<text x="1348" y="2379" font-size="16" class="mono" fill="#334155">content_hash: TEXT<title>标题与正文内容哈希，用于判断向量是否需要重建</title></text>
+<text x="1348" y="2404" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近生成向量的时间 UTC RFC3339</title></text>
+<text x="1348" y="2429" font-size="13" fill="#64748b">关系：R11 / R12 / L07</text>
 </g>
-<g class="card" id="table-notebooks" data-table="notebooks"><rect x="1965" y="1680" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
-<path d="M1965 1758 H2545" stroke="#0284c7"/>
-<text x="1983" y="1709" font-size="20" font-weight="700" fill="#0284c7">会话记事本 «table»</text>
-<text x="1983" y="1737" font-size="20" class="mono" fill="#0f172a">notebooks</text>
-<text x="1983" y="1783" font-size="16" class="mono" fill="#334155">PK FK session_id: INTEGER<title>所属会话 -&gt; sessions.id（一个会话一行）</title></text>
-<text x="1983" y="1808" font-size="16" class="mono" fill="#334155">content: TEXT<title>记事本全文；notebook_max_chars 是 AI 维护软限制，数据库不截断、不拒绝超限内容</title></text>
-<text x="1983" y="1833" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
-<text x="1983" y="1858" font-size="13" fill="#64748b">关系：R15</text>
+<g class="card" id="table-long_memory_sources" data-table="long_memory_sources"><rect x="695" y="2151" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M695 2229 H1275" stroke="#0284c7"/>
+<text x="713" y="2180" font-size="20" font-weight="700" fill="#0284c7">长期记忆来源 «table»</text>
+<text x="713" y="2208" font-size="20" class="mono" fill="#0f172a">long_memory_sources</text>
+<text x="713" y="2254" font-size="16" class="mono" fill="#334155">PK FK long_memory_id: INTEGER<title>目标长期记忆 -&gt; long_memories.id</title></text>
+<text x="713" y="2279" font-size="16" class="mono" fill="#334155">PK FK short_memory_id: INTEGER<title>来源短期记忆 -&gt; short_memories.id；每条短期记忆最多被整合一次</title></text>
+<text x="713" y="2304" font-size="16" class="mono" fill="#334155">source_order: INTEGER<title>该短期记忆在本次 k 条来源中的顺序；最大值对应长期记忆的实际覆盖边界</title></text>
+<text x="713" y="2329" font-size="13" fill="#64748b">关系：R13 / R14</text>
 </g>
-<g class="card" id="table-reminders" data-table="reminders"><rect x="60" y="4548" width="580" height="341" rx="10" fill="white" stroke="#db2777"/>
-<path d="M60 4626 H640" stroke="#db2777"/>
-<text x="78" y="4577" font-size="20" font-weight="700" fill="#db2777">提醒规则 «table»</text>
-<text x="78" y="4605" font-size="20" class="mono" fill="#0f172a">reminders</text>
-<text x="78" y="4651" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="78" y="4676" font-size="16" class="mono" fill="#334155">name: TEXT<title>提醒名，用于气泡与离线过期汇总</title></text>
-<text x="78" y="4701" font-size="16" class="mono" fill="#334155">kind: TEXT<title>once=一次性，daily=每天，weekly=每周，monthly=每月</title></text>
-<text x="78" y="4726" font-size="16" class="mono" fill="#334155">schedule: TEXT?<title>重复规则 JSON；一次性为 NULL</title></text>
-<text x="78" y="4751" font-size="16" class="mono" fill="#334155">content: TEXT<title>提醒内容</title></text>
-<text x="78" y="4776" font-size="16" class="mono" fill="#334155">status: TEXT<title>pending=规则仍待触发，done=一次性提醒已完成，expired=一次性提醒已过期；重复规则始终 pending</title></text>
-<text x="78" y="4801" font-size="16" class="mono" fill="#334155">fire_at: TEXT?<title>下次触发时间 RFC3339</title></text>
-<text x="78" y="4826" font-size="16" class="mono" fill="#334155">source: TEXT<title>chat=由聊天创建，manual=用户在提醒页手动创建</title></text>
-<text x="78" y="4851" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="78" y="4876" font-size="13" fill="#64748b">关系：R16</text>
+<g class="card" id="table-notebooks" data-table="notebooks"><rect x="60" y="2567" width="580" height="191" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M60 2645 H640" stroke="#0284c7"/>
+<text x="78" y="2596" font-size="20" font-weight="700" fill="#0284c7">会话记事本 «table»</text>
+<text x="78" y="2624" font-size="20" class="mono" fill="#0f172a">notebooks</text>
+<text x="78" y="2670" font-size="16" class="mono" fill="#334155">PK FK session_id: INTEGER<title>所属会话 -&gt; sessions.id（一个会话一行）</title></text>
+<text x="78" y="2695" font-size="16" class="mono" fill="#334155">content: TEXT<title>记事本全文；notebook_max_chars 是 AI 维护软限制，数据库不截断、不拒绝超限内容</title></text>
+<text x="78" y="2720" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
+<text x="78" y="2745" font-size="13" fill="#64748b">关系：R15</text>
 </g>
-<g class="card" id="table-reminder_occurrences" data-table="reminder_occurrences"><rect x="695" y="4548" width="580" height="291" rx="10" fill="white" stroke="#db2777"/>
-<path d="M695 4626 H1275" stroke="#db2777"/>
-<text x="713" y="4577" font-size="20" font-weight="700" fill="#db2777">提醒触发记录 «table»</text>
-<text x="713" y="4605" font-size="20" class="mono" fill="#0f172a">reminder_occurrences</text>
-<text x="713" y="4651" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>单次提醒触发记录自增主键</title></text>
-<text x="713" y="4676" font-size="16" class="mono" fill="#334155">FK reminder_id: INTEGER<title>所属提醒规则 -&gt; reminders.id</title></text>
-<text x="713" y="4701" font-size="16" class="mono" fill="#334155">scheduled_at: TEXT<title>本次原定触发时间 UTC RFC3339</title></text>
-<text x="713" y="4726" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;pending&#x27;<title>pending=本次未处理；done=用户完成本次；expired=本次已过期；pending 仅为新触发记录默认值</title></text>
-<text x="713" y="4751" font-size="16" class="mono" fill="#334155">delivery_state: TEXT<title>missed=关机期间错过待汇总；queued=在线到期待展示；shown=已展示或已纳入离线汇总</title></text>
-<text x="713" y="4776" font-size="16" class="mono" fill="#334155">completed_at: TEXT?<title>本次进入 done/expired 的时间；pending 时为 NULL</title></text>
-<text x="713" y="4801" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>触发记录创建时间 UTC RFC3339</title></text>
-<text x="713" y="4826" font-size="13" fill="#64748b">关系：R16</text>
+<g class="card" id="table-reminders" data-table="reminders"><rect x="60" y="5335" width="580" height="341" rx="10" fill="white" stroke="#db2777"/>
+<path d="M60 5413 H640" stroke="#db2777"/>
+<text x="78" y="5364" font-size="20" font-weight="700" fill="#db2777">提醒规则 «table»</text>
+<text x="78" y="5392" font-size="20" class="mono" fill="#0f172a">reminders</text>
+<text x="78" y="5438" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="78" y="5463" font-size="16" class="mono" fill="#334155">name: TEXT<title>提醒名，用于气泡与离线过期汇总</title></text>
+<text x="78" y="5488" font-size="16" class="mono" fill="#334155">kind: TEXT<title>once=一次性，daily=每天，weekly=每周，monthly=每月</title></text>
+<text x="78" y="5513" font-size="16" class="mono" fill="#334155">schedule: TEXT?<title>重复规则 JSON；一次性为 NULL</title></text>
+<text x="78" y="5538" font-size="16" class="mono" fill="#334155">content: TEXT<title>提醒内容</title></text>
+<text x="78" y="5563" font-size="16" class="mono" fill="#334155">status: TEXT<title>pending=规则仍待触发，done=一次性提醒已完成，expired=一次性提醒已过期；重复规则始终 pending</title></text>
+<text x="78" y="5588" font-size="16" class="mono" fill="#334155">fire_at: TEXT?<title>下次触发时间 RFC3339</title></text>
+<text x="78" y="5613" font-size="16" class="mono" fill="#334155">source: TEXT<title>chat=由聊天创建，manual=用户在提醒页手动创建</title></text>
+<text x="78" y="5638" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="78" y="5663" font-size="13" fill="#64748b">关系：R16</text>
 </g>
-<g class="card" id="table-user_state" data-table="user_state"><rect x="1330" y="4001" width="580" height="191" rx="10" fill="white" stroke="#d97706"/>
-<path d="M1330 4079 H1910" stroke="#d97706"/>
-<text x="1348" y="4030" font-size="20" font-weight="700" fill="#d97706">全局钱包 «table»</text>
-<text x="1348" y="4058" font-size="20" class="mono" fill="#0f172a">user_state</text>
-<text x="1348" y="4104" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>固定单行，主键为 1</title></text>
-<text x="1348" y="4129" font-size="16" class="mono" fill="#334155">coins: INTEGER = 0<title>当前喵币余额</title></text>
-<text x="1348" y="4154" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
-<text x="1348" y="4179" font-size="13" fill="#64748b">关系：L04</text>
+<g class="card" id="table-reminder_occurrences" data-table="reminder_occurrences"><rect x="695" y="5335" width="580" height="291" rx="10" fill="white" stroke="#db2777"/>
+<path d="M695 5413 H1275" stroke="#db2777"/>
+<text x="713" y="5364" font-size="20" font-weight="700" fill="#db2777">提醒触发记录 «table»</text>
+<text x="713" y="5392" font-size="20" class="mono" fill="#0f172a">reminder_occurrences</text>
+<text x="713" y="5438" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>单次提醒触发记录自增主键</title></text>
+<text x="713" y="5463" font-size="16" class="mono" fill="#334155">FK reminder_id: INTEGER<title>所属提醒规则 -&gt; reminders.id</title></text>
+<text x="713" y="5488" font-size="16" class="mono" fill="#334155">scheduled_at: TEXT<title>本次原定触发时间 UTC RFC3339</title></text>
+<text x="713" y="5513" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;pending&#x27;<title>pending=本次未处理；done=用户完成本次；expired=本次已过期；pending 仅为新触发记录默认值</title></text>
+<text x="713" y="5538" font-size="16" class="mono" fill="#334155">delivery_state: TEXT<title>missed=关机期间错过待汇总；queued=在线到期待展示；shown=已展示或已纳入离线汇总</title></text>
+<text x="713" y="5563" font-size="16" class="mono" fill="#334155">completed_at: TEXT?<title>本次进入 done/expired 的时间；pending 时为 NULL</title></text>
+<text x="713" y="5588" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>触发记录创建时间 UTC RFC3339</title></text>
+<text x="713" y="5613" font-size="13" fill="#64748b">关系：R16 / R42</text>
 </g>
-<g class="card" id="table-game_plugins" data-table="game_plugins"><rect x="60" y="3310" width="580" height="591" rx="10" fill="white" stroke="#d97706"/>
-<path d="M60 3388 H640" stroke="#d97706"/>
-<text x="78" y="3339" font-size="20" font-weight="700" fill="#d97706">插件登记 «table»</text>
-<text x="78" y="3367" font-size="20" class="mono" fill="#0f172a">game_plugins</text>
-<text x="78" y="3413" font-size="16" class="mono" fill="#334155">PK plugin_id: TEXT?<title>manifest 中稳定且全局唯一的插件 ID</title></text>
-<text x="78" y="3438" font-size="16" class="mono" fill="#334155">name: TEXT<title>当前安装版本的插件显示名称</title></text>
-<text x="78" y="3463" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>当前安装版本的插件简介</title></text>
-<text x="78" y="3488" font-size="16" class="mono" fill="#334155">author: TEXT<title>manifest 声明的作者</title></text>
-<text x="78" y="3513" font-size="16" class="mono" fill="#334155">installed_version: TEXT<title>当前已安装插件版本</title></text>
-<text x="78" y="3538" font-size="16" class="mono" fill="#334155">api_version: TEXT<title>插件要求的颜喵宿主 API 版本</title></text>
-<text x="78" y="3563" font-size="16" class="mono" fill="#334155">storage_version: INTEGER = 1<title>插件私有存档结构版本</title></text>
-<text x="78" y="3588" font-size="16" class="mono" fill="#334155">source_type: TEXT<title>bundled=便携版自带，local=用户安装</title></text>
-<text x="78" y="3613" font-size="16" class="mono" fill="#334155">package_path: TEXT?<title>相对插件目录的路径；缺包时为 NULL</title></text>
-<text x="78" y="3638" font-size="16" class="mono" fill="#334155">package_sha256: TEXT<title>当前插件包 SHA-256，用于完整性和版本识别</title></text>
-<text x="78" y="3663" font-size="16" class="mono" fill="#334155">repository: TEXT?<title>manifest 提供的 GitHub 仓库地址，可空</title></text>
-<text x="78" y="3688" font-size="16" class="mono" fill="#334155">homepage: TEXT?<title>项目主页，可空</title></text>
-<text x="78" y="3713" font-size="16" class="mono" fill="#334155">release_page: TEXT?<title>Release 下载页，可空</title></text>
-<text x="78" y="3738" font-size="16" class="mono" fill="#334155">network_origins_json: TEXT = &#x27;[]&#x27;<title>manifest 声明的 HTTPS origin 列表；由 Rust 校验 JSON、格式和数量</title></text>
-<text x="78" y="3763" font-size="16" class="mono" fill="#334155">is_bundled: INTEGER = 0<title>1=便携版内置插件，0=用户安装插件；须与 source_type 一致</title></text>
-<text x="78" y="3788" font-size="16" class="mono" fill="#334155">package_status: TEXT = &#x27;available&#x27;<title>available=插件包可用；missing_package=仅恢复了使用数据、等待用户重装包</title></text>
-<text x="78" y="3813" font-size="16" class="mono" fill="#334155">is_enabled: INTEGER = 1<title>1=允许加载，0=停用；缺包时必须为 0</title></text>
-<text x="78" y="3838" font-size="16" class="mono" fill="#334155">installed_at: TEXT<title>首次安装或内置登记时间 UTC RFC3339</title></text>
-<text x="78" y="3863" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>插件登记最近更新时间 UTC RFC3339</title></text>
-<text x="78" y="3888" font-size="13" fill="#64748b">关系：R17 / R18 / R19 / L02 / L03</text>
+<g class="card" id="table-user_state" data-table="user_state"><rect x="1330" y="4788" width="580" height="191" rx="10" fill="white" stroke="#d97706"/>
+<path d="M1330 4866 H1910" stroke="#d97706"/>
+<text x="1348" y="4817" font-size="20" font-weight="700" fill="#d97706">全局钱包 «table»</text>
+<text x="1348" y="4845" font-size="20" class="mono" fill="#0f172a">user_state</text>
+<text x="1348" y="4891" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>固定单行，主键为 1</title></text>
+<text x="1348" y="4916" font-size="16" class="mono" fill="#334155">coins: INTEGER = 0<title>当前喵币余额</title></text>
+<text x="1348" y="4941" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
+<text x="1348" y="4966" font-size="13" fill="#64748b">关系：L04</text>
 </g>
-<g class="card" id="table-game_permissions" data-table="game_permissions"><rect x="695" y="3310" width="580" height="266" rx="10" fill="white" stroke="#d97706"/>
-<path d="M695 3388 H1275" stroke="#d97706"/>
-<text x="713" y="3339" font-size="20" font-weight="700" fill="#d97706">插件授权 «table»</text>
-<text x="713" y="3367" font-size="20" class="mono" fill="#0f172a">game_permissions</text>
-<text x="713" y="3413" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
-<text x="713" y="3438" font-size="16" class="mono" fill="#334155">PK permission: TEXT<title>权限名；V1 为 wallet.modify 或 network.fetch</title></text>
-<text x="713" y="3463" font-size="16" class="mono" fill="#334155">PK permission_scope: TEXT = &#x27;&#x27;<title>wallet.modify 为空；network.fetch 保存获授权的 HTTPS origin</title></text>
-<text x="713" y="3488" font-size="16" class="mono" fill="#334155">decision: TEXT<title>pending=待用户确认；allowed=允许；denied=拒绝</title></text>
-<text x="713" y="3513" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>作出决定时对应的插件版本，升级后可要求重新确认</title></text>
-<text x="713" y="3538" font-size="16" class="mono" fill="#334155">decided_at: TEXT?<title>用户允许或拒绝的时间；pending 时为 NULL</title></text>
-<text x="713" y="3563" font-size="13" fill="#64748b">关系：R17</text>
+<g class="card" id="table-game_plugins" data-table="game_plugins"><rect x="60" y="4097" width="580" height="591" rx="10" fill="white" stroke="#d97706"/>
+<path d="M60 4175 H640" stroke="#d97706"/>
+<text x="78" y="4126" font-size="20" font-weight="700" fill="#d97706">插件登记 «table»</text>
+<text x="78" y="4154" font-size="20" class="mono" fill="#0f172a">game_plugins</text>
+<text x="78" y="4200" font-size="16" class="mono" fill="#334155">PK plugin_id: TEXT?<title>manifest 中稳定且全局唯一的插件 ID</title></text>
+<text x="78" y="4225" font-size="16" class="mono" fill="#334155">name: TEXT<title>当前安装版本的插件显示名称</title></text>
+<text x="78" y="4250" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>当前安装版本的插件简介</title></text>
+<text x="78" y="4275" font-size="16" class="mono" fill="#334155">author: TEXT<title>manifest 声明的作者</title></text>
+<text x="78" y="4300" font-size="16" class="mono" fill="#334155">installed_version: TEXT<title>当前已安装插件版本</title></text>
+<text x="78" y="4325" font-size="16" class="mono" fill="#334155">api_version: TEXT<title>插件要求的颜喵宿主 API 版本</title></text>
+<text x="78" y="4350" font-size="16" class="mono" fill="#334155">storage_version: INTEGER = 1<title>插件私有存档结构版本</title></text>
+<text x="78" y="4375" font-size="16" class="mono" fill="#334155">source_type: TEXT<title>bundled=便携版自带，local=用户安装</title></text>
+<text x="78" y="4400" font-size="16" class="mono" fill="#334155">package_path: TEXT?<title>相对插件目录的路径；缺包时为 NULL</title></text>
+<text x="78" y="4425" font-size="16" class="mono" fill="#334155">package_sha256: TEXT<title>当前插件包 SHA-256，用于完整性和版本识别</title></text>
+<text x="78" y="4450" font-size="16" class="mono" fill="#334155">repository: TEXT?<title>manifest 提供的 GitHub 仓库地址，可空</title></text>
+<text x="78" y="4475" font-size="16" class="mono" fill="#334155">homepage: TEXT?<title>项目主页，可空</title></text>
+<text x="78" y="4500" font-size="16" class="mono" fill="#334155">release_page: TEXT?<title>Release 下载页，可空</title></text>
+<text x="78" y="4525" font-size="16" class="mono" fill="#334155">network_origins_json: TEXT = &#x27;[]&#x27;<title>manifest 声明的 HTTPS origin 列表；由 Rust 校验 JSON、格式和数量</title></text>
+<text x="78" y="4550" font-size="16" class="mono" fill="#334155">is_bundled: INTEGER = 0<title>1=便携版内置插件，0=用户安装插件；须与 source_type 一致</title></text>
+<text x="78" y="4575" font-size="16" class="mono" fill="#334155">package_status: TEXT = &#x27;available&#x27;<title>available=插件包可用；missing_package=仅恢复了使用数据、等待用户重装包</title></text>
+<text x="78" y="4600" font-size="16" class="mono" fill="#334155">is_enabled: INTEGER = 1<title>1=允许加载，0=停用；缺包时必须为 0</title></text>
+<text x="78" y="4625" font-size="16" class="mono" fill="#334155">installed_at: TEXT<title>首次安装或内置登记时间 UTC RFC3339</title></text>
+<text x="78" y="4650" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>插件登记最近更新时间 UTC RFC3339</title></text>
+<text x="78" y="4675" font-size="13" fill="#64748b">关系：R17 / R18 / R19 / L02 / L03</text>
 </g>
-<g class="card" id="table-game_plugin_settings" data-table="game_plugin_settings"><rect x="1330" y="3310" width="580" height="216" rx="10" fill="white" stroke="#d97706"/>
-<path d="M1330 3388 H1910" stroke="#d97706"/>
-<text x="1348" y="3339" font-size="20" font-weight="700" fill="#d97706">插件设置 «table»</text>
-<text x="1348" y="3367" font-size="20" class="mono" fill="#0f172a">game_plugin_settings</text>
-<text x="1348" y="3413" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
-<text x="1348" y="3438" font-size="16" class="mono" fill="#334155">PK setting_key: TEXT<title>插件声明的稳定设置键，例如 audio.volume；没有覆盖值时读取 manifest 默认值</title></text>
-<text x="1348" y="3463" font-size="16" class="mono" fill="#334155">value_json: TEXT<title>当前用户设置的 JSON 值，例如 true、80、&quot;normal&quot;；须符合 settings_schema</title></text>
-<text x="1348" y="3488" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 UTC RFC3339</title></text>
-<text x="1348" y="3513" font-size="13" fill="#64748b">关系：R18</text>
+<g class="card" id="table-game_permissions" data-table="game_permissions"><rect x="695" y="4097" width="580" height="266" rx="10" fill="white" stroke="#d97706"/>
+<path d="M695 4175 H1275" stroke="#d97706"/>
+<text x="713" y="4126" font-size="20" font-weight="700" fill="#d97706">插件授权 «table»</text>
+<text x="713" y="4154" font-size="20" class="mono" fill="#0f172a">game_permissions</text>
+<text x="713" y="4200" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
+<text x="713" y="4225" font-size="16" class="mono" fill="#334155">PK permission: TEXT<title>权限名；V1 为 wallet.modify 或 network.fetch</title></text>
+<text x="713" y="4250" font-size="16" class="mono" fill="#334155">PK permission_scope: TEXT = &#x27;&#x27;<title>wallet.modify 为空；network.fetch 保存获授权的 HTTPS origin</title></text>
+<text x="713" y="4275" font-size="16" class="mono" fill="#334155">decision: TEXT<title>pending=待用户确认；allowed=允许；denied=拒绝</title></text>
+<text x="713" y="4300" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>作出决定时对应的插件版本，升级后可要求重新确认</title></text>
+<text x="713" y="4325" font-size="16" class="mono" fill="#334155">decided_at: TEXT?<title>用户允许或拒绝的时间；pending 时为 NULL</title></text>
+<text x="713" y="4350" font-size="13" fill="#64748b">关系：R17</text>
 </g>
-<g class="card" id="table-game_plugin_data" data-table="game_plugin_data"><rect x="1965" y="3310" width="580" height="241" rx="10" fill="white" stroke="#d97706"/>
-<path d="M1965 3388 H2545" stroke="#d97706"/>
-<text x="1983" y="3339" font-size="20" font-weight="700" fill="#d97706">插件存档 «table»</text>
-<text x="1983" y="3367" font-size="20" class="mono" fill="#0f172a">game_plugin_data</text>
-<text x="1983" y="3413" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
-<text x="1983" y="3438" font-size="16" class="mono" fill="#334155">PK data_key: TEXT<title>插件稳定存档键，例如 stats.overall；同一插件内唯一</title></text>
-<text x="1983" y="3463" font-size="16" class="mono" fill="#334155">value_json: TEXT<title>插件私有存档 JSON，例如 {&quot;wins&quot;:12,&quot;losses&quot;:8}；不得作为钱包或账单权威数据</title></text>
-<text x="1983" y="3488" font-size="16" class="mono" fill="#334155">storage_version: INTEGER<title>写入该存档时使用的插件存档结构版本</title></text>
-<text x="1983" y="3513" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 UTC RFC3339</title></text>
-<text x="1983" y="3538" font-size="13" fill="#64748b">关系：R19</text>
+<g class="card" id="table-game_plugin_settings" data-table="game_plugin_settings"><rect x="1330" y="4097" width="580" height="216" rx="10" fill="white" stroke="#d97706"/>
+<path d="M1330 4175 H1910" stroke="#d97706"/>
+<text x="1348" y="4126" font-size="20" font-weight="700" fill="#d97706">插件设置 «table»</text>
+<text x="1348" y="4154" font-size="20" class="mono" fill="#0f172a">game_plugin_settings</text>
+<text x="1348" y="4200" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
+<text x="1348" y="4225" font-size="16" class="mono" fill="#334155">PK setting_key: TEXT<title>插件声明的稳定设置键，例如 audio.volume；没有覆盖值时读取 manifest 默认值</title></text>
+<text x="1348" y="4250" font-size="16" class="mono" fill="#334155">value_json: TEXT<title>当前用户设置的 JSON 值，例如 true、80、&quot;normal&quot;；须符合 settings_schema</title></text>
+<text x="1348" y="4275" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 UTC RFC3339</title></text>
+<text x="1348" y="4300" font-size="13" fill="#64748b">关系：R18</text>
 </g>
-<g class="card" id="table-game_runs" data-table="game_runs"><rect x="60" y="4001" width="580" height="391" rx="10" fill="white" stroke="#d97706"/>
-<path d="M60 4079 H640" stroke="#d97706"/>
-<text x="78" y="4030" font-size="20" font-weight="700" fill="#d97706">历史游戏局 «table»</text>
-<text x="78" y="4058" font-size="20" class="mono" fill="#0f172a">game_runs</text>
-<text x="78" y="4104" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>运行记录自增主键</title></text>
-<text x="78" y="4129" font-size="16" class="mono" fill="#334155">plugin_id: TEXT<title>打开时插件 ID 快照，卸载后仍保留</title></text>
-<text x="78" y="4154" font-size="16" class="mono" fill="#334155">plugin_name: TEXT<title>打开时插件显示名称快照</title></text>
-<text x="78" y="4179" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>打开时插件版本快照</title></text>
-<text x="78" y="4204" font-size="16" class="mono" fill="#334155">wallet_permission_granted: INTEGER<title>1=打开时已获 wallet.modify 授权，0=本次运行纯玩；中途授权不改变本次运行</title></text>
-<text x="78" y="4229" font-size="16" class="mono" fill="#334155">status: TEXT<title>running=进行中；completed=正常结束运行；cancelled=用户取消；error=异常结束</title></text>
-<text x="78" y="4254" font-size="16" class="mono" fill="#334155">outcome: TEXT?<title>插件给出的本次运行结果标识；未结束或无结果时可为 NULL</title></text>
-<text x="78" y="4279" font-size="16" class="mono" fill="#334155">details_json: TEXT?<title>插件提供的本次运行明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实</title></text>
-<text x="78" y="4304" font-size="16" class="mono" fill="#334155">coin_delta: INTEGER = 0<title>本次运行累计实际喵币变化；未授权运行为 0</title></text>
-<text x="78" y="4329" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>打开时间 UTC RFC3339</title></text>
-<text x="78" y="4354" font-size="16" class="mono" fill="#334155">ended_at: TEXT?<title>结束时间；running 时为 NULL</title></text>
-<text x="78" y="4379" font-size="13" fill="#64748b">关系：R20 / R21 / L02</text>
+<g class="card" id="table-game_plugin_data" data-table="game_plugin_data"><rect x="1965" y="4097" width="580" height="241" rx="10" fill="white" stroke="#d97706"/>
+<path d="M1965 4175 H2545" stroke="#d97706"/>
+<text x="1983" y="4126" font-size="20" font-weight="700" fill="#d97706">插件存档 «table»</text>
+<text x="1983" y="4154" font-size="20" class="mono" fill="#0f172a">game_plugin_data</text>
+<text x="1983" y="4200" font-size="16" class="mono" fill="#334155">PK FK plugin_id: TEXT<title>所属当前插件登记 -&gt; game_plugins.plugin_id</title></text>
+<text x="1983" y="4225" font-size="16" class="mono" fill="#334155">PK data_key: TEXT<title>插件稳定存档键，例如 stats.overall；同一插件内唯一</title></text>
+<text x="1983" y="4250" font-size="16" class="mono" fill="#334155">value_json: TEXT<title>插件私有存档 JSON，例如 {&quot;wins&quot;:12,&quot;losses&quot;:8}；不得作为钱包或账单权威数据</title></text>
+<text x="1983" y="4275" font-size="16" class="mono" fill="#334155">storage_version: INTEGER<title>写入该存档时使用的插件存档结构版本</title></text>
+<text x="1983" y="4300" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 UTC RFC3339</title></text>
+<text x="1983" y="4325" font-size="13" fill="#64748b">关系：R19</text>
 </g>
-<g class="card" id="table-currency_ledger" data-table="currency_ledger"><rect x="695" y="4001" width="580" height="366" rx="10" fill="white" stroke="#d97706"/>
-<path d="M695 4079 H1275" stroke="#d97706"/>
-<text x="713" y="4030" font-size="20" font-weight="700" fill="#d97706">喵币账单 «table»</text>
-<text x="713" y="4058" font-size="20" class="mono" fill="#0f172a">currency_ledger</text>
-<text x="713" y="4104" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>喵币流水自增主键</title></text>
-<text x="713" y="4129" font-size="16" class="mono" fill="#334155">delta: INTEGER<title>本次余额变化量；正数增加、负数扣除、插件平局可为 0</title></text>
-<text x="713" y="4154" font-size="16" class="mono" fill="#334155">reason: TEXT<title>daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品</title></text>
-<text x="713" y="4179" font-size="16" class="mono" fill="#334155">ref_id: INTEGER?<title>制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL</title></text>
-<text x="713" y="4204" font-size="16" class="mono" fill="#334155">FK game_run_id: INTEGER?<title>插件游戏流水所属运行记录 -&gt; game_runs.id；非插件流水为 NULL</title></text>
-<text x="713" y="4229" font-size="16" class="mono" fill="#334155">FK plugin_id: TEXT?<title>插件游戏时保存插件 ID 快照；非插件流水为 NULL</title></text>
-<text x="713" y="4254" font-size="16" class="mono" fill="#334155">FK plugin_version: TEXT?<title>插件游戏时保存插件版本快照；非插件流水为 NULL</title></text>
-<text x="713" y="4279" font-size="16" class="mono" fill="#334155">plugin_display_reason: TEXT?<title>插件展示给用户的本次变动原因；插件流水必填</title></text>
-<text x="713" y="4304" font-size="16" class="mono" fill="#334155">wallet_request_id: TEXT?<title>插件生成的幂等请求 ID；同一插件不可重复记账</title></text>
-<text x="713" y="4329" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>流水创建时间 UTC RFC3339</title></text>
-<text x="713" y="4354" font-size="13" fill="#64748b">关系：R20 / R21 / L03 / L04 / L05</text>
+<g class="card" id="table-game_runs" data-table="game_runs"><rect x="60" y="4788" width="580" height="391" rx="10" fill="white" stroke="#d97706"/>
+<path d="M60 4866 H640" stroke="#d97706"/>
+<text x="78" y="4817" font-size="20" font-weight="700" fill="#d97706">历史游戏局 «table»</text>
+<text x="78" y="4845" font-size="20" class="mono" fill="#0f172a">game_runs</text>
+<text x="78" y="4891" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>运行记录自增主键</title></text>
+<text x="78" y="4916" font-size="16" class="mono" fill="#334155">plugin_id: TEXT<title>打开时插件 ID 快照，卸载后仍保留</title></text>
+<text x="78" y="4941" font-size="16" class="mono" fill="#334155">plugin_name: TEXT<title>打开时插件显示名称快照</title></text>
+<text x="78" y="4966" font-size="16" class="mono" fill="#334155">plugin_version: TEXT<title>打开时插件版本快照</title></text>
+<text x="78" y="4991" font-size="16" class="mono" fill="#334155">wallet_permission_granted: INTEGER<title>1=打开时已获 wallet.modify 授权，0=本次运行纯玩；中途授权不改变本次运行</title></text>
+<text x="78" y="5016" font-size="16" class="mono" fill="#334155">status: TEXT<title>running=进行中；completed=正常结束运行；cancelled=用户取消；error=异常结束</title></text>
+<text x="78" y="5041" font-size="16" class="mono" fill="#334155">outcome: TEXT?<title>插件给出的本次运行结果标识；未结束或无结果时可为 NULL</title></text>
+<text x="78" y="5066" font-size="16" class="mono" fill="#334155">details_json: TEXT?<title>插件提供的本次运行明细 JSON，可含 schema_version、mode、选择/得分、result、duration_ms；可空且不得决定钱包事实</title></text>
+<text x="78" y="5091" font-size="16" class="mono" fill="#334155">coin_delta: INTEGER = 0<title>本次运行累计实际喵币变化；未授权运行为 0</title></text>
+<text x="78" y="5116" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>打开时间 UTC RFC3339</title></text>
+<text x="78" y="5141" font-size="16" class="mono" fill="#334155">ended_at: TEXT?<title>结束时间；running 时为 NULL</title></text>
+<text x="78" y="5166" font-size="13" fill="#64748b">关系：R20 / R21 / L02</text>
 </g>
-<g class="card" id="table-travels" data-table="travels"><rect x="60" y="2127" width="580" height="636" rx="10" fill="white" stroke="#0d9488"/>
-<path d="M60 2205 H640" stroke="#0d9488"/>
-<text x="78" y="2156" font-size="20" font-weight="700" fill="#0d9488">出行记录 «table»</text>
-<text x="78" y="2184" font-size="20" class="mono" fill="#0f172a">travels</text>
-<text x="78" y="2230" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="78" y="2255" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="78" y="2280" font-size="16" class="mono" fill="#334155">status: TEXT<title>away=出门中，returned=正常返回，cancelled=切换会话或人设后取消</title></text>
-<text x="78" y="2305" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>出发时间 RFC3339</title></text>
-<text x="78" y="2330" font-size="16" class="mono" fill="#334155">planned_return_at: TEXT<title>计划返回时间 RFC3339</title></text>
-<text x="78" y="2355" font-size="16" class="mono" fill="#334155">actual_return_at: TEXT?<title>正常返回时间；离线到期使用计划返回时间</title></text>
-<text x="78" y="2380" font-size="16" class="mono" fill="#334155">cancelled_at: TEXT?<title>切换会话取消时间；取消不视为正常返回</title></text>
-<text x="78" y="2405" font-size="16" class="mono" fill="#334155">midway_letter_at: TEXT<title>出发时确定为行程中点</title></text>
-<text x="78" y="2430" font-size="16" class="mono" fill="#334155">midway_letter_state: TEXT = &#x27;pending&#x27;<title>途中信生成状态：pending=待生成，done=已生成，cancelled=不再生成</title></text>
-<text x="78" y="2455" font-size="16" class="mono" fill="#334155">return_letter_state: TEXT = &#x27;pending&#x27;<title>回来信生成状态：pending=待生成，done=已生成，cancelled=不再生成</title></text>
-<text x="78" y="2480" font-size="16" class="mono" fill="#334155">gift_state: TEXT = &#x27;pending&#x27;<title>伴手礼生成/发放状态：pending=待处理，done=已发放，cancelled=不再发放</title></text>
-<text x="78" y="2505" font-size="16" class="mono" fill="#334155">journal_state: TEXT = &#x27;pending&#x27;<title>游记生成状态：pending=待生成，done=已生成过，cancelled=不再生成；删除游记不重置 done</title></text>
-<text x="78" y="2530" font-size="16" class="mono" fill="#334155">gift_kind: TEXT?<title>text=普通文字伴手礼，accessory=可佩戴旅行饰品；正常返回时确定一次</title></text>
-<text x="78" y="2555" font-size="16" class="mono" fill="#334155">facts_state: TEXT = &#x27;pending&#x27;<title>固定出行事实状态：pending=待生成，ready=已固定，cancelled=未生成且不再生成</title></text>
-<text x="78" y="2580" font-size="16" class="mono" fill="#334155">destination: TEXT?<title>固定目的地；facts_state=ready 时非空</title></text>
-<text x="78" y="2605" font-size="16" class="mono" fill="#334155">activities_json: TEXT?<title>活动时间线数组，elapsed_minutes 与 description；Rust 校验各元素</title></text>
-<text x="78" y="2630" font-size="16" class="mono" fill="#334155">facts_version: INTEGER = 0<title>固定事实首次保存为 1；异步快照校验</title></text>
-<text x="78" y="2655" font-size="16" class="mono" fill="#334155">facts_ready_at: TEXT?<title>固定出行事实完成时间；facts_state 非 ready 时为 NULL</title></text>
-<text x="78" y="2680" font-size="16" class="mono" fill="#334155">gift_snapshot_json: TEXT?<title>实际发放结果快照，与礼物行及 gift_state=done 同事务写入；删礼物仍保留</title></text>
-<text x="78" y="2705" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="78" y="2730" font-size="13" fill="#64748b">关系：R22 / R23 / R25 / R26 / R28 / R30 / R32 / R33</text>
-<text x="78" y="2750" font-size="13" fill="#64748b">　　　R35</text>
+<g class="card" id="table-currency_ledger" data-table="currency_ledger"><rect x="695" y="4788" width="580" height="366" rx="10" fill="white" stroke="#d97706"/>
+<path d="M695 4866 H1275" stroke="#d97706"/>
+<text x="713" y="4817" font-size="20" font-weight="700" fill="#d97706">喵币账单 «table»</text>
+<text x="713" y="4845" font-size="20" class="mono" fill="#0f172a">currency_ledger</text>
+<text x="713" y="4891" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>喵币流水自增主键</title></text>
+<text x="713" y="4916" font-size="16" class="mono" fill="#334155">delta: INTEGER<title>本次余额变化量；正数增加、负数扣除、插件平局可为 0</title></text>
+<text x="713" y="4941" font-size="16" class="mono" fill="#334155">reason: TEXT<title>daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品</title></text>
+<text x="713" y="4966" font-size="16" class="mono" fill="#334155">ref_id: INTEGER?<title>制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL</title></text>
+<text x="713" y="4991" font-size="16" class="mono" fill="#334155">FK game_run_id: INTEGER?<title>插件游戏流水所属运行记录 -&gt; game_runs.id；非插件流水为 NULL</title></text>
+<text x="713" y="5016" font-size="16" class="mono" fill="#334155">FK plugin_id: TEXT?<title>插件游戏时保存插件 ID 快照；非插件流水为 NULL</title></text>
+<text x="713" y="5041" font-size="16" class="mono" fill="#334155">FK plugin_version: TEXT?<title>插件游戏时保存插件版本快照；非插件流水为 NULL</title></text>
+<text x="713" y="5066" font-size="16" class="mono" fill="#334155">plugin_display_reason: TEXT?<title>插件展示给用户的本次变动原因；插件流水必填</title></text>
+<text x="713" y="5091" font-size="16" class="mono" fill="#334155">wallet_request_id: TEXT?<title>插件生成的幂等请求 ID；同一插件不可重复记账</title></text>
+<text x="713" y="5116" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>流水创建时间 UTC RFC3339</title></text>
+<text x="713" y="5141" font-size="13" fill="#64748b">关系：R20 / R21 / L03 / L04 / L05</text>
 </g>
-<g class="card" id="table-travel_journals" data-table="travel_journals"><rect x="695" y="2127" width="580" height="291" rx="10" fill="white" stroke="#0d9488"/>
-<path d="M695 2205 H1275" stroke="#0d9488"/>
-<text x="713" y="2156" font-size="20" font-weight="700" fill="#0d9488">旅行游记 «table»</text>
-<text x="713" y="2184" font-size="20" class="mono" fill="#0f172a">travel_journals</text>
-<text x="713" y="2230" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>旅行游记自增主键</title></text>
-<text x="713" y="2255" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="713" y="2280" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER<title>来源出行记录 -&gt; travels.id；每次出行最多一篇游记</title></text>
-<text x="713" y="2305" font-size="16" class="mono" fill="#334155">title: TEXT<title>一句话精炼概括时间、地点、活动、伴手礼和时长</title></text>
-<text x="713" y="2330" font-size="16" class="mono" fill="#334155">content: TEXT<title>AI 按人设口吻写的完整旅行总结，不参与长期记忆整合</title></text>
-<text x="713" y="2355" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
-<text x="713" y="2380" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改后的最近更新时间 UTC RFC3339</title></text>
-<text x="713" y="2405" font-size="13" fill="#64748b">关系：R23 / R24 / R25</text>
+<g class="card" id="table-travels" data-table="travels"><rect x="60" y="2914" width="580" height="636" rx="10" fill="white" stroke="#0d9488"/>
+<path d="M60 2992 H640" stroke="#0d9488"/>
+<text x="78" y="2943" font-size="20" font-weight="700" fill="#0d9488">出行记录 «table»</text>
+<text x="78" y="2971" font-size="20" class="mono" fill="#0f172a">travels</text>
+<text x="78" y="3017" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="78" y="3042" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="78" y="3067" font-size="16" class="mono" fill="#334155">status: TEXT<title>away=出门中，returned=正常返回，cancelled=切换会话或人设后取消</title></text>
+<text x="78" y="3092" font-size="16" class="mono" fill="#334155">started_at: TEXT<title>出发时间 RFC3339</title></text>
+<text x="78" y="3117" font-size="16" class="mono" fill="#334155">planned_return_at: TEXT<title>计划返回时间 RFC3339</title></text>
+<text x="78" y="3142" font-size="16" class="mono" fill="#334155">actual_return_at: TEXT?<title>正常返回时间；离线到期使用计划返回时间</title></text>
+<text x="78" y="3167" font-size="16" class="mono" fill="#334155">cancelled_at: TEXT?<title>切换会话取消时间；取消不视为正常返回</title></text>
+<text x="78" y="3192" font-size="16" class="mono" fill="#334155">midway_letter_at: TEXT<title>出发时确定为行程中点</title></text>
+<text x="78" y="3217" font-size="16" class="mono" fill="#334155">midway_letter_state: TEXT = &#x27;pending&#x27;<title>途中信生成状态：pending=待生成，done=已生成，cancelled=不再生成</title></text>
+<text x="78" y="3242" font-size="16" class="mono" fill="#334155">return_letter_state: TEXT = &#x27;pending&#x27;<title>回来信生成状态：pending=待生成，done=已生成，cancelled=不再生成</title></text>
+<text x="78" y="3267" font-size="16" class="mono" fill="#334155">gift_state: TEXT = &#x27;pending&#x27;<title>伴手礼生成/发放状态：pending=待处理，done=已发放，cancelled=不再发放</title></text>
+<text x="78" y="3292" font-size="16" class="mono" fill="#334155">journal_state: TEXT = &#x27;pending&#x27;<title>游记生成状态：pending=待生成，done=已生成过，cancelled=不再生成；删除游记不重置 done</title></text>
+<text x="78" y="3317" font-size="16" class="mono" fill="#334155">gift_kind: TEXT?<title>text=普通文字伴手礼，accessory=可佩戴旅行饰品；正常返回时确定一次</title></text>
+<text x="78" y="3342" font-size="16" class="mono" fill="#334155">facts_state: TEXT = &#x27;pending&#x27;<title>固定出行事实状态：pending=待生成，ready=已固定，cancelled=未生成且不再生成</title></text>
+<text x="78" y="3367" font-size="16" class="mono" fill="#334155">destination: TEXT?<title>固定目的地；facts_state=ready 时非空</title></text>
+<text x="78" y="3392" font-size="16" class="mono" fill="#334155">activities_json: TEXT?<title>活动时间线数组，elapsed_minutes 与 description；Rust 校验各元素</title></text>
+<text x="78" y="3417" font-size="16" class="mono" fill="#334155">facts_version: INTEGER = 0<title>固定事实首次保存为 1；异步快照校验</title></text>
+<text x="78" y="3442" font-size="16" class="mono" fill="#334155">facts_ready_at: TEXT?<title>固定出行事实完成时间；facts_state 非 ready 时为 NULL</title></text>
+<text x="78" y="3467" font-size="16" class="mono" fill="#334155">gift_snapshot_json: TEXT?<title>实际发放结果快照，与礼物行及 gift_state=done 同事务写入；删礼物仍保留</title></text>
+<text x="78" y="3492" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="78" y="3517" font-size="13" fill="#64748b">关系：R22 / R23 / R25 / R26 / R28 / R30 / R32 / R33</text>
+<text x="78" y="3537" font-size="13" fill="#64748b">　　　R35</text>
 </g>
-<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2127" width="580" height="391" rx="10" fill="white" stroke="#0d9488"/>
-<path d="M1965 2205 H2545" stroke="#0d9488"/>
-<text x="1983" y="2156" font-size="20" font-weight="700" fill="#0d9488">饰品 «table»</text>
-<text x="1983" y="2184" font-size="20" class="mono" fill="#0f172a">accessories</text>
-<text x="1983" y="2230" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="1983" y="2255" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="1983" y="2280" font-size="16" class="mono" fill="#334155">name: TEXT<title>饰品名称</title></text>
-<text x="1983" y="2305" font-size="16" class="mono" fill="#334155">display_text: TEXT<title>头顶视觉兜底：图标字符/Emoji/颜文字/符号组合，不是名称或简介</title></text>
-<text x="1983" y="2330" font-size="16" class="mono" fill="#334155">description: TEXT<title>AI 按人设口吻写的简介</title></text>
-<text x="1983" y="2355" font-size="16" class="mono" fill="#334155">cost: INTEGER = 0<title>制作费用；旅行带回为 0</title></text>
-<text x="1983" y="2380" font-size="16" class="mono" fill="#334155">source: TEXT<title>crafted=使用喵币制作，travel=旅行带回</title></text>
-<text x="1983" y="2405" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>旅行带回时为 travels.id，制作为 NULL</title></text>
-<text x="1983" y="2430" font-size="16" class="mono" fill="#334155">is_worn: INTEGER = 0<title>是否佩戴：1 佩戴，0 未佩戴</title></text>
-<text x="1983" y="2455" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="1983" y="2480" font-size="16" class="mono" fill="#334155">image_file: TEXT?<title>可选透明饰品PNG受管相对路径；NULL显示display_text，不存远程URL或绝对路径</title></text>
-<text x="1983" y="2505" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
+<g class="card" id="table-travel_journals" data-table="travel_journals"><rect x="695" y="2914" width="580" height="291" rx="10" fill="white" stroke="#0d9488"/>
+<path d="M695 2992 H1275" stroke="#0d9488"/>
+<text x="713" y="2943" font-size="20" font-weight="700" fill="#0d9488">旅行游记 «table»</text>
+<text x="713" y="2971" font-size="20" class="mono" fill="#0f172a">travel_journals</text>
+<text x="713" y="3017" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>旅行游记自增主键</title></text>
+<text x="713" y="3042" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="713" y="3067" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER<title>来源出行记录 -&gt; travels.id；每次出行最多一篇游记</title></text>
+<text x="713" y="3092" font-size="16" class="mono" fill="#334155">title: TEXT<title>一句话精炼概括时间、地点、活动、伴手礼和时长</title></text>
+<text x="713" y="3117" font-size="16" class="mono" fill="#334155">content: TEXT<title>AI 按人设口吻写的完整旅行总结，不参与长期记忆整合</title></text>
+<text x="713" y="3142" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>首次生成时间 UTC RFC3339</title></text>
+<text x="713" y="3167" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改后的最近更新时间 UTC RFC3339</title></text>
+<text x="713" y="3192" font-size="13" fill="#64748b">关系：R23 / R24 / R25</text>
 </g>
-<g class="card" id="table-letters" data-table="letters"><rect x="1330" y="2127" width="580" height="441" rx="10" fill="white" stroke="#0d9488"/>
-<path d="M1330 2205 H1910" stroke="#0d9488"/>
-<text x="1348" y="2156" font-size="20" font-weight="700" fill="#0d9488">信件 «table»</text>
-<text x="1348" y="2184" font-size="20" class="mono" fill="#0f172a">letters</text>
-<text x="1348" y="2230" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="1348" y="2255" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="1348" y="2280" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>关联旅行 -&gt; travels.id，可空</title></text>
-<text x="1348" y="2305" font-size="16" class="mono" fill="#334155">sender: TEXT<title>user=用户来信，ai=AI 途中信、回来信或回信</title></text>
-<text x="1348" y="2330" font-size="16" class="mono" fill="#334155">content: TEXT<title>信件正文</title></text>
-<text x="1348" y="2355" font-size="16" class="mono" fill="#334155">FK reply_to_id: INTEGER?<title>回复目标；删除目标后置空</title></text>
-<text x="1348" y="2380" font-size="16" class="mono" fill="#334155">has_been_replied: INTEGER = 0<title>1=历史上已成功回复，0=尚未回复；删除回复不重置</title></text>
-<text x="1348" y="2405" font-size="16" class="mono" fill="#334155">reply_due_at: TEXT?<title>用户信自动回信时间，首次发送时抽取并保存</title></text>
-<text x="1348" y="2430" font-size="16" class="mono" fill="#334155">reply_state: TEXT = &#x27;none&#x27;<title>none=AI 信无需自动回信，pending=用户信待回，completed=已回信，cancelled=切换会话或旅行返回后取消</title></text>
-<text x="1348" y="2455" font-size="16" class="mono" fill="#334155">letter_kind: TEXT<title>user=用户来信，midway=途中信，return=回来信，reply=对用户信的回复</title></text>
-<text x="1348" y="2480" font-size="16" class="mono" fill="#334155">is_favorite: INTEGER = 0<title>是否收藏：1 收藏，0 未收藏</title></text>
-<text x="1348" y="2505" font-size="16" class="mono" fill="#334155">is_read: INTEGER = 0<title>用户是否已读：1 已读，0 未读</title></text>
-<text x="1348" y="2530" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>写信/回信时间 RFC3339</title></text>
-<text x="1348" y="2555" font-size="13" fill="#64748b">关系：R29 / R30 / R31 / R32</text>
+<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2914" width="580" height="466" rx="10" fill="white" stroke="#0d9488"/>
+<path d="M1965 2992 H2545" stroke="#0d9488"/>
+<text x="1983" y="2943" font-size="20" font-weight="700" fill="#0d9488">饰品 «table»</text>
+<text x="1983" y="2971" font-size="20" class="mono" fill="#0f172a">accessories</text>
+<text x="1983" y="3017" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="1983" y="3042" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="1983" y="3067" font-size="16" class="mono" fill="#334155">name: TEXT<title>饰品名称</title></text>
+<text x="1983" y="3092" font-size="16" class="mono" fill="#334155">display_text: TEXT<title>头顶视觉兜底：图标字符/Emoji/颜文字/符号组合，不是名称或简介</title></text>
+<text x="1983" y="3117" font-size="16" class="mono" fill="#334155">description: TEXT<title>AI 按人设口吻写的简介</title></text>
+<text x="1983" y="3142" font-size="16" class="mono" fill="#334155">cost: INTEGER = 0<title>制作费用；旅行带回为 0</title></text>
+<text x="1983" y="3167" font-size="16" class="mono" fill="#334155">source: TEXT<title>crafted=使用喵币制作，travel=旅行带回</title></text>
+<text x="1983" y="3192" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>旅行带回时为 travels.id，制作为 NULL</title></text>
+<text x="1983" y="3217" font-size="16" class="mono" fill="#334155">is_worn: INTEGER = 0<title>是否佩戴：1 佩戴，0 未佩戴</title></text>
+<text x="1983" y="3242" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="1983" y="3267" font-size="16" class="mono" fill="#334155">image_file: TEXT?<title>可选透明饰品PNG受管相对路径；NULL显示display_text，不存远程URL或绝对路径</title></text>
+<text x="1983" y="3292" font-size="16" class="mono" fill="#334155">position_x: INTEGER?<title>饰品中心相对桌宠中心X，宽度千分比；NULL默认头顶</title></text>
+<text x="1983" y="3317" font-size="16" class="mono" fill="#334155">position_y: INTEGER?<title>饰品中心相对桌宠中心Y，高度千分比；NULL默认头顶</title></text>
+<text x="1983" y="3342" font-size="16" class="mono" fill="#334155">scale: INTEGER = 1000<title>饰品缩放千分比，1000默认</title></text>
+<text x="1983" y="3367" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
 </g>
-<g class="card" id="table-souvenirs" data-table="souvenirs"><rect x="60" y="2863" width="580" height="291" rx="10" fill="white" stroke="#0d9488"/>
-<path d="M60 2941 H640" stroke="#0d9488"/>
-<text x="78" y="2892" font-size="20" font-weight="700" fill="#0d9488">文字伴手礼 «table»</text>
-<text x="78" y="2920" font-size="20" class="mono" fill="#0f172a">souvenirs</text>
-<text x="78" y="2966" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="78" y="2991" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="78" y="3016" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>来源旅行 -&gt; travels.id，可空</title></text>
-<text x="78" y="3041" font-size="16" class="mono" fill="#334155">content: TEXT<title>文字礼物内容</title></text>
-<text x="78" y="3066" font-size="16" class="mono" fill="#334155">note: TEXT<title>AI 按人设口吻写的备注</title></text>
-<text x="78" y="3091" font-size="16" class="mono" fill="#334155">is_favorite: INTEGER = 0<title>是否收藏：1 收藏，0 未收藏</title></text>
-<text x="78" y="3116" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="78" y="3141" font-size="13" fill="#64748b">关系：R33 / R34 / R35</text>
+<g class="card" id="table-letters" data-table="letters"><rect x="1330" y="2914" width="580" height="441" rx="10" fill="white" stroke="#0d9488"/>
+<path d="M1330 2992 H1910" stroke="#0d9488"/>
+<text x="1348" y="2943" font-size="20" font-weight="700" fill="#0d9488">信件 «table»</text>
+<text x="1348" y="2971" font-size="20" class="mono" fill="#0f172a">letters</text>
+<text x="1348" y="3017" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="1348" y="3042" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="1348" y="3067" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>关联旅行 -&gt; travels.id，可空</title></text>
+<text x="1348" y="3092" font-size="16" class="mono" fill="#334155">sender: TEXT<title>user=用户来信，ai=AI 途中信、回来信或回信</title></text>
+<text x="1348" y="3117" font-size="16" class="mono" fill="#334155">content: TEXT<title>信件正文</title></text>
+<text x="1348" y="3142" font-size="16" class="mono" fill="#334155">FK reply_to_id: INTEGER?<title>回复目标；删除目标后置空</title></text>
+<text x="1348" y="3167" font-size="16" class="mono" fill="#334155">has_been_replied: INTEGER = 0<title>1=历史上已成功回复，0=尚未回复；删除回复不重置</title></text>
+<text x="1348" y="3192" font-size="16" class="mono" fill="#334155">reply_due_at: TEXT?<title>用户信自动回信时间，首次发送时抽取并保存</title></text>
+<text x="1348" y="3217" font-size="16" class="mono" fill="#334155">reply_state: TEXT = &#x27;none&#x27;<title>none=AI 信无需自动回信，pending=用户信待回，completed=已回信，cancelled=切换会话或旅行返回后取消</title></text>
+<text x="1348" y="3242" font-size="16" class="mono" fill="#334155">letter_kind: TEXT<title>user=用户来信，midway=途中信，return=回来信，reply=对用户信的回复</title></text>
+<text x="1348" y="3267" font-size="16" class="mono" fill="#334155">is_favorite: INTEGER = 0<title>是否收藏：1 收藏，0 未收藏</title></text>
+<text x="1348" y="3292" font-size="16" class="mono" fill="#334155">is_read: INTEGER = 0<title>用户是否已读：1 已读，0 未读</title></text>
+<text x="1348" y="3317" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>写信/回信时间 RFC3339</title></text>
+<text x="1348" y="3342" font-size="13" fill="#64748b">关系：R29 / R30 / R31 / R32</text>
 </g>
-<g class="card" id="table-festival_catalog" data-table="festival_catalog"><rect x="1330" y="4548" width="580" height="466" rx="10" fill="white" stroke="#db2777"/>
-<path d="M1330 4626 H1910" stroke="#db2777"/>
-<text x="1348" y="4577" font-size="20" font-weight="700" fill="#db2777">内置节日 «table»</text>
-<text x="1348" y="4605" font-size="20" class="mono" fill="#0f172a">festival_catalog</text>
-<text x="1348" y="4651" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="1348" y="4676" font-size="16" class="mono" fill="#334155">code: TEXT<title>稳定标识，如 solar_new_year / lunar_spring_festival</title></text>
-<text x="1348" y="4701" font-size="16" class="mono" fill="#334155">name: TEXT<title>节日名</title></text>
-<text x="1348" y="4726" font-size="16" class="mono" fill="#334155">year: INTEGER<title>本年公历年份：日期已按哪一年查表更新，不是生日出生年</title></text>
-<text x="1348" y="4751" font-size="16" class="mono" fill="#334155">calendar_type: TEXT<title>solar=公历节日，lunar=农历节日，solar_term=节气</title></text>
-<text x="1348" y="4776" font-size="16" class="mono" fill="#334155">solar_month: INTEGER?<title>公历月；农历节日与节气按内置表推出本年月日后写入</title></text>
-<text x="1348" y="4801" font-size="16" class="mono" fill="#334155">solar_day: INTEGER?<title>公历日；农历节日与节气按内置表推出本年月日后写入</title></text>
-<text x="1348" y="4826" font-size="16" class="mono" fill="#334155">lunar_month: INTEGER?<title>农历月；仅农历节日填写，公历节日与节气为 NULL</title></text>
-<text x="1348" y="4851" font-size="16" class="mono" fill="#334155">lunar_day: INTEGER?<title>农历日；仅农历节日填写，公历节日与节气为 NULL</title></text>
-<text x="1348" y="4876" font-size="16" class="mono" fill="#334155">is_leap_month: INTEGER = 0<title>1=农历闰月，0=普通月份或非农历记录</title></text>
-<text x="1348" y="4901" font-size="16" class="mono" fill="#334155">solar_term: TEXT?<title>节气名，如 清明 / 冬至；非节气为 NULL</title></text>
-<text x="1348" y="4926" font-size="16" class="mono" fill="#334155">blessing: TEXT<title>内置祝福词，签到彩蛋直接展示，不调用 AI</title></text>
-<text x="1348" y="4951" font-size="16" class="mono" fill="#334155">is_memorial: INTEGER = 0<title>1=纪念性节日且文案不使用“快乐”，0=普通节日</title></text>
-<text x="1348" y="4976" font-size="16" class="mono" fill="#334155">note: TEXT?<title>备注</title></text>
-<text x="1348" y="5001" font-size="13" fill="#64748b">关系：R36</text>
+<g class="card" id="table-souvenirs" data-table="souvenirs"><rect x="60" y="3650" width="580" height="291" rx="10" fill="white" stroke="#0d9488"/>
+<path d="M60 3728 H640" stroke="#0d9488"/>
+<text x="78" y="3679" font-size="20" font-weight="700" fill="#0d9488">文字伴手礼 «table»</text>
+<text x="78" y="3707" font-size="20" class="mono" fill="#0f172a">souvenirs</text>
+<text x="78" y="3753" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="78" y="3778" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="78" y="3803" font-size="16" class="mono" fill="#334155">FK travel_id: INTEGER?<title>来源旅行 -&gt; travels.id，可空</title></text>
+<text x="78" y="3828" font-size="16" class="mono" fill="#334155">content: TEXT<title>文字礼物内容</title></text>
+<text x="78" y="3853" font-size="16" class="mono" fill="#334155">note: TEXT<title>AI 按人设口吻写的备注</title></text>
+<text x="78" y="3878" font-size="16" class="mono" fill="#334155">is_favorite: INTEGER = 0<title>是否收藏：1 收藏，0 未收藏</title></text>
+<text x="78" y="3903" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="78" y="3928" font-size="13" fill="#64748b">关系：R33 / R34 / R35</text>
 </g>
-<g class="card" id="table-session_festivals" data-table="session_festivals"><rect x="1965" y="4548" width="580" height="541" rx="10" fill="white" stroke="#db2777"/>
-<path d="M1965 4626 H2545" stroke="#db2777"/>
-<text x="1983" y="4577" font-size="20" font-weight="700" fill="#db2777">会话节日 «table»</text>
-<text x="1983" y="4605" font-size="20" class="mono" fill="#0f172a">session_festivals</text>
-<text x="1983" y="4651" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
-<text x="1983" y="4676" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
-<text x="1983" y="4701" font-size="16" class="mono" fill="#334155">FK festival_id: INTEGER?<title>关联母表 -&gt; festival_catalog.id，可空</title></text>
-<text x="1983" y="4726" font-size="16" class="mono" fill="#334155">kind: TEXT<title>festival=节日，birthday=生日，anniversary=纪念日，custom=其他自定义日子</title></text>
-<text x="1983" y="4751" font-size="16" class="mono" fill="#334155">name: TEXT<title>名称</title></text>
-<text x="1983" y="4776" font-size="16" class="mono" fill="#334155">year: INTEGER<title>本年公历年份：日期已按哪一年查表更新，不是生日出生年</title></text>
-<text x="1983" y="4801" font-size="16" class="mono" fill="#334155">calendar_type: TEXT<title>solar=公历日期，lunar=农历日期</title></text>
-<text x="1983" y="4826" font-size="16" class="mono" fill="#334155">solar_month: INTEGER?<title>公历月；农历日子按内置表推出本年月日后写入</title></text>
-<text x="1983" y="4851" font-size="16" class="mono" fill="#334155">solar_day: INTEGER?<title>公历日；农历日子按内置表推出本年月日后写入</title></text>
-<text x="1983" y="4876" font-size="16" class="mono" fill="#334155">lunar_month: INTEGER?<title>农历月；仅农历日子填写，公历日子为 NULL</title></text>
-<text x="1983" y="4901" font-size="16" class="mono" fill="#334155">lunar_day: INTEGER?<title>农历日；仅农历日子填写，公历日子为 NULL</title></text>
-<text x="1983" y="4926" font-size="16" class="mono" fill="#334155">is_leap_month: INTEGER = 0<title>1=农历闰月，0=普通月份或公历记录</title></text>
-<text x="1983" y="4951" font-size="16" class="mono" fill="#334155">blessing: TEXT<title>祝福词：AI 新增时必须填写，手动新增也必填</title></text>
-<text x="1983" y="4976" font-size="16" class="mono" fill="#334155">note: TEXT?<title>备注</title></text>
-<text x="1983" y="5001" font-size="16" class="mono" fill="#334155">source: TEXT<title>ai=AI 创建，user=用户手动创建</title></text>
-<text x="1983" y="5026" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
-<text x="1983" y="5051" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
-<text x="1983" y="5076" font-size="13" fill="#64748b">关系：R36 / R37</text>
+<g class="card" id="table-festival_catalog" data-table="festival_catalog"><rect x="60" y="5851" width="580" height="466" rx="10" fill="white" stroke="#db2777"/>
+<path d="M60 5929 H640" stroke="#db2777"/>
+<text x="78" y="5880" font-size="20" font-weight="700" fill="#db2777">内置节日 «table»</text>
+<text x="78" y="5908" font-size="20" class="mono" fill="#0f172a">festival_catalog</text>
+<text x="78" y="5954" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="78" y="5979" font-size="16" class="mono" fill="#334155">code: TEXT<title>稳定标识，如 solar_new_year / lunar_spring_festival</title></text>
+<text x="78" y="6004" font-size="16" class="mono" fill="#334155">name: TEXT<title>节日名</title></text>
+<text x="78" y="6029" font-size="16" class="mono" fill="#334155">year: INTEGER<title>本年公历年份：日期已按哪一年查表更新，不是生日出生年</title></text>
+<text x="78" y="6054" font-size="16" class="mono" fill="#334155">calendar_type: TEXT<title>solar=公历节日，lunar=农历节日，solar_term=节气</title></text>
+<text x="78" y="6079" font-size="16" class="mono" fill="#334155">solar_month: INTEGER?<title>公历月；农历节日与节气按内置表推出本年月日后写入</title></text>
+<text x="78" y="6104" font-size="16" class="mono" fill="#334155">solar_day: INTEGER?<title>公历日；农历节日与节气按内置表推出本年月日后写入</title></text>
+<text x="78" y="6129" font-size="16" class="mono" fill="#334155">lunar_month: INTEGER?<title>农历月；仅农历节日填写，公历节日与节气为 NULL</title></text>
+<text x="78" y="6154" font-size="16" class="mono" fill="#334155">lunar_day: INTEGER?<title>农历日；仅农历节日填写，公历节日与节气为 NULL</title></text>
+<text x="78" y="6179" font-size="16" class="mono" fill="#334155">is_leap_month: INTEGER = 0<title>1=农历闰月，0=普通月份或非农历记录</title></text>
+<text x="78" y="6204" font-size="16" class="mono" fill="#334155">solar_term: TEXT?<title>节气名，如 清明 / 冬至；非节气为 NULL</title></text>
+<text x="78" y="6229" font-size="16" class="mono" fill="#334155">blessing: TEXT<title>内置祝福词，签到彩蛋直接展示，不调用 AI</title></text>
+<text x="78" y="6254" font-size="16" class="mono" fill="#334155">is_memorial: INTEGER = 0<title>1=纪念性节日且文案不使用“快乐”，0=普通节日</title></text>
+<text x="78" y="6279" font-size="16" class="mono" fill="#334155">note: TEXT?<title>备注</title></text>
+<text x="78" y="6304" font-size="13" fill="#64748b">关系：R36</text>
 </g>
-<text x="60" y="5201" font-size="25" font-weight="700" fill="#172554">关联明细 · 箭头由引用方指向被引用方</text>
-<text x="60" y="5236" font-size="17" fill="#475569">实线 R = 数据库外键；虚线 L = 逻辑关联。? = SQLite 允许 NULL；PK/FK = 主键/外键。唯一约束、CHECK、索引见离线页面。</text>
-<text x="60" y="5278" font-size="16" fill="#334155">R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="5307" font-size="16" fill="#334155">R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5336" font-size="16" fill="#334155">R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5365" font-size="16" fill="#334155">R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5394" font-size="16" fill="#334155">R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</text>
-<text x="60" y="5423" font-size="16" fill="#334155">R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5452" font-size="16" fill="#334155">R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5481" font-size="16" fill="#334155">R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5510" font-size="16" fill="#334155">R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5539" font-size="16" fill="#334155">R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5568" font-size="16" fill="#334155">R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5597" font-size="16" fill="#334155">R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5626" font-size="16" fill="#334155">R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</text>
-<text x="60" y="5655" font-size="16" fill="#334155">R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5684" font-size="16" fill="#334155">R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5713" font-size="16" fill="#334155">R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5742" font-size="16" fill="#334155">R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5771" font-size="16" fill="#334155">R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5800" font-size="16" fill="#334155">R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5829" font-size="16" fill="#334155">R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
-<text x="60" y="5858" font-size="16" fill="#334155">R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="5887" font-size="16" fill="#334155">R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5916" font-size="16" fill="#334155">R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5945" font-size="16" fill="#334155">R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="5974" font-size="16" fill="#334155">R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</text>
-<text x="60" y="6003" font-size="16" fill="#334155">R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6032" font-size="16" fill="#334155">R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6061" font-size="16" fill="#334155">R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="6090" font-size="16" fill="#334155">R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6119" font-size="16" fill="#334155">R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6148" font-size="16" fill="#334155">R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6177" font-size="16" fill="#334155">R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="6206" font-size="16" fill="#334155">R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6235" font-size="16" fill="#334155">R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6264" font-size="16" fill="#334155">R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="6293" font-size="16" fill="#334155">R36  session_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6322" font-size="16" fill="#334155">R37  session_festivals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6351" font-size="16" fill="#334155">L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</text>
-<text x="60" y="6380" font-size="16" fill="#334155">L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</text>
-<text x="60" y="6409" font-size="16" fill="#334155">L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</text>
-<text x="60" y="6438" font-size="16" fill="#334155">L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</text>
-<text x="60" y="6467" font-size="16" fill="#334155">L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</text>
-<text x="60" y="6496" font-size="16" fill="#334155">L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</text>
-<text x="60" y="6525" font-size="16" fill="#334155">L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</text>
+<g class="card" id="table-session_festivals" data-table="session_festivals"><rect x="695" y="5851" width="580" height="541" rx="10" fill="white" stroke="#db2777"/>
+<path d="M695 5929 H1275" stroke="#db2777"/>
+<text x="713" y="5880" font-size="20" font-weight="700" fill="#db2777">会话节日 «table»</text>
+<text x="713" y="5908" font-size="20" class="mono" fill="#0f172a">session_festivals</text>
+<text x="713" y="5954" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>自增主键</title></text>
+<text x="713" y="5979" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER<title>所属会话 -&gt; sessions.id</title></text>
+<text x="713" y="6004" font-size="16" class="mono" fill="#334155">FK festival_id: INTEGER?<title>旧数据/备份兼容母表引用；当前新增为NULL</title></text>
+<text x="713" y="6029" font-size="16" class="mono" fill="#334155">kind: TEXT<title>festival=节日，birthday=生日，anniversary=纪念日，custom=其他自定义日子</title></text>
+<text x="713" y="6054" font-size="16" class="mono" fill="#334155">name: TEXT<title>名称</title></text>
+<text x="713" y="6079" font-size="16" class="mono" fill="#334155">year: INTEGER<title>本年公历年份：日期已按哪一年查表更新，不是生日出生年</title></text>
+<text x="713" y="6104" font-size="16" class="mono" fill="#334155">calendar_type: TEXT<title>solar=公历日期，lunar=农历日期</title></text>
+<text x="713" y="6129" font-size="16" class="mono" fill="#334155">solar_month: INTEGER?<title>公历月；农历日子按内置表推出本年月日后写入</title></text>
+<text x="713" y="6154" font-size="16" class="mono" fill="#334155">solar_day: INTEGER?<title>公历日；农历日子按内置表推出本年月日后写入</title></text>
+<text x="713" y="6179" font-size="16" class="mono" fill="#334155">lunar_month: INTEGER?<title>农历月；仅农历日子填写，公历日子为 NULL</title></text>
+<text x="713" y="6204" font-size="16" class="mono" fill="#334155">lunar_day: INTEGER?<title>农历日；仅农历日子填写，公历日子为 NULL</title></text>
+<text x="713" y="6229" font-size="16" class="mono" fill="#334155">is_leap_month: INTEGER = 0<title>1=农历闰月，0=普通月份或公历记录</title></text>
+<text x="713" y="6254" font-size="16" class="mono" fill="#334155">blessing: TEXT<title>祝福词：AI 新增时必须填写，手动新增也必填</title></text>
+<text x="713" y="6279" font-size="16" class="mono" fill="#334155">note: TEXT?<title>备注</title></text>
+<text x="713" y="6304" font-size="16" class="mono" fill="#334155">source: TEXT<title>ai=AI 创建，user=用户手动创建</title></text>
+<text x="713" y="6329" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间 RFC3339</title></text>
+<text x="713" y="6354" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近更新时间 RFC3339</title></text>
+<text x="713" y="6379" font-size="13" fill="#64748b">关系：R36 / R37</text>
+</g>
+<g class="card" id="table-provider_models" data-table="provider_models"><rect x="1330" y="922" width="580" height="241" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M1330 1000 H1910" stroke="#6366f1"/>
+<text x="1348" y="951" font-size="20" font-weight="700" fill="#6366f1">连接的各用途模型配置 «table»</text>
+<text x="1348" y="979" font-size="20" class="mono" fill="#0f172a">provider_models</text>
+<text x="1348" y="1025" font-size="16" class="mono" fill="#334155">PK FK provider_id: INTEGER<title>所属通用连接</title></text>
+<text x="1348" y="1050" font-size="16" class="mono" fill="#334155">PK purpose: TEXT<title>chat聊天 / memory记忆 / image生图 / vision识图</title></text>
+<text x="1348" y="1075" font-size="16" class="mono" fill="#334155">model: TEXT<title>该连接在此用途的模型名称</title></text>
+<text x="1348" y="1100" font-size="16" class="mono" fill="#334155">max_output_tokens: INTEGER = 32768<title>聊天默认32768；其他用途保留默认值</title></text>
+<text x="1348" y="1125" font-size="16" class="mono" fill="#334155">context_window_override: INTEGER?<title>NULL自动解析；聊天可手动覆盖</title></text>
+<text x="1348" y="1150" font-size="13" fill="#64748b">关系：R38 / R39</text>
+</g>
+<g class="card" id="table-provider_roles" data-table="provider_roles"><rect x="1965" y="922" width="580" height="191" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M1965 1000 H2545" stroke="#6366f1"/>
+<text x="1983" y="951" font-size="20" font-weight="700" fill="#6366f1">模型用途绑定 «table»</text>
+<text x="1983" y="979" font-size="20" class="mono" fill="#0f172a">provider_roles</text>
+<text x="1983" y="1025" font-size="16" class="mono" fill="#334155">PK FK purpose: TEXT?<title>chat聊天 / memory记忆 / image生图 / vision识图；记忆/识图无行时跟随聊天</title></text>
+<text x="1983" y="1050" font-size="16" class="mono" fill="#334155">FK provider_id: INTEGER<title>当前连接；被用途引用时禁止删除</title></text>
+<text x="1983" y="1075" font-size="16" class="mono" fill="#334155">enabled: INTEGER = 1<title>生图0关闭/1开启；其他用途保持1</title></text>
+<text x="1983" y="1100" font-size="13" fill="#64748b">关系：R39 / R40</text>
+</g>
+<g class="card" id="table-message_images" data-table="message_images"><rect x="1330" y="1760" width="580" height="291" rx="10" fill="white" stroke="#0284c7"/>
+<path d="M1330 1838 H1910" stroke="#0284c7"/>
+<text x="1348" y="1789" font-size="20" font-weight="700" fill="#0284c7">聊天图片附件 «table»</text>
+<text x="1348" y="1817" font-size="20" class="mono" fill="#0f172a">message_images</text>
+<text x="1348" y="1863" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>附件主键</title></text>
+<text x="1348" y="1888" font-size="16" class="mono" fill="#334155">FK message_id: INTEGER<title>所属用户消息；删除消息级联清引用</title></text>
+<text x="1348" y="1913" font-size="16" class="mono" fill="#334155">filename: TEXT<title>用户原文件名，仅用于展示，不作为文件路径</title></text>
+<text x="1348" y="1938" font-size="16" class="mono" fill="#334155">image_file: TEXT<title>chat_images目录内的受管文件名</title></text>
+<text x="1348" y="1963" font-size="16" class="mono" fill="#334155">media_type: TEXT<title>实际格式：image/png / image/jpeg / image/webp</title></text>
+<text x="1348" y="1988" font-size="16" class="mono" fill="#334155">caption: TEXT?<title>已生成的图片理解事实；NULL表示尚无理解结果</title></text>
+<text x="1348" y="2013" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>保存UTC时间</title></text>
+<text x="1348" y="2038" font-size="13" fill="#64748b">关系：R41</text>
+</g>
+<g class="card" id="table-reminder_email_deliveries" data-table="reminder_email_deliveries"><rect x="1330" y="5335" width="580" height="416" rx="10" fill="white" stroke="#db2777"/>
+<path d="M1330 5413 H1910" stroke="#db2777"/>
+<text x="1348" y="5364" font-size="20" font-weight="700" fill="#db2777">邮件发送任务 «table»</text>
+<text x="1348" y="5392" font-size="20" class="mono" fill="#0f172a">reminder_email_deliveries</text>
+<text x="1348" y="5438" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>本机邮件任务ID。</title></text>
+<text x="1348" y="5463" font-size="16" class="mono" fill="#334155">kind: TEXT<title>due到点；offline_summary离线汇总。</title></text>
+<text x="1348" y="5488" font-size="16" class="mono" fill="#334155">recipient: TEXT<title>登记时的收件地址，发送前复核配置版本。</title></text>
+<text x="1348" y="5513" font-size="16" class="mono" fill="#334155">subject: TEXT<title>原始提醒生成的主题快照，不经过AI润色。</title></text>
+<text x="1348" y="5538" font-size="16" class="mono" fill="#334155">body: TEXT<title>原始提醒正文快照；发送前剔除已删除的提醒。</title></text>
+<text x="1348" y="5563" font-size="16" class="mono" fill="#334155">config_revision: INTEGER<title>创建任务时SMTP配置修订号。</title></text>
+<text x="1348" y="5588" font-size="16" class="mono" fill="#334155">state: TEXT = &#x27;pending&#x27;<title>pending待发送；sending发送中；retry_wait等待重试；sent已发送；failed失败；uncertain结果不确定；cancelled取消。</title></text>
+<text x="1348" y="5613" font-size="16" class="mono" fill="#334155">attempts: INTEGER = 0<title>已开始发送次数；自动最多3次。</title></text>
+<text x="1348" y="5638" font-size="16" class="mono" fill="#334155">next_retry_at: TEXT?<title>UTC ISO8601重试时间；非retry_wait时为空。</title></text>
+<text x="1348" y="5663" font-size="16" class="mono" fill="#334155">error: TEXT?<title>可展示的中文错误，不含授权码和SMTP原始响应。</title></text>
+<text x="1348" y="5688" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>UTC ISO8601登记时间。</title></text>
+<text x="1348" y="5713" font-size="16" class="mono" fill="#334155">sent_at: TEXT?<title>SMTP确认成功的UTC时间；失败或不确定为空。</title></text>
+<text x="1348" y="5738" font-size="13" fill="#64748b">关系：R43</text>
+</g>
+<g class="card" id="table-reminder_email_items" data-table="reminder_email_items"><rect x="1965" y="5335" width="580" height="241" rx="10" fill="white" stroke="#db2777"/>
+<path d="M1965 5413 H2545" stroke="#db2777"/>
+<text x="1983" y="5364" font-size="20" font-weight="700" fill="#db2777">邮件提醒关联与快照 «table»</text>
+<text x="1983" y="5392" font-size="20" class="mono" fill="#0f172a">reminder_email_items</text>
+<text x="1983" y="5438" font-size="16" class="mono" fill="#334155">PK FK delivery_id: INTEGER<title>所属邮件任务。</title></text>
+<text x="1983" y="5463" font-size="16" class="mono" fill="#334155">PK FK occurrence_id: INTEGER<title>真实提醒触发ID；唯一约束防止重复登记。</title></text>
+<text x="1983" y="5488" font-size="16" class="mono" fill="#334155">name: TEXT<title>触发时的提醒名称快照。</title></text>
+<text x="1983" y="5513" font-size="16" class="mono" fill="#334155">content: TEXT<title>触发时的提醒详情快照。</title></text>
+<text x="1983" y="5538" font-size="16" class="mono" fill="#334155">scheduled_time: TEXT<title>触发时转换为电脑当地时区的可读时间快照。</title></text>
+<text x="1983" y="5563" font-size="13" fill="#64748b">关系：R42 / R43</text>
+</g>
+<g class="card" id="table-pet_artworks" data-table="pet_artworks"><rect x="695" y="206" width="580" height="441" rx="10" fill="white" stroke="#6366f1"/>
+<path d="M695 284 H1275" stroke="#6366f1"/>
+<text x="713" y="235" font-size="20" font-weight="700" fill="#6366f1">桌宠创作条目 «table»</text>
+<text x="713" y="263" font-size="20" class="mono" fill="#0f172a">pet_artworks</text>
+<text x="713" y="309" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>创作条目主键，AI仅能选择已有正式条目</title></text>
+<text x="713" y="334" font-size="16" class="mono" fill="#334155">FK persona_id: INTEGER<title>所属人设，删除人设级联删除条目</title></text>
+<text x="713" y="359" font-size="16" class="mono" fill="#334155">kind: TEXT<title>base唯一初始形象/expression表情</title></text>
+<text x="713" y="384" font-size="16" class="mono" fill="#334155">name: TEXT<title>用户可编辑名称</title></text>
+<text x="713" y="409" font-size="16" class="mono" fill="#334155">prompt: TEXT = &#x27;&#x27;<title>用户自由填写的图像生成要求</title></text>
+<text x="713" y="434" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>给AI参考的使用时机，不作为指令</title></text>
+<text x="713" y="459" font-size="16" class="mono" fill="#334155">category: TEXT = &#x27;normal&#x27;<title>状态或聊天分类</title></text>
+<text x="713" y="484" font-size="16" class="mono" fill="#334155">enabled: INTEGER = 1<title>0不参与表情选择/1允许选择</title></text>
+<text x="713" y="509" font-size="16" class="mono" fill="#334155">image_file: TEXT?<title>已接受正式透明PNG受管相对路径，NULL尚无正式图</title></text>
+<text x="713" y="534" font-size="16" class="mono" fill="#334155">preview_file: TEXT?<title>尚待用户接受的透明PNG；重新生成失败保留旧预览</title></text>
+<text x="713" y="559" font-size="16" class="mono" fill="#334155">revision: INTEGER = 0<title>本条内容版本，修改后拒绝迟到生成和旧保存</title></text>
+<text x="713" y="584" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间RFC3339</title></text>
+<text x="713" y="609" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近修改时间RFC3339</title></text>
+<text x="713" y="634" font-size="13" fill="#64748b">关系：R44</text>
+</g>
+<text x="60" y="6504" font-size="25" font-weight="700" fill="#172554">关联明细 · 箭头由引用方指向被引用方</text>
+<text x="60" y="6539" font-size="17" fill="#475569">实线 R = 数据库外键；虚线 L = 逻辑关联。? = SQLite 允许 NULL；PK/FK = 主键/外键。唯一约束、CHECK、索引见离线页面。</text>
+<text x="60" y="6581" font-size="16" fill="#334155">R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="6610" font-size="16" fill="#334155">R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6639" font-size="16" fill="#334155">R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6668" font-size="16" fill="#334155">R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6697" font-size="16" fill="#334155">R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</text>
+<text x="60" y="6726" font-size="16" fill="#334155">R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6755" font-size="16" fill="#334155">R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6784" font-size="16" fill="#334155">R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6813" font-size="16" fill="#334155">R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6842" font-size="16" fill="#334155">R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6871" font-size="16" fill="#334155">R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6900" font-size="16" fill="#334155">R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6929" font-size="16" fill="#334155">R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="6958" font-size="16" fill="#334155">R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="6987" font-size="16" fill="#334155">R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7016" font-size="16" fill="#334155">R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7045" font-size="16" fill="#334155">R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7074" font-size="16" fill="#334155">R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7103" font-size="16" fill="#334155">R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7132" font-size="16" fill="#334155">R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="7161" font-size="16" fill="#334155">R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="7190" font-size="16" fill="#334155">R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7219" font-size="16" fill="#334155">R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7248" font-size="16" fill="#334155">R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7277" font-size="16" fill="#334155">R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</text>
+<text x="60" y="7306" font-size="16" fill="#334155">R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="7335" font-size="16" fill="#334155">R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7364" font-size="16" fill="#334155">R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="7393" font-size="16" fill="#334155">R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="7422" font-size="16" fill="#334155">R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="7451" font-size="16" fill="#334155">R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7480" font-size="16" fill="#334155">R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="7509" font-size="16" fill="#334155">R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="7538" font-size="16" fill="#334155">R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7567" font-size="16" fill="#334155">R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="7596" font-size="16" fill="#334155">R36  session_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="7625" font-size="16" fill="#334155">R37  session_festivals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7654" font-size="16" fill="#334155">R38  provider_models (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7683" font-size="16" fill="#334155">R39  provider_roles (provider_id, purpose) → provider_models (provider_id, purpose) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="7712" font-size="16" fill="#334155">R40  provider_roles (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="7741" font-size="16" fill="#334155">R41  message_images (message_id) → messages (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7770" font-size="16" fill="#334155">R42  reminder_email_items (occurrence_id) → reminder_occurrences (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7799" font-size="16" fill="#334155">R43  reminder_email_items (delivery_id) → reminder_email_deliveries (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7828" font-size="16" fill="#334155">R44  pet_artworks (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="7857" font-size="16" fill="#334155">L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</text>
+<text x="60" y="7886" font-size="16" fill="#334155">L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</text>
+<text x="60" y="7915" font-size="16" fill="#334155">L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</text>
+<text x="60" y="7944" font-size="16" fill="#334155">L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</text>
+<text x="60" y="7973" font-size="16" fill="#334155">L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</text>
+<text x="60" y="8002" font-size="16" fill="#334155">L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</text>
+<text x="60" y="8031" font-size="16" fill="#334155">L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</text>
 </svg>

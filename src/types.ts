@@ -147,36 +147,43 @@ export type WeatherView = {
 };
 export type WeatherInput = { apiHost: string | null; apiKey?: SecretUpdate };
 export type Provider = {
+  purposes?:string[];
+  createdAt?:string|null;updatedAt?:string|null;
   id: RecordId; name: string; baseUrl: string | null; model: string;
   hasApiKey: boolean; isActive: boolean; memoryIsActive: boolean;
   maxOutputTokens: number; contextWindowOverride: number | null;
   capacity: { contextWindow: number | null; maxOutputTokens: number | null; source: string; estimated: boolean; reference?: string | null; checkedAt?: string | null };
 };
 export type EmbeddingProviderInput = { name: string; baseUrl: string | null; model: string; apiKey?: SecretUpdate };
-export type ProviderInput = EmbeddingProviderInput & { maxOutputTokens?: number; contextWindowOverride?: number | null };
+export type ProviderInput = {name:string;baseUrl:string|null;apiKey?:SecretUpdate;model?:string;maxOutputTokens?:number;contextWindowOverride?:number|null};
 export type Persona = {
+  createdAt?:string|null;updatedAt?:string|null;
   id: RecordId; name: string; prompt: string; initialPrompt: string;
   selfEvolveEnabled: boolean; lastEvolvedAt: string | null; color: string;
   chatBgFile: string | null; chatBgOpacity: number; chatBgBlur: number;
+  chatAppearance?: ChatAppearance;
   isActive: boolean; isBuiltin: boolean; expressions: Record<string, unknown> | null;
 };
-export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean };
-export type ChatBackgroundRecord = { personaId: RecordId; file: string | null; opacity: number; blur: number };
+export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean; initialPrompt?: string };
+export type ChatAppearance = { bubbleStyle: "solid" | "transparent" | "outline" | "frosted"; userTextColor: string | null; assistantTextColor: string | null };
+export type ChatBackgroundRecord = { personaId: RecordId; file: string | null; opacity: number; blur: number; appearance?: ChatAppearance };
 export type ChatBackgroundView = { record: ChatBackgroundRecord; imageDataUrl: string | null; imageError: AppError | null };
 export type ChatBackgroundInput = {
   expected: ChatBackgroundRecord; opacity: number; blur: number;
   image: { fileName: string; base64: string } | null; reset: boolean;
+  appearance?: ChatAppearance;
 };
 export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };
 export type Session = {
   id: RecordId; personaId: RecordId; userProfileId: RecordId | null; title: string;
-  memoryRevision: number; intimacy: number; createdAt: string; updatedAt: string; isCurrent: boolean;
+  memoryRevision: number; intimacy: number; createdAt: string; updatedAt: string; isCurrent: boolean; isPinned: boolean;
 };
 /** 删除提交后的权威选择；null 表示当前人设没有可用会话，不隐式创建。 */
 export type SessionDeleteResult = { currentSessionId: RecordId | null; contextRevision: number };
 export type Message = {
+  images?:ChatImageRecord[];
   id: RecordId; sessionId: RecordId; roundId: RecordId | null; role: "user" | "assistant";
   content: string; expression: string | null; createdAt: string;
 };
@@ -277,7 +284,7 @@ export type LetterTarget = CurrentContext & { travelId: RecordId; replyToId: Rec
 export type Accessory = {
   id: RecordId; sessionId: RecordId; name: string; displayText: string; imageFile: string | null;
   description: string; cost: string; source: "crafted" | "travel"; travelId: RecordId | null;
-  isWorn: boolean; createdAt: string;
+  isWorn: boolean; createdAt: string; positionX?: number | null; positionY?: number | null; scale?: number;
 };
 export type AccessoryImage = { dataUrl: string | null; notice: string | null };
 export type AccessoryDeleteResult = { deletedId: RecordId };
@@ -333,3 +340,24 @@ export type SessionFestivalRecord = { id: RecordId; sessionId: RecordId; festiva
 
 /** 只用于宠窗显示；原提醒详情与状态不被润色覆盖。 */
 export type ReminderPresentation = { occurrenceId: RecordId; personaId: RecordId; contextRevision: number; text: string | null };
+
+export type CalendarDay = { date: string; lunar: string; solarTerm: string | null; events: {id:string;scope:"catalog"|"session";name:string;blessing:string;isMemorial:boolean}[] };
+export type CalendarMonth = {year:number;month:number;days:CalendarDay[]};
+
+export type ProviderRole={purpose:"chat"|"memory"|"image"|"vision";providerId:RecordId;model:string;enabled:boolean};
+export type ProviderModelConfig=Pick<ProviderRole,"purpose"|"providerId"|"model">&{maxOutputTokens:number;contextWindowOverride:number|null};
+export type ProviderRoles={revision:number;roles:ProviderRole[];models?:ProviderModelConfig[]};
+
+export type ChatImageInput={filename:string;dataUrl:string};
+export type ChatImageRecord={id:RecordId;filename:string;imageFile:string;mediaType:string;caption:string|null};
+
+/** SMTP连接与模型提供商独立，授权码不从后端回传。 */
+export interface ReminderEmailConnection { email: string; host: string; port: number; encryption: "tls" | "starttls"; username: string; from: string; to: string }
+export interface ReminderEmailDelivery { id: string; recipient: string; subject: string; state: "pending" | "sending" | "retry_wait" | "sent" | "failed" | "uncertain" | "cancelled"; attempts: number; nextRetryAt: string | null; error: string | null; createdAt: string; sentAt: string | null }
+export interface ReminderEmailView { connection: ReminderEmailConnection; revision: number; enabled: boolean; verified: boolean; hasSecret: boolean; deliveries: ReminderEmailDelivery[] }
+export interface ReminderEmailInput { connection: ReminderEmailConnection; revision: number; secret: { action: "keep" | "clear" } | { action: "set"; value: string } }
+
+export type PetArtCategory = "normal"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat";
+export type PetArtworkInput = {kind:"base"|"expression";name:string;prompt:string;description:string;category:PetArtCategory;enabled:boolean};
+export type PetArtwork = PetArtworkInput & {id:string;personaId:string;imageFile:string|null;previewFile:string|null;revision:number;createdAt:string;updatedAt:string};
+export type PetCreation = {enabled:boolean;revision:number;items:PetArtwork[]};

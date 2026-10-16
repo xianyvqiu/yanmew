@@ -149,8 +149,9 @@ it("聚焦恢复活动快照，终态漏事件后从数据库恢复", async () =
 });
 
 it("同一上下文对象刷新不取消请求，换会话清理旧请求并隔离迟到事件", async () => {
-  api.current.mockResolvedValueOnce(receipt);
   const hook = renderHook(({ value }) => useChat(value), { initialProps: { value: context } });
+  await waitFor(() => expect(hook.result.current.ready).toBe(true));
+  await act(async () => { await hook.result.current.send("你好"); });
   await waitFor(() => expect(hook.result.current.active?.requestId).toBe("5"));
   hook.rerender({ value: { ...context } });
   expect(api.cancel).not.toHaveBeenCalled();
@@ -355,4 +356,14 @@ it("搜索状态跟随序号并能从活动快照恢复，不误判回复结束"
   expect(hook.result.current.active?.requestId).toBe("5"); expect(hook.result.current.active?.webActivity).toBeNull();
   act(() => receive(event({ type: "text", text: "已经找到资料" }, 5)));
   expect(hook.result.current.active?.partialContent).toBe("已经找到资料");
+});
+
+it("其他入口的新流式请求先同步快照，旁观窗口卸载不取消它",async()=>{
+  const hook=renderHook(()=>useChat(context));await waitFor(()=>expect(hook.result.current.ready).toBe(true));
+  api.current.mockResolvedValueOnce({...receipt,seq:1,partialContent:"跨窗口"});
+  act(()=>receive(event({type:"text",text:"跨窗口"},1)));
+  await waitFor(()=>expect(hook.result.current.active?.partialContent).toBe("跨窗口"));
+  act(()=>receive(event({type:"text",text:"同步"},2)));
+  expect(hook.result.current.active?.partialContent).toBe("跨窗口同步");
+  hook.unmount();expect(api.cancel).not.toHaveBeenCalled();
 });

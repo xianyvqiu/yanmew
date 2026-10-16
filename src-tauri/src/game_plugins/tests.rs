@@ -163,6 +163,23 @@ fn storage_settings_and_namespace() {
     assert!(data_get(&c, &m.id, "2.0.0", "progress.main").is_err());
 }
 #[test]
+fn factory_reset_clears_plugin_state_and_permissions_but_keeps_wallet_history() {
+    let (mut c, m) = setup();
+    grant(&mut c, &m, Decision::Allowed);
+    save_setting(&c, &m, "audio.volume", &serde_json::json!(80), Utc::now()).unwrap();
+    data_set(&mut c, &m.id, &m.version, "progress.main", &serde_json::json!({"level":42}), Utc::now()).unwrap();
+    let run = runs::start(&c, &m.id, &m.version, Utc::now()).unwrap();
+    runs::change_coins(&mut c, &m.id, &m.version, &run.id, &request(&run, 5), Utc::now()).unwrap();
+    clear_private_data(&mut c, &m.id, &m.version).unwrap();
+    assert_eq!(data_get(&c, &m.id, &m.version, "progress.main").unwrap(), None);
+    assert_eq!(merged_settings(&c, &m).unwrap()["audio.volume"], 50);
+    assert!(permissions(&c, &m.id).unwrap().iter().all(|item| item.decision == "pending" && item.decided_at.is_none()));
+    assert_eq!(crate::currency::get_balance(&c).unwrap(), 15);
+    assert_eq!(c.query_row("SELECT COUNT(*) FROM currency_ledger", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    assert_eq!(c.query_row("SELECT COUNT(*) FROM game_runs", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    assert_eq!(get(&c, &m.id).unwrap().installed_version, m.version);
+}
+#[test]
 fn close_keeps_progress_and_history_survives_uninstall() {
     let (mut c, m) = setup();
     grant(&mut c, &m, Decision::Allowed);

@@ -294,7 +294,7 @@ fn capture(runtime: &Runtime, key: Key) -> AppResult<(Snapshot, RequestLease)> {
         runtime.jobs_cancel.check()?;runtime.settle_pet(store,secrets)?;
         let now=runtime.clock.sample()?.utc;let b=base(&store.connection,key.travel)?;
         if !allowed(&store.connection,key,&b,now)? {return Err(AppError::new("CONTEXT_CHANGED","旅行或回信任务已失效"))}
-        let provider=store.connection.query_row("SELECT id FROM providers WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成信件"))?;
+        let provider=store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1",[],|r|r.get::<_,i64>(0)).optional()?.ok_or_else(||AppError::new("PROVIDER_UNAVAILABLE","请配置聊天提供商以生成信件"))?;
         let target=providers::connection_test_config(&store.connection,provider,secrets)?;
         let elapsed=match key.kind {Kind::Return=>parse_time(b.actual.as_deref().ok_or_else(AppError::storage)?)?,_=>now}.signed_duration_since(parse_time(&b.started)?).to_std().map_err(|_|AppError::storage())?;
         let original=match key.kind {Kind::Reply(id)=>Some(get(&store.connection,b.session,id)?),_=>None};
@@ -411,7 +411,7 @@ fn commit(runtime: &Runtime, s: &Snapshot, lease: &RequestLease, body: &str) -> 
         };
         let provider = store
             .connection
-            .query_row("SELECT id FROM providers WHERE is_active=1", [], |r| {
+            .query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| {
                 r.get::<_, i64>(0)
             })
             .optional()?;

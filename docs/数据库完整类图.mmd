@@ -6,11 +6,8 @@ class providers {
   TEXT name
   TEXT base_url
   TEXT api_key_encrypted
-  TEXT model
-  INTEGER is_active
-  INTEGER memory_is_active
-  INTEGER max_output_tokens
-  INTEGER context_window_override
+  TEXT created_at
+  TEXT updated_at
 }
 class embedding_providers {
   <<table>>
@@ -38,6 +35,13 @@ class personas {
   INTEGER is_active
   INTEGER is_builtin
   TEXT expressions
+  TEXT created_at
+  TEXT updated_at
+  TEXT chat_bubble_style
+  TEXT chat_user_text_color
+  TEXT chat_assistant_text_color
+  INTEGER pet_image_enabled
+  INTEGER pet_image_revision
 }
 class user_profiles {
   <<table>>
@@ -62,6 +66,7 @@ class sessions {
   INTEGER intimacy
   TEXT last_return_at
   INTEGER travel_trigger_remaining_seconds
+  INTEGER is_pinned
 }
 class session_pet_states {
   <<table>>
@@ -297,6 +302,9 @@ class accessories {
   INTEGER is_worn
   TEXT created_at
   TEXT image_file
+  INTEGER position_x
+  INTEGER position_y
+  INTEGER scale
 }
 class letters {
   <<table>>
@@ -361,6 +369,69 @@ class session_festivals {
   TEXT created_at
   TEXT updated_at
 }
+class provider_models {
+  <<table>>
+  INTEGER provider_id PK FK
+  TEXT purpose PK
+  TEXT model
+  INTEGER max_output_tokens
+  INTEGER context_window_override
+}
+class provider_roles {
+  <<table>>
+  TEXT purpose PK FK
+  INTEGER provider_id FK
+  INTEGER enabled
+}
+class message_images {
+  <<table>>
+  INTEGER id PK
+  INTEGER message_id FK
+  TEXT filename
+  TEXT image_file
+  TEXT media_type
+  TEXT caption
+  TEXT created_at
+}
+class reminder_email_deliveries {
+  <<table>>
+  INTEGER id PK
+  TEXT kind
+  TEXT recipient
+  TEXT subject
+  TEXT body
+  INTEGER config_revision
+  TEXT state
+  INTEGER attempts
+  TEXT next_retry_at
+  TEXT error
+  TEXT created_at
+  TEXT sent_at
+}
+class reminder_email_items {
+  <<table>>
+  INTEGER delivery_id PK FK
+  INTEGER occurrence_id PK FK
+  TEXT name
+  TEXT content
+  TEXT scheduled_time
+}
+class pet_artworks {
+  <<table>>
+  INTEGER id PK
+  INTEGER persona_id FK
+  TEXT kind
+  TEXT name
+  TEXT prompt
+  TEXT description
+  TEXT category
+  INTEGER enabled
+  TEXT image_file
+  TEXT preview_file
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
 sessions "0..*" --> "0..1" user_profiles : R01 user_profile_id / SET NULL
 sessions "0..*" --> "1" personas : R02 persona_id / CASCADE
 session_pet_states "0..1" --> "1" sessions : R03 session_id / CASCADE
@@ -398,6 +469,13 @@ souvenirs "0..*" --> "1" sessions : R34 session_id / CASCADE
 souvenirs "0..*" --> "0..1" travels : R35 travel_id, session_id / NO ACTION
 session_festivals "0..*" --> "0..1" festival_catalog : R36 festival_id / SET NULL
 session_festivals "0..*" --> "1" sessions : R37 session_id / CASCADE
+provider_models "0..*" --> "1" providers : R38 provider_id / CASCADE
+provider_roles "0..1" --> "0..1" provider_models : R39 provider_id, purpose / RESTRICT
+provider_roles "0..*" --> "1" providers : R40 provider_id / RESTRICT
+message_images "0..*" --> "1" messages : R41 message_id / CASCADE
+reminder_email_items "0..1" --> "1" reminder_occurrences : R42 occurrence_id / CASCADE
+reminder_email_items "0..*" --> "1" reminder_email_deliveries : R43 delivery_id / CASCADE
+pet_artworks "0..*" --> "1" personas : R44 persona_id / CASCADE
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

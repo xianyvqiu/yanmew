@@ -75,7 +75,7 @@ fn stale_revision_message_provider_and_settings_never_commit() {
     for change in [
         "UPDATE sessions SET memory_revision=memory_revision+1 WHERE id=1",
         "UPDATE messages SET content='编辑后的原文' WHERE role='user'",
-        "UPDATE providers SET model='another-model' WHERE is_active=1",
+        "UPDATE provider_models SET model='another-model' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')",
         "UPDATE settings SET value='120' WHERE key='short_memory_max_chars'",
     ] {
         let runtime = crate::runtime::test_runtime("http://127.0.0.1:9/v1");
@@ -198,7 +198,7 @@ fn selected_memory_provider_and_fallback_use_only_source_messages() {
         let chat = Server::new(vec![Response::json(json!({"content":SUMMARY}))]);
         let memory = Server::new(vec![Response::json(json!({"content":SUMMARY}))]);
         let runtime = crate::runtime::test_runtime(&chat.url);
-        runtime.read(|s, _| { s.connection.execute("INSERT INTO providers(name,base_url,model,memory_is_active) VALUES('记忆',?1,'memory-model',1)", [&memory.url])?; Ok(()) }).unwrap();
+        runtime.read(|s, _| { s.connection.execute("INSERT INTO providers(name,base_url) VALUES('记忆',?1)", [&memory.url])?;let id=s.connection.last_insert_rowid();s.connection.execute("INSERT INTO provider_models(provider_id,purpose,model) VALUES(?1,'memory','memory-model')",[id])?;s.connection.execute("INSERT INTO provider_roles(purpose,provider_id) VALUES('memory',?1)",[id])?; Ok(()) }).unwrap();
         let first = complete(&runtime, 1);
         assert_eq!(
             generate(runtime.clone(), first).await.unwrap(),
@@ -226,7 +226,7 @@ fn selected_memory_provider_and_fallback_use_only_source_messages() {
         runtime
             .read(|s, _| {
                 s.connection
-                    .execute("UPDATE providers SET memory_is_active=0", [])?;
+                    .execute("DELETE FROM provider_roles WHERE purpose='memory'", [])?;
                 Ok(())
             })
             .unwrap();

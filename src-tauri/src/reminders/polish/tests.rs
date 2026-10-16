@@ -115,6 +115,7 @@ fn missing_provider_and_missed_or_completed_reminders_do_not_request_ai() {
                     "UPDATE reminder_occurrences SET status='pending',delivery_state='queued'",
                     [],
                 )?;
+                s.connection.execute("DELETE FROM provider_roles", [])?;
                 s.connection.execute("DELETE FROM providers", [])?;
                 Ok(())
             })
@@ -163,7 +164,7 @@ fn late_results_are_discarded_after_record_or_context_changes() {
                         }
                         _ => {
                             s.connection
-                                .execute("UPDATE providers SET model='new-model'", [])?;
+                                .execute("UPDATE provider_models SET model='new-model' WHERE purpose='chat'", [])?;
                         }
                     }
                     Ok(())

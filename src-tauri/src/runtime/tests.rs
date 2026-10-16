@@ -309,12 +309,13 @@ fn only_effective_chat_configuration_changes_clear_provider_failure() {
     runtime.read(|store, secrets| {
         let token = store.pet.health(&store.connection, secrets)?;
         store.pet.report_ai_failure(&token, &AppError::new("PROVIDER_UNAVAILABLE", "连接失败"));
-        store.connection.execute("UPDATE providers SET name='改名',max_output_tokens=4096 WHERE is_active=1", [])?;
+        store.connection.execute("UPDATE providers SET name='改名' WHERE id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')", [])?;
+        store.connection.execute("UPDATE provider_models SET max_output_tokens=4096 WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')", [])?;
         Ok(())
     }).unwrap();
     assert_eq!(runtime.pet_view().unwrap().activity, Activity::Dormant);
     runtime.read(|store, _| {
-        store.connection.execute("UPDATE providers SET model='another-model' WHERE is_active=1", [])?;
+        store.connection.execute("UPDATE provider_models SET model='another-model' WHERE purpose='chat' AND provider_id=(SELECT provider_id FROM provider_roles WHERE purpose='chat')", [])?;
         Ok(())
     }).unwrap();
     assert_eq!(runtime.pet_view().unwrap().error, None);

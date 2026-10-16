@@ -5,6 +5,9 @@ import PersonaForm from "./PersonaForm";
 import PersonaPromptDiff from "../PersonaPromptDiff";
 import ChatBackgroundSettings from "../ChatBackgroundSettings";
 import "./PersonasPanel.css";
+import CardBrowserControls from "../CardBrowserControls";
+import {useCardBrowser} from "../../hooks/useCardBrowser";
+import type { SettingsDetailRequest } from "../../platform/navigation";
 
 type Confirmation = { persona: Persona; action: "delete" | "baseline" | "restore" };
 const inputFor = (persona: Persona): PersonaInput => ({ name: persona.name, prompt: persona.prompt,
@@ -19,7 +22,8 @@ function expressionGroups(persona: Persona): { label: string; values: string[] }
   return groups.map(([label, value]) => ({ label, values: Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [] }));
 }
 
-export default function PersonasPanel() {
+export default function PersonasPanel({ detailRequest }: { detailRequest?: SettingsDetailRequest }) {
+  const [selected,setSelected]=useState<string|null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -35,6 +39,7 @@ export default function PersonasPanel() {
   const locked = useRef(false);
   const generatingRef = useRef<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const consumedDetail = useRef<SettingsDetailRequest>();
   const showError = useCallback((cause: unknown) => {
     if (!mounted.current) return;
     const details = cause && typeof cause === "object" ? cause as Partial<AppError> : {};
@@ -77,6 +82,12 @@ export default function PersonasPanel() {
     };
   }, [refresh, showError]);
   useEffect(() => { if (confirmation) dialog.current?.showModal(); else dialog.current?.close(); }, [confirmation]);
+  useEffect(() => {
+    if (!detailRequest || consumedDetail.current === detailRequest || loading || busy || error || generating || editing !== undefined || confirmation) return;
+    consumedDetail.current = detailRequest;
+    if (personas.some(item => item.id === detailRequest.id)) setSelected(detailRequest.id);
+    else { setSelected(null); setError({ code: "NOT_FOUND", message: "该人设已不存在，请从列表重新选择" }); }
+  }, [detailRequest, loading, busy, error, generating, editing, confirmation, personas]);
 
   const run = async (action: () => Promise<unknown>, success: string): Promise<boolean> => {
     if (locked.current) return false;
@@ -102,7 +113,7 @@ export default function PersonasPanel() {
       : configurationApi.updatePersona(persona.id, { ...inputFor(persona),
         prompt: action === "restore" ? persona.initialPrompt : persona.prompt, saveAsInitial: action === "baseline" }),
       action === "delete" ? "人设及其关联数据已删除" : action === "restore" ? "已恢复初始设定" : "初始设定已更新");
-    if (done && mounted.current) setConfirmation(null);
+    if (done && mounted.current) {setConfirmation(null);if(action==="delete")setSelected(null);}
   };
   const generate = async (persona: Persona) => {
     if (locked.current) return;
@@ -119,18 +130,26 @@ export default function PersonasPanel() {
     try { await configurationApi.cancelExpressionGeneration(id); }
     catch (cause) { showError(cause); if (mounted.current) setCancelling(false); }
   };
+  const browser=useCardBrowser(personas,p=>`${p.name} ${p.prompt} ${p.initialPrompt}`,p=>p.updatedAt??"",p=>p.id);
   const disabled = busy || loading;
   return <>
     <section className="ym-page-card" aria-label="人设管理">
       <div className="ym-page-heading"><h2>人设</h2><button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(null); setError(null); }}>新建人设</button></div>
       <p className="ym-page-note">切换会中断当前回复，并取消已开始的旅行和待回信；目标人设的会话由系统恢复。修改当前设定也会中断该人设正在进行的请求。</p>
       {loading && <p role="status">正在读取人设…</p>}
+      {detailRequest && consumedDetail.current !== detailRequest && (busy || generating || editing !== undefined || confirmation) && <p role="status" className="ym-page-note">有未完成的操作，完成或取消后会打开目标人设详情；当前编辑内容保留。</p>}
       {error && !confirmation && (!error.field || editing === undefined) && <div className="ym-page-error" role="alert">{error.message}<button className="ym-button" disabled={busy} onClick={() => { setError(null); void refresh().catch(showError); }}>重新读取</button></div>}
       {notice && <p role="status">{notice}</p>}
       {editing !== undefined && <PersonaForm key={editing?.id ?? "new"} persona={editing ? personas.find(persona => persona.id === editing.id) ?? editing : editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
-      <div className="ym-persona-grid">{personas.map(persona => <article className="ym-persona-card" key={persona.id} aria-label={persona.name}>
-        <div className="ym-page-heading"><h3>{persona.name}</h3><span>{persona.isActive ? "当前使用" : ""}{persona.isBuiltin ? " · 系统默认" : ""}</span></div>
+      {!selected&&<CardBrowserControls browser={browser} label="人设" timeLabel="更新时间" disabled={busy}/>}
+      {selected&&<div className="ym-detail-header"><button className="ym-button" disabled={busy||editing!==undefined} onClick={()=>setSelected(null)}>返回人设列表</button><span>人设详情</span></div>}
+      <div className="ym-persona-grid">{(selected?personas.filter(p=>p.id===selected):browser.items).map(persona => <article className="ym-persona-card ym-object-card" data-current={persona.isActive} key={persona.id} aria-label={persona.name} onClick={event=>{if(!selected&&editing===undefined&&!disabled&&!(event.target as HTMLElement).closest("button"))setSelected(persona.id);}}>
+        <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(persona.id)}>{persona.name}</button></h3><button className={`ym-button ${persona.isActive?"ym-current-button":""}`} disabled={disabled||persona.isActive||editing!==undefined} onClick={()=>void run(()=>configurationApi.setPersona(persona.id),"当前人设已切换")}>{persona.isActive?"使用中":"切换"}</button></div>
+        <p className="ym-page-note">{persona.isBuiltin?"系统默认人设":"自建人设"}{persona.isActive&&" · 当前使用"}</p>
+        {!selected&&<p className="ym-card-summary">{persona.prompt}</p>}
         <p className="ym-persona-color"><span style={{ backgroundColor: persona.color }} aria-hidden="true" />本体颜色 {persona.color}</p>
+        {!selected&&<p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}</p>}
+        {selected===persona.id&&<>
         <p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}。仅在确有必要时小幅调整，完整回复成功后保存。</p>
         <p className="ym-page-note">最近 AI 调整：{persona.lastEvolvedAt ? new Date(persona.lastEvolvedAt).toLocaleString() : "暂无"}</p>
         <details><summary>当前设定</summary><p className="ym-persona-prompt">{persona.prompt}</p></details>
@@ -149,6 +168,7 @@ export default function PersonasPanel() {
           {!persona.isBuiltin && <button className="ym-button ym-persona-danger" aria-label={`删除 ${persona.name}`} disabled={disabled || editing !== undefined} onClick={() => { setConfirmation({ persona, action: "delete" }); setError(null); }}>删除</button>}
         </div>
         {persona.isBuiltin && <p className="ym-page-note">系统默认人设不能删除。</p>}
+        </>}
       </article>)}</div>
     </section>
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="persona-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>

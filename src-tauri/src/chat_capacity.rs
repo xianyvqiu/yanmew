@@ -158,10 +158,14 @@ pub fn too_large() -> AppError {
 }
 pub fn estimate(messages: &[crate::ai::provider::Message], tools: &[Value]) -> AppResult<usize> {
     // 无精确 tokenizer 时，完整 JSON 的 UTF-8 字节数 + 消息/协议余量；不是服务端真实 token 数。
-    let bytes = serde_json::to_vec(&serde_json::json!({"messages":messages,"tools":tools}))
+    // Base64不是文字token；图片使用保守估算，服务端容量错误仍复用一次裁剪重试。
+    let image_count=messages.iter().map(|m|m.images.len()).sum::<usize>();
+    let text_messages=messages.iter().cloned().map(|mut m|{m.images.clear();m}).collect::<Vec<_>>();
+    let bytes = serde_json::to_vec(&serde_json::json!({"messages":text_messages,"tools":tools}))
         .map_err(|_| AppError::storage())?
         .len();
     Ok(bytes
+        .saturating_add(image_count.saturating_mul(4096))
         .saturating_add(messages.len().saturating_mul(32))
         .saturating_add(128))
 }
