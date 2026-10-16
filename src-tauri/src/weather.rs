@@ -249,7 +249,7 @@ impl Client {
     }
 }
 
-/// 显式刷新才访问定位/网络；聊天可直接读缓存，不等待本函数。
+/// 天气页面进入或手动刷新时访问定位/网络；聊天只读缓存，不等待本函数。
 pub async fn refresh(
     runtime: Runtime,
     revision: u64,

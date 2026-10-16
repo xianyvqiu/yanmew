@@ -177,7 +177,7 @@ fn tool_replay_does_not_spend_again_and_configuration_changes_block_results() {
         configure(&runtime, Kind::Tavily, &server.url);
         let client = AiClient::new(Timeouts::default()).unwrap();
         let cancel = Cancellation::default();
-        let mut session = SearchSession::new(&runtime);
+        let mut session = SearchSession::new(&runtime, "今天的新闻");
         let call = ToolCall {
             index: 0,
             id: "search-1".into(),
@@ -221,7 +221,7 @@ fn tool_replay_does_not_spend_again_and_configuration_changes_block_results() {
                 .code,
             "WEB_SEARCH_CONFIGURATION_CHANGED"
         );
-        let mut off = SearchSession::new(&runtime);
+        let mut off = SearchSession::new(&runtime, "");
         assert!(!off.available());
         assert_eq!(
             off.execute(&client, &runtime, &call, &cancel)
@@ -292,4 +292,86 @@ fn service_errors_and_invalid_results_are_not_model_provider_errors() {
     .unwrap()
     .is_empty());
     assert!(network::parse_search(Kind::Tavily, &json!({"unexpected":"bad"})).is_err());
+}
+
+#[test]
+fn user_links_allow_explicit_urls_and_preserve_queries_and_balanced_parentheses() {
+    let urls = tools::user_urls("看看 https://example.com/news?x=1&y=2。还有[说明](https://example.com/wiki/A_(B)#part)，<https://example.com/news?x=1&y=2>。http://127.0.0.1/ http://[::1]/ https://user:pass@example.com/ ftp://example.com/");
+    assert_eq!(urls, vec!["https://example.com/news?x=1&y=2", "https://example.com/wiki/A_(B)"]);
+    assert!(tools::user_urls("没有链接，只是 example.com").is_empty());
+}
+
+#[test]
+fn extract_requires_actual_matching_body_and_reports_partial_failure_and_truncation() {
+    let url = "https://example.com/article";
+    let content = "猫".repeat(6001);
+    let page = network::parse_extract(&json!({"results":[
+        {"url":"https://other.example.com/","raw_content":"无关正文"},
+        {"url":url,"raw_content":content,"title":"标题"}], "failed_results":[]}), url).unwrap();
+    assert_eq!(page.content.chars().count(), 6000);
+    assert!(page.truncated);
+    assert_eq!(page.title, "标题");
+    assert_eq!(network::parse_extract(&json!({"results":[],"failed_results":[{"url":url,"error":"secret 原始错误"}]}),url).err().unwrap().code,"WEB_PAGE_UNAVAILABLE");
+    assert_eq!(network::parse_extract(&json!({"results":[{"url":url,"raw_content":"  ","content":"这只是摘要"}],"failed_results":[]}),url).err().unwrap().code,"WEB_PAGE_UNAVAILABLE");
+    assert!(network::parse_extract(&json!({"results":[{"url":"https://other.example.com/","raw_content":"错页"}],"failed_results":[]}),url).is_err());
+}
+
+#[test]
+fn tavily_reads_user_link_without_search_and_reuses_body_without_spending_again() {
+    tauri::async_runtime::block_on(async {
+        let url = "https://example.com/article";
+        let server = Server::new_at(vec![response(json!({"results":[{"url":url,"raw_content":"真正的正文🙂"}],"failed_results":[]}))], "/v1/extract");
+        let runtime = test_runtime("https://example.com/v1");
+        configure(&runtime, Kind::Tavily, &server.url);
+        let client = AiClient::new(Timeouts::default()).unwrap();
+        let cancel = Cancellation::default();
+        let mut session = SearchSession::new(&runtime, &format!("请读 {url}。不要上传这段私密聊天"));
+        let mut call = ToolCall { index: 0, id: "read-1".into(), name: "open_web_page".into(), arguments:json!({"url":url}) };
+        let page = session.execute(&client, &runtime, &call, &cancel).await.unwrap();
+        assert_eq!(page["kind"],"page_text");
+        assert_eq!(page["page"]["content"],"真正的正文🙂");
+        assert_eq!(page["page"]["truncated"],false);
+        call.id="read-2".into();
+        assert_eq!(session.execute(&client,&runtime,&call,&cancel).await.unwrap()["page"],page["page"]);
+        assert!(session.footer("已读").contains("网页来源（已读取正文）"));
+        assert!(!session.footer("已读").contains("搜索来源（摘要）"));
+        let requests=server.requests.lock().unwrap();
+        assert_eq!(requests.len(),1);
+        assert_eq!(requests[0]["urls"],json!([url]));
+        assert_eq!(requests[0]["extract_depth"],"basic");
+        assert_eq!(requests[0]["format"],"markdown");
+        assert!(!requests[0].to_string().contains("私密聊天"));
+        drop(requests);
+        runtime.read(|s,_|enable(&mut s.connection,false)).unwrap();
+        assert_eq!(session.execute(&client,&runtime,&call,&cancel).await.unwrap_err().code,"WEB_SEARCH_CONFIGURATION_CHANGED");
+        server.finish();
+    });
+}
+
+#[test]
+fn tavily_empty_success_and_quota_errors_do_not_claim_body_was_read_or_leak_raw_errors() {
+    tauri::async_runtime::block_on(async {
+        let url="https://example.com/article";
+        let server=Server::new_at(vec![
+            response(json!({"results":[],"failed_results":[{"url":url,"error":"fake-test-key"}]})),
+            Response {status:429,mime:"application/json",chunks:vec![(0,b"fake-test-key".to_vec())]},
+        ],"/v1/extract");
+        let runtime=test_runtime("https://example.com/v1");
+        configure(&runtime,Kind::Tavily,&server.url);
+        let client=AiClient::new(Timeouts::default()).unwrap();
+        let cancel=Cancellation::default();
+        let mut session=SearchSession::new(&runtime,url);
+        let mut call=ToolCall {index:0,id:"fail-1".into(),name:"open_web_page".into(),arguments:json!({"url":url})};
+        let error=session.execute(&client,&runtime,&call,&cancel).await.unwrap_err();
+        assert_eq!(error.code,"WEB_PAGE_UNAVAILABLE");
+        assert!(!error.message.contains("fake-test-key"));
+        assert!(session.footer("回复").is_empty());
+        call.id="fail-2".into();
+        assert_eq!(session.execute(&client,&runtime,&call,&cancel).await.unwrap_err().code,"WEB_SEARCH_QUOTA");
+        call.id="deny".into();
+        call.arguments=json!({"url":"https://unrelated.example.com/"});
+        assert_eq!(session.execute(&client,&runtime,&call,&cancel).await.unwrap_err().code,"WEB_PAGE_DENIED");
+        assert_eq!(server.requests.lock().unwrap().len(),2);
+        server.finish();
+    });
 }

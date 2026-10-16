@@ -129,7 +129,7 @@ pub fn save(
         || input.description.chars().count() > 1000
         || !["base", "expression"].contains(&input.kind.as_str())
         || ![
-            "normal", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat",
+            "normal", "standby", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat",
         ]
         .contains(&input.category.as_str())
     {
@@ -140,11 +140,13 @@ pub fn save(
     }
     let tx = c.transaction()?;
     let now = chrono::Utc::now().to_rfc3339();
+    let mut protected_standby = false;
     let id = if let Some(id) = id {
         let old = get(&tx, persona, id)?;
         if Some(old.revision) != revision || old.kind != input.kind {
             return Err(conflict());
         }
+        protected_standby = is_standby(&old);
         tx.execute("UPDATE pet_artworks SET name=?1,prompt=?2,description=?3,category=?4,enabled=?5,revision=revision+1,updated_at=?6 WHERE id=?7",params![input.name.trim(),input.prompt,input.description,input.category,input.enabled,now,id])?;
         id
     } else {
@@ -162,10 +164,23 @@ pub fn save(
         tx.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,description,category,enabled,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?8)",params![persona,input.kind,input.name.trim(),input.prompt,input.description,input.category,input.enabled,now])?;
         tx.last_insert_rowid()
     };
+    // 旧库缺图仍可编辑；已有待机图的图片模式不能失去最后一个可用待机条目。
+    if protected_standby && library(&tx, persona)?.enabled {
+        require_standby(&tx, persona)?;
+    }
     changed(&tx, persona)?;
     let result = get(&tx, persona, id)?;
     tx.commit()?;
     Ok(result)
+}
+fn is_standby(a: &Artwork) -> bool {
+    a.kind == "expression" && a.category == "standby" && a.enabled && a.image_file.is_some()
+}
+fn require_standby(c: &Connection, persona: i64) -> AppResult<()> {
+    if !library(c, persona)?.items.iter().any(is_standby) {
+        return Err(AppError::validation("standby", "图片模式需要至少一张已接受且允许使用的待机图片；请先补充待机图，或关闭图片模式后再删除、停用或更改最后一张待机图的类别"));
+    }
+    Ok(())
 }
 pub fn set_enabled(c: &Connection, persona: i64, enabled: bool, revision: u64) -> AppResult<()> {
     require_current(c, persona)?;
@@ -181,6 +196,7 @@ pub fn set_enabled(c: &Connection, persona: i64, enabled: bool, revision: u64) -
     {
         return Err(AppError::validation("enabled", "请先上传并接受初始形象"));
     }
+    if enabled { require_standby(c, persona)?; }
     c.execute("UPDATE personas SET pet_image_enabled=?1,pet_image_revision=pet_image_revision+1 WHERE id=?2",params![enabled,persona])?;
     Ok(())
 }
@@ -309,6 +325,7 @@ pub fn finish(
         }
         "delete" => {
             tx.execute("DELETE FROM pet_artworks WHERE id=?1", [id])?;
+            if is_standby(&old) && library(&tx, persona)?.enabled { require_standby(&tx, persona)?; }
             if old.kind == "base" {
                 tx.execute(
                     "UPDATE personas SET pet_image_enabled=0 WHERE id=?1",

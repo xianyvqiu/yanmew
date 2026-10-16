@@ -40,6 +40,7 @@ fn text_gift_does_not_read_broken_image_configuration() {
 #[test]
 fn parse_rejects_truncation_tools_wrong_kind_and_prose_visual() {
     let choice = Choice {
+        reasoning_content: None,
         index: 0,
         content: json!({"kind":"text","content":"明信片","note":"给你的"}).to_string(),
         tools: vec![],
@@ -59,6 +60,7 @@ fn parse_rejects_truncation_tools_wrong_kind_and_prose_visual() {
     });
     assert!(parse(&bad, "text").is_err());
     let bad = Choice {
+        reasoning_content: None,
         content:
             json!({"kind":"accessory","name":"花","display_text":"普通花朵","description":"我的花"})
                 .to_string(),

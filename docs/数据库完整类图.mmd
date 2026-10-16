@@ -349,10 +349,9 @@ class festival_catalog {
   INTEGER is_memorial
   TEXT note
 }
-class session_festivals {
+class custom_festivals {
   <<table>>
   INTEGER id PK
-  INTEGER session_id FK
   INTEGER festival_id FK
   TEXT kind
   TEXT name
@@ -467,15 +466,14 @@ letters "0..*" --> "0..1" travels : R32 travel_id, session_id / NO ACTION
 souvenirs "0..*" --> "0..1" travels : R33 travel_id / SET NULL
 souvenirs "0..*" --> "1" sessions : R34 session_id / CASCADE
 souvenirs "0..*" --> "0..1" travels : R35 travel_id, session_id / NO ACTION
-session_festivals "0..*" --> "0..1" festival_catalog : R36 festival_id / SET NULL
-session_festivals "0..*" --> "1" sessions : R37 session_id / CASCADE
-provider_models "0..*" --> "1" providers : R38 provider_id / CASCADE
-provider_roles "0..1" --> "0..1" provider_models : R39 provider_id, purpose / RESTRICT
-provider_roles "0..*" --> "1" providers : R40 provider_id / RESTRICT
-message_images "0..*" --> "1" messages : R41 message_id / CASCADE
-reminder_email_items "0..1" --> "1" reminder_occurrences : R42 occurrence_id / CASCADE
-reminder_email_items "0..*" --> "1" reminder_email_deliveries : R43 delivery_id / CASCADE
-pet_artworks "0..*" --> "1" personas : R44 persona_id / CASCADE
+custom_festivals "0..*" --> "0..1" festival_catalog : R36 festival_id / SET NULL
+provider_models "0..*" --> "1" providers : R37 provider_id / CASCADE
+provider_roles "0..1" --> "0..1" provider_models : R38 provider_id, purpose / RESTRICT
+provider_roles "0..*" --> "1" providers : R39 provider_id / RESTRICT
+message_images "0..*" --> "1" messages : R40 message_id / CASCADE
+reminder_email_items "0..1" --> "1" reminder_occurrences : R41 occurrence_id / CASCADE
+reminder_email_items "0..*" --> "1" reminder_email_deliveries : R42 delivery_id / CASCADE
+pet_artworks "0..*" --> "1" personas : R43 persona_id / CASCADE
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

@@ -61,9 +61,9 @@ impl Session {
                 crate::memory::management::Context {persona_id:self.persona_id.to_string(),session_id:self.session_id.to_string(),context_revision:self.revision},call,self.events.clone())?)
                 .map_err(|_|AppError::storage()),
             "list_travel_journals" | "search_travel_journals" | "open_travel_journal" => self.journals.execute(call),
-            "list_festival_catalog" | "list_session_festivals" | "get_session_festival" | "create_session_festival" | "update_session_festival" | "delete_session_festival" => {
+            "list_festival_catalog" | "list_custom_festivals" | "get_custom_festival" | "create_custom_festival" | "update_custom_festival" | "delete_custom_festival" => {
                 let result=self.festivals.execute(call)?;
-                if crate::festivals::tools::is_write(&call.name) && result["already_applied"]!=true {self.events.festivals_changed(&self.session_id.to_string());}
+                if crate::festivals::tools::is_write(&call.name) && result["already_applied"]!=true {self.events.festivals_changed();}
                 Ok(result)
             }
             _ => Err(AppError::new("UNKNOWN_TOOL", "未注册此工具，未执行任何操作")),
@@ -79,6 +79,8 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
     let (persona_id, session_id, revision) = (prepared.persona_id, prepared.session_id, prepared.context_revision);
     let events = prepared.tool_events.clone().unwrap_or_else(|| Arc::new(SilentEvents));
     let allow_web = !prepared.proactive && !prepared.continuation;
+    let user_input = prepared.messages.iter().rev().find(|message| message.role == "user")
+        .map(|message| message.content.clone()).unwrap_or_default();
     let (mut session, rounds) = tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
         let rounds = runtime.read(|store, _| {
             let settings = crate::config::get(&store.connection)?;
@@ -89,7 +91,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
             reminders: ReminderCreation::new(&runtime, &lease, persona_id, session_id, revision)?,
             journals: TravelJournalTools::new(&runtime, &lease, persona_id, session_id, revision)?,
             festivals: crate::festivals::tools::Tools::new(&runtime, &lease, persona_id, session_id, revision),
-            web: allow_web.then(||crate::web_search::SearchSession::new(&runtime)),
+            web: allow_web.then(||crate::web_search::SearchSession::new(&runtime, &user_input)),
             events, runtime, lease, persona_id, session_id, revision, evolution, calls: HashMap::new(),
         }, rounds))
     }).await.map_err(|_| AppError::storage())??;
@@ -110,7 +112,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         history.push(Message::new("system",crate::web_search::RULES));
     }
     if prepared.evolution.is_some() { definitions.push(evolution::definition()); }
-    if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"|"request_accessory_craft"|"create_session_festival"|"update_session_festival"|"delete_session_festival"))); }
+    if prepared.regenerating { definitions.retain(|tool| !matches!(tool["function"]["name"].as_str(),Some("update_notebook"|"create_reminder"|"request_accessory_craft"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival"))); }
     if prepared.continuation {definitions.clear();}
     let mut content = String::new();
     let rounds=if prepared.continuation {0} else {rounds};
@@ -160,7 +162,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         let mut results=Vec::new();
         let mut observations = Vec::new();
         for call in choice.tools {
-                if prepared.regenerating && matches!(call.name.as_str(),"update_notebook"|"create_reminder"|"request_accessory_craft"|"create_session_festival"|"update_session_festival"|"delete_session_festival") {return Err(AppError::new("PERMISSION_DENIED","重说不执行记事本写入、提醒创建、饰品制作或日期记录修改，旧操作保持不变"));}
+                if prepared.regenerating && matches!(call.name.as_str(),"update_notebook"|"create_reminder"|"request_accessory_craft"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival") {return Err(AppError::new("PERMISSION_DENIED","重说不执行记事本写入、提醒创建、饰品制作或日期记录修改，旧操作保持不变"));}
                 let result=if matches!(call.name.as_str(),"search_web"|"open_web_page") {
                     match session.check_call(&call) {
                         Ok(())=>{

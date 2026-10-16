@@ -95,8 +95,8 @@ fn forward_and_backward_year_updates_keep_ids_definitions_and_links() {
     )
     .unwrap();
     c.execute("INSERT INTO sessions(persona_id,title,created_at,updated_at) VALUES(1,'日期测试','2024-01-01T00:00:00Z','2024-01-01T00:00:00Z')",[]).unwrap();
-    let session = c.last_insert_rowid();
-    c.execute("INSERT INTO session_festivals(session_id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES(?1,?2,'festival','会话记录',2024,'solar',1,2,'子表祝福','user','2024-01-01T00:00:00Z','2024-01-01T00:00:00Z')",params![session,id]).unwrap();
+    let _session = c.last_insert_rowid();
+    c.execute("INSERT INTO custom_festivals(festival_id,kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES(?1,'festival','会话记录',2024,'solar',1,2,'子表祝福','user','2024-01-01T00:00:00Z','2024-01-01T00:00:00Z')",params![id]).unwrap();
     synchronize(&mut c, date(2025)).unwrap();
     assert_eq!(
         mapped(&c, "lunar_new_year_eve"),
@@ -118,8 +118,8 @@ fn forward_and_backward_year_updates_keep_ids_definitions_and_links() {
     assert_eq!(row, (id, "保留祝福".into(), "保留备注".into()));
     assert_eq!(
         c.query_row(
-            "SELECT festival_id FROM session_festivals WHERE session_id=?1",
-            [session],
+            "SELECT festival_id FROM custom_festivals",
+            [],
             |r| r.get::<_, i64>(0)
         )
         .unwrap(),
@@ -127,8 +127,8 @@ fn forward_and_backward_year_updates_keep_ids_definitions_and_links() {
     );
     assert_eq!(
         c.query_row(
-            "SELECT year FROM session_festivals WHERE session_id=?1",
-            [session],
+            "SELECT year FROM custom_festivals",
+            [],
             |r| r.get::<_, i32>(0)
         )
         .unwrap(),

@@ -6,7 +6,7 @@ import type {CurrentContext} from "../types";
 export function useRemoteCardBrowser<T>(kind:CardKind,context:CurrentContext) {
   const [query,setQuery]=useState({search:"",order:"newest" as "newest"|"oldest",page:1});
   const [refreshToken,setRefreshToken]=useState(0);
-  const key=`${kind}:${context.personaId}:${context.sessionId}:${context.contextRevision}`;
+  const key=kind==="dates"?"dates:global":`${kind}:${context.personaId}:${context.sessionId}:${context.contextRevision}`;
   const queryKey=`${key}:${JSON.stringify(query)}`;
   const [result,setResult]=useState<{key:string;items:T[];total:number;page:number;pages:number}>({key:"",items:[],total:0,page:1,pages:1});
   const [error,setError]=useState("");const [loading,setLoading]=useState(false);const generation=useRef(0);
@@ -14,7 +14,7 @@ export function useRemoteCardBrowser<T>(kind:CardKind,context:CurrentContext) {
   useEffect(()=>{setQuery({search:"",order:"newest",page:1});},[key]);
   useEffect(()=>{
     const token=++generation.current;setError("");
-    if(!context.sessionId){setLoading(false);return;}
+    if(kind!=="dates"&&!context.sessionId){setLoading(false);return;}
     setLoading(true);
     void cardBrowserApi.browse<T>(kind,context,query.search,query.order,query.page).then(page=>{if(token===generation.current)setResult({key:queryKey,...page});}).catch(cause=>{if(token===generation.current)setError(errorMessage(cause));}).finally(()=>{if(token===generation.current)setLoading(false);});
     return()=>{generation.current++;};

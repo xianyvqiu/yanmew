@@ -259,8 +259,8 @@ fn concurrent_connections_award_once_and_reopen_keeps_global_status() {
     std::fs::remove_file(path).unwrap();
 }
 
-fn fixed_date(c: &mut Connection, session: i64, month: u32, day: u32, calendar: &str) {
-    crate::festivals::session::create(c, session, crate::festivals::session::Input {
+fn fixed_date(c: &mut Connection, _session: i64, month: u32, day: u32, calendar: &str) {
+    crate::festivals::custom::create(c, crate::festivals::custom::Input {
         kind: "birthday".into(), name: "生日".into(), calendar_type: calendar.into(),
         month, day, is_leap_month: false, blessing: "生日快乐".into(), note: None,
     }, "user", now().date_naive(), now()).unwrap();
@@ -284,13 +284,13 @@ fn combined_festivals_award_ten_once_without_random_and_without_session() {
     c.execute("DELETE FROM settings WHERE key='current_session_id'", []).unwrap();
     let changes = c.total_changes();
     let status = get_sign_in_status(&c, at, &Utc).unwrap();
-    assert_eq!(status.festivals.len(), 1);
+    assert_eq!(status.festivals.len(), 2);
     assert_eq!(c.total_changes(), changes);
     assert!(daily_sign_in(&mut c, at, &Utc, &mut random).unwrap().granted_coins.is_none());
 }
 
 #[test]
-fn current_session_dates_only_and_both_lunar_occurrences_receive_festival_reward() {
+fn global_dates_remain_visible_across_sessions_and_both_lunar_occurrences_receive_festival_reward() {
     let mut c = crate::db::test_database();
     let first = crate::sessions::create(&mut c, 1).unwrap().id.parse().unwrap();
     fixed_date(&mut c, first, 11, 20, "lunar");
@@ -301,7 +301,7 @@ fn current_session_dates_only_and_both_lunar_occurrences_receive_festival_reward
     assert_eq!(random.calls, 0);
     let second = crate::sessions::create(&mut c, 1).unwrap();
     assert_ne!(second.id, first.to_string());
-    assert!(get_sign_in_status(&c, at, &Utc).unwrap().festivals.is_empty());
+    assert!(!get_sign_in_status(&c, at, &Utc).unwrap().festivals.is_empty());
     assert!(get_sign_in_status(&c, at, &Utc).unwrap().signed_in);
 }
 

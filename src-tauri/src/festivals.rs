@@ -4,7 +4,7 @@ use chrono::{Datelike, NaiveDate};
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 mod dates;
 pub(crate) mod calendar;
-pub(crate) mod session;
+pub(crate) mod custom;
 pub(crate) mod tools;
 pub(crate) fn current_scope(store: &crate::runtime::Store, context: &crate::memory::management::Context) -> AppResult<i64> {
     let persona = crate::error::parse_id(&context.persona_id)?;
@@ -242,7 +242,7 @@ pub(crate) fn ensure_in_transaction(tx: &Transaction<'_>, today: NaiveDate) -> A
             changed += tx.execute("UPDATE festival_catalog SET year=?1,solar_month=?2,solar_day=?3,lunar_day=?4 WHERE id=?5",params![year,date.map(|d|d.month()),date.map(|d|d.day()),lunar_day,id])?;
         }
     }
-    changed += session::refresh_in_transaction(tx, today)?;
+    changed += custom::refresh_in_transaction(tx, today)?;
     Ok(changed)
 }
 
@@ -257,4 +257,4 @@ pub(crate) fn synchronize(connection: &mut Connection, today: NaiveDate) -> AppR
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod session_tests;
+mod custom_tests;

@@ -9,6 +9,8 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 my_doc/
+/.test-temp/
+/releases/
 data/
 AGENTS.md
 .superpowers/

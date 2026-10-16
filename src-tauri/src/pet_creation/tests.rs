@@ -9,6 +9,41 @@ fn input(kind: &str) -> Input {
         enabled: true,
     }
 }
+
+fn ready_standby(c: &mut Connection) -> Artwork {
+    let mut data=input("expression");
+    data.category="standby".into();
+    let a=save(c,1,None,None,data).unwrap();
+    c.execute("UPDATE pet_artworks SET image_file='standby.png' WHERE id=?1",[&a.id]).unwrap();
+    get(c,1,a.id.parse().unwrap()).unwrap()
+}
+
+#[test]
+fn image_mode_requires_accepted_enabled_standby_and_protects_last_one() {
+    let mut c=crate::db::test_database();
+    let base=save(&mut c,1,None,None,input("base")).unwrap();
+    c.execute("UPDATE pet_artworks SET image_file='base.png' WHERE id=?1",[&base.id]).unwrap();
+    assert_eq!(set_enabled(&c,1,true,library(&c,1).unwrap().revision).unwrap_err().field.as_deref(),Some("standby"));
+    let standby=ready_standby(&mut c);
+    let id=standby.id.parse().unwrap();
+    c.execute("UPDATE pet_artworks SET image_file=NULL,preview_file='standby.png' WHERE id=?1",[id]).unwrap();
+    assert!(set_enabled(&c,1,true,library(&c,1).unwrap().revision).is_err());
+    finish(&mut c,1,id,0,"accept").unwrap();
+    set_enabled(&c,1,true,library(&c,1).unwrap().revision).unwrap();
+    let before=library(&c,1).unwrap().revision;
+    for (category,enabled) in [("standby",false),("chat",true)] {
+        let mut data=input("expression");data.category=category.into();data.enabled=enabled;
+        assert!(save(&mut c,1,Some(id),Some(1),data).is_err());
+        assert_eq!(get(&c,1,id).unwrap().revision,1);
+    }
+    assert!(finish(&mut c,1,id,1,"delete").is_err());
+    assert_eq!(library(&c,1).unwrap().revision,before);
+    let second=ready_standby(&mut c);
+    finish(&mut c,1,id,1,"delete").unwrap();
+    assert!(library(&c,1).unwrap().enabled);
+    set_enabled(&c,1,false,library(&c,1).unwrap().revision).unwrap();
+    finish(&mut c,1,second.id.parse().unwrap(),0,"delete").unwrap();
+}
 #[test]
 fn creator_is_persona_scoped_and_revision_protected() {
     let mut c = crate::db::test_database();
@@ -57,6 +92,7 @@ fn accept_discard_and_delete_keep_formal_image_separate() {
     .unwrap();
     finish(&mut c, 1, id, 1, "accept").unwrap();
     assert_eq!(get(&c, 1, id).unwrap().image_file.as_deref(), Some("new"));
+    ready_standby(&mut c);
     set_enabled(&c, 1, true, library(&c, 1).unwrap().revision).unwrap();
     finish(&mut c, 1, id, 2, "delete").unwrap();
     assert!(!library(&c, 1).unwrap().enabled);
@@ -95,7 +131,7 @@ fn upgrade_v11_keeps_old_mode_and_default_accessory_position() {
     assert_eq!(
         c.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        12
+        14
     );
     crate::db::initialize(&mut c).unwrap();
 }
@@ -114,6 +150,7 @@ fn image_selection_only_uses_accepted_and_enabled_rows() {
         [&a.id],
     )
     .unwrap();
+    ready_standby(&mut c);
     set_enabled(&c, 1, true, library(&c, 1).unwrap().revision).unwrap();
     let b = save(&mut c, 1, None, None, input("expression")).unwrap();
     let mut random = Random;

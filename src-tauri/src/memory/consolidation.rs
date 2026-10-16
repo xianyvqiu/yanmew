@@ -228,18 +228,7 @@ pub(super) async fn generate(runtime: Runtime, key: WorkKey) -> AppResult<Outcom
     let Some((snapshot, lease)) = captured else {
         return Ok(Outcome::Missing);
     };
-    let tokens = snapshot
-        .configuration
-        .long_maximum
-        .checked_mul(4)
-        .and_then(|value| value.checked_add(512))
-        .and_then(|value| u32::try_from(value).ok())
-        .ok_or_else(|| {
-            AppError::new(
-                "MEMORY_INVALID_SETTINGS",
-                "长期记忆字数设置过大，无法建立整合预算，请调整设置",
-            )
-        })?;
+    let tokens = snapshot.target.max_output_tokens;
     let sources: Vec<&str> = snapshot.window[..snapshot.configuration.merge_count]
         .iter()
         .map(|source| source.content.as_str())

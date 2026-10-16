@@ -33,7 +33,7 @@ pub(super) const COLUMNS: &[(&str, &str)] = &[
     ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file,position_x,position_y,scale"),
     ("letters", "id,session_id,travel_id,sender,content,reply_to_id,has_been_replied,reply_due_at,reply_state,letter_kind,is_favorite,is_read,created_at"),
     ("souvenirs", "id,session_id,travel_id,content,note,is_favorite,created_at"),
-    ("session_festivals", "id,session_id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at"),
+    ("custom_festivals", "id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at"),
 ];
 
 pub(super) fn record(row: &Row<'_>, names: &[&str]) -> AppResult<Record> {
@@ -65,6 +65,8 @@ pub(super) fn setting_allowed(key: &str) -> bool {
         .iter()
         .any(|(known, _)| *known == key)
         || [
+            "bored_minutes", // 仅兼容旧备份，暂存后转换为共同阈值
+            "sleep_idle_minutes",
             "provider_roles_revision",
             "theme_mode",
             "current_session_id",

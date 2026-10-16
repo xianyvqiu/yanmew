@@ -23,7 +23,7 @@ export type Wallet = { coins: string; updatedAt: string };
 export type SignInStatus = {
   wallet: Wallet; localDate: string; signedIn: boolean; rewardMin: string; rewardMax: string;
   intimacyThresholds: [number, number, number, number];
-  festivals: { id: RecordId; scope: "catalog" | "session"; name: string; blessing: string; isMemorial: boolean }[];
+  festivals: { id: RecordId; scope: "catalog" | "custom"; name: string; blessing: string; isMemorial: boolean }[];
 };
 export type DailySignInResult = { status: SignInStatus; grantedCoins: string | null };
 export type SessionIntimacy = { personaId: RecordId; sessionId: RecordId; contextRevision: number; intimacy: number; maximum: number };
@@ -106,7 +106,7 @@ export type ReminderOccurrence = {
 export type ReminderOccurrencePage = { items: ReminderOccurrence[]; nextAfterId: RecordId | null };
 export type PetActivity = {
   personaId: RecordId; sessionId: RecordId | null; contextRevision: number; revision: number;
-  activity: "normal" | "hungry" | "bored" | "sleeping" | "eating" | "interacting" | "thinking" | "speaking" | "away" | "dormant";
+  activity: "normal" | "standby" | "hungry" | "bored" | "sleeping" | "eating" | "interacting" | "thinking" | "speaking" | "away" | "dormant";
   expression: string; intimacy: number | null; sleepUntil: string | null; error: string | null;
   canInteract: boolean; canWander: boolean;
 };
@@ -173,7 +173,7 @@ export type ChatBackgroundInput = {
   image: { fileName: string; base64: string } | null; reset: boolean;
   appearance?: ChatAppearance;
 };
-export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[] };
+export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[]; standby: string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };
 export type Session = {
@@ -189,7 +189,7 @@ export type Message = {
 };
 export type MessagePage = { items: Message[]; nextAfterId: RecordId | null };
 export type NumericSettingKey =
-  | "hungry_minutes" | "bored_minutes" | "sleep_idle_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
+  | "hungry_minutes" | "standby_minutes" | "idle_event_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
   | "short_memory_min_chars" | "short_memory_max_chars" | "long_memory_min_chars" | "long_memory_max_chars"
   | "memory_merge_count" | "recent_message_count" | "recent_long_memory_count"
   | "travel_journal_min_chars" | "travel_journal_max_chars" | "tool_call_rounds" | "notebook_max_chars"
@@ -334,14 +334,14 @@ export type BackupImportConfirm = { previewId: string; personas: BackupImportBin
 export type BackupImported = { sessions: number; personasCreated: number; personasReused: number; warnings: string[] };
 
 /** 会话自己的年度月日；新增不复制或关联母表。 */
-export type SessionFestivalInput = { kind: "festival" | "birthday" | "anniversary" | "custom"; name: string; calendarType: "solar" | "lunar"; month: number; day: number; isLeapMonth: boolean; blessing: string; note: string | null };
+export type CustomFestivalInput = { kind: "festival" | "birthday" | "anniversary" | "custom"; name: string; calendarType: "solar" | "lunar"; month: number; day: number; isLeapMonth: boolean; blessing: string; note: string | null };
 export type FestivalCatalogRecord = { id: RecordId; code: string; name: string; year: number; calendarType: "solar" | "lunar" | "solar_term"; solarMonth: number | null; solarDay: number | null; lunarMonth: number | null; lunarDay: number | null; isLeapMonth: boolean; solarTerm: string | null; blessing: string; isMemorial: boolean; note: string | null };
-export type SessionFestivalRecord = { id: RecordId; sessionId: RecordId; festivalId: RecordId | null; kind: SessionFestivalInput["kind"]; name: string; year: number; calendarType: "solar" | "lunar"; solarMonth: number | null; solarDay: number | null; lunarMonth: number | null; lunarDay: number | null; isLeapMonth: boolean; blessing: string; note: string | null; source: "ai" | "user"; createdAt: string; updatedAt: string; isMemorial: boolean; revisionToken: string; occurrences: string[] };
+export type CustomFestivalRecord = { id: RecordId; festivalId: RecordId | null; kind: CustomFestivalInput["kind"]; name: string; year: number; calendarType: "solar" | "lunar"; solarMonth: number | null; solarDay: number | null; lunarMonth: number | null; lunarDay: number | null; isLeapMonth: boolean; blessing: string; note: string | null; source: "ai" | "user"; createdAt: string; updatedAt: string; isMemorial: boolean; revisionToken: string; occurrences: string[] };
 
 /** 只用于宠窗显示；原提醒详情与状态不被润色覆盖。 */
 export type ReminderPresentation = { occurrenceId: RecordId; personaId: RecordId; contextRevision: number; text: string | null };
 
-export type CalendarDay = { date: string; lunar: string; solarTerm: string | null; events: {id:string;scope:"catalog"|"session";name:string;blessing:string;isMemorial:boolean}[] };
+export type CalendarDay = { date: string; lunar: string; solarTerm: string | null; events: {id:string;scope:"catalog"|"custom";name:string;blessing:string;isMemorial:boolean}[] };
 export type CalendarMonth = {year:number;month:number;days:CalendarDay[]};
 
 export type ProviderRole={purpose:"chat"|"memory"|"image"|"vision";providerId:RecordId;model:string;enabled:boolean};
@@ -357,7 +357,7 @@ export interface ReminderEmailDelivery { id: string; recipient: string; subject:
 export interface ReminderEmailView { connection: ReminderEmailConnection; revision: number; enabled: boolean; verified: boolean; hasSecret: boolean; deliveries: ReminderEmailDelivery[] }
 export interface ReminderEmailInput { connection: ReminderEmailConnection; revision: number; secret: { action: "keep" | "clear" } | { action: "set"; value: string } }
 
-export type PetArtCategory = "normal"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat";
+export type PetArtCategory = "normal"|"standby"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat";
 export type PetArtworkInput = {kind:"base"|"expression";name:string;prompt:string;description:string;category:PetArtCategory;enabled:boolean};
 export type PetArtwork = PetArtworkInput & {id:string;personaId:string;imageFile:string|null;previewFile:string|null;revision:number;createdAt:string;updatedAt:string};
 export type PetCreation = {enabled:boolean;revision:number;items:PetArtwork[]};

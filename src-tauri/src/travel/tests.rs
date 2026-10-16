@@ -267,6 +267,7 @@ fn invalid_timeline_and_incomplete_ai_output_never_become_facts() {
     invalid.activities[1].elapsed_minutes = 61;
     assert!(invalid.validate(60).is_err());
     let mut choice = crate::ai::provider::Choice {
+        reasoning_content: None,
         index: 0,
         content: serde_json::to_string(&f).unwrap(),
         tools: vec![],

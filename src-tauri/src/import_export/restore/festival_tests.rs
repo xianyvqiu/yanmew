@@ -27,9 +27,9 @@ fn at(root: &Path, year: i32) -> Runtime {
 fn dates(runtime: &Runtime, year: i32) {
     runtime.read(|s, _| {
         // 来源缓存故意填写其他月日；定义和文本才是需要保存的原数据。
-        s.connection.execute("INSERT INTO session_festivals(session_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at) VALUES(2,'birthday','农历生日',?1,'lunar',6,6,11,20,0,'原祝福','原备注','ai',?2,?2)", rusqlite::params![year, NOW])?;
-        s.connection.execute("INSERT INTO session_festivals(session_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,source,created_at,updated_at) VALUES(2,'custom','闰二月',?1,'lunar',6,6,2,1,1,'闰月祝福','user',?2,?2)", rusqlite::params![year, NOW])?;
-        s.connection.execute("INSERT INTO session_festivals(session_id,kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES(2,'anniversary','二月二十九',?1,'solar',2,29,'闰日祝福','user',?2,?2)", rusqlite::params![year, NOW])?;
+        s.connection.execute("INSERT INTO custom_festivals(kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at) VALUES('birthday','农历生日',?1,'lunar',6,6,11,20,0,'原祝福','原备注','ai',?2,?2)", rusqlite::params![year, NOW])?;
+        s.connection.execute("INSERT INTO custom_festivals(kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,source,created_at,updated_at) VALUES('custom','闰二月',?1,'lunar',6,6,2,1,1,'闰月祝福','user',?2,?2)", rusqlite::params![year, NOW])?;
+        s.connection.execute("INSERT INTO custom_festivals(kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES('anniversary','二月二十九',?1,'solar',2,29,'闰日祝福','user',?2,?2)", rusqlite::params![year, NOW])?;
         Ok(())
     }).unwrap();
 }
@@ -42,26 +42,15 @@ fn importing_current_or_old_year_recomputes_only_new_records_and_preserves_defin
         dates(&source, source_year);
         let target_dir = Directory::new();
         let target = at(&target_dir.0, 2024);
-        let backup = make(&source, &source_dir.0, PackageKind::Session, &["2"], false);
+        let backup = make(&source, &source_dir.0, PackageKind::Full, &[], false);
         let preview = prepare(&target, &backup).unwrap().unwrap();
-        let original = target
-            .read(|s, _| {
-                Ok(crate::festivals::session::list(
-                    &s.connection,
-                    2,
-                    None,
-                    50,
-                    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-                )?)
-            })
-            .unwrap();
         confirm(&target, input(&preview)).unwrap();
         target
             .read(|s, _| {
                 let c = &s.connection;
-                let sid: i64 = c.query_row("SELECT MAX(id) FROM sessions", [], |r| r.get(0))?;
+                let _sid: i64 = c.query_row("SELECT MAX(id) FROM sessions", [], |r| r.get(0))?;
                 let day = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
-                let records = crate::festivals::session::list(c, sid, None, 50, day)?;
+                let records = crate::festivals::custom::list(c, None, 50, day)?;
                 assert!(records.iter().all(|r| r.year == 2024));
                 let lunar = records.iter().find(|r| r.name == "农历生日").unwrap();
                 assert_eq!((lunar.solar_month, lunar.solar_day), (Some(1), Some(1)));
@@ -85,9 +74,9 @@ fn importing_current_or_old_year_recomputes_only_new_records_and_preserves_defin
                     [day, NaiveDate::from_ymd_opt(2024, 12, 20).unwrap()]
                 );
                 for date in &lunar.occurrences {
-                    assert!(crate::festivals::session::today(c, *date, Some(sid))?
+                    assert!(crate::festivals::custom::today(c, *date)?
                         .iter()
-                        .any(|r| r.id == lunar.id && r.scope == "session"));
+                        .any(|r| r.id == lunar.id && r.scope == "custom"));
                 }
                 let leap = records.iter().find(|r| r.name == "闰二月").unwrap();
                 assert_eq!((leap.solar_month, leap.solar_day), (None, None));
@@ -97,11 +86,6 @@ fn importing_current_or_old_year_recomputes_only_new_records_and_preserves_defin
                 assert_eq!(
                     solar.occurrences,
                     [NaiveDate::from_ymd_opt(2024, 2, 29).unwrap()]
-                );
-                let current = crate::festivals::session::list(c, 2, None, 50, day)?;
-                assert_eq!(
-                    serde_json::to_value(current).unwrap(),
-                    serde_json::to_value(&original).unwrap()
                 );
                 assert_eq!(count(c, "festival_catalog"), 13);
                 assert!(c
@@ -122,17 +106,16 @@ fn importing_outside_calendar_range_clears_lunar_cache_and_skips_missing_solar_d
     dates(&source, 2024);
     let target_dir = Directory::new();
     let target = at(&target_dir.0, 2101);
-    let backup = make(&source, &source_dir.0, PackageKind::Session, &["2"], false);
+    let backup = make(&source, &source_dir.0, PackageKind::Full, &[], false);
     let preview = prepare(&target, &backup).unwrap().unwrap();
     confirm(&target, input(&preview)).unwrap();
     target
         .read(|s, _| {
-            let sid: i64 = s
+            let _sid: i64 = s
                 .connection
                 .query_row("SELECT MAX(id) FROM sessions", [], |r| r.get(0))?;
-            let records = crate::festivals::session::list(
+            let records = crate::festivals::custom::list(
                 &s.connection,
-                sid,
                 None,
                 50,
                 NaiveDate::from_ymd_opt(2101, 1, 1).unwrap(),
@@ -164,14 +147,14 @@ fn calendar_refresh_failure_rolls_back_full_import_and_can_retry_same_preview() 
     let target_dir = Directory::new();
     let target = at(&target_dir.0, 2024);
     target.read(|s, _| { s.connection.execute("UPDATE user_state SET coins=888 WHERE id=1", [])?;
-        s.connection.execute_batch("CREATE TRIGGER reject_import_date BEFORE UPDATE ON session_festivals BEGIN SELECT RAISE(ABORT,'calendar failure'); END;")?; Ok(()) }).unwrap();
+        s.connection.execute_batch("CREATE TRIGGER reject_import_date BEFORE UPDATE ON custom_festivals BEGIN SELECT RAISE(ABORT,'calendar failure'); END;")?; Ok(()) }).unwrap();
     let backup = make(&source, &source_dir.0, PackageKind::Full, &[], false);
     let preview = prepare(&target, &backup).unwrap().unwrap();
     let before = target
         .read(|s, _| {
             Ok((
                 count(&s.connection, "sessions"),
-                count(&s.connection, "session_festivals"),
+                count(&s.connection, "custom_festivals"),
                 s.context_revision,
             ))
         })
@@ -182,7 +165,7 @@ fn calendar_refresh_failure_rolls_back_full_import_and_can_retry_same_preview() 
             assert_eq!(
                 (
                     count(&s.connection, "sessions"),
-                    count(&s.connection, "session_festivals"),
+                    count(&s.connection, "custom_festivals"),
                     s.context_revision
                 ),
                 before
@@ -200,7 +183,50 @@ fn calendar_refresh_failure_rolls_back_full_import_and_can_retry_same_preview() 
     assert!(current_preview(&target, &preview.preview_id).is_ok());
     assert!(confirm(&target, input(&preview)).is_ok());
     target.read(|s, _| {
-        let year: i32 = s.connection.query_row("SELECT year FROM session_festivals WHERE name='农历生日' AND session_id=(SELECT MAX(id) FROM sessions)", [], |r| r.get(0))?;
+        let year: i32 = s.connection.query_row("SELECT year FROM custom_festivals WHERE name='农历生日'", [], |r| r.get(0))?;
         assert_eq!(year, target.clock.sample()?.utc.with_timezone(&Local).year()); Ok(())
     }).unwrap();
+}
+
+#[test]
+fn global_dates_full_restore_and_partial_packages_preserve_scope_for_new_and_legacy_formats() {
+    for legacy in [false,true] {
+        for kind in [PackageKind::Full,PackageKind::Session,PackageKind::PersonaFull,PackageKind::UserProfile] {
+            let source_dir=Directory::new();let source=fixture(&source_dir.0);
+            dates(&source,2024);
+            let target_dir=Directory::new();let target=at(&target_dir.0,2024);
+            target.read(|s,_|{s.connection.execute("UPDATE custom_festivals SET name='本机日期',note='不可被部分导入覆盖'",[])?;Ok(())}).unwrap();
+            let full=kind==PackageKind::Full;
+            let backup=make(&source,&source_dir.0,kind,if full {&[]}else if kind==PackageKind::UserProfile {&["10"]}else{&["2"]},kind==PackageKind::UserProfile);
+            {
+                let mut zip=zip::ZipArchive::new(std::fs::File::open(&backup.0).unwrap()).unwrap();
+                let data:Value=serde_json::from_reader(zip.by_name("data.json").unwrap()).unwrap();
+                assert_eq!(data.get("custom_festivals").is_some(),full);
+                if full {assert!(data["custom_festivals"].as_array().unwrap().iter().all(|row|row.get("session_id").is_none()));}
+            }
+            if legacy {
+                rewrite(&backup.0,|manifest,data| {
+                    manifest.schema_version=12;
+                    if !full {data.as_object_mut().unwrap().insert("session_festivals".into(),serde_json::json!([{
+                        "id":"999","session_id":"2","festival_code":null,"kind":"birthday","name":"旧部分日期","year":2024,
+                        "calendar_type":"solar","solar_month":2,"solar_day":29,"lunar_month":null,"lunar_day":null,"is_leap_month":0,
+                        "blessing":"原祝福","note":null,"source":"ai","created_at":NOW,"updated_at":NOW
+                    }]));}
+                });
+            }
+            let original=target.read(|s,_|Ok(serde_json::to_value(crate::festivals::custom::list(&s.connection,None,50,NaiveDate::from_ymd_opt(2024,1,1).unwrap())?).unwrap())).unwrap();
+            let preview=prepare(&target,&backup).unwrap().unwrap();
+            if legacy&&!full {assert!(preview.warnings.iter().any(|warning|warning.contains("跳过")));}
+            confirm(&target,input(&preview)).unwrap();
+            target.read(|s,_|{
+                let current=crate::festivals::custom::list(&s.connection,None,50,NaiveDate::from_ymd_opt(2024,1,1).unwrap())?;
+                if full {
+                    assert_eq!(current.len(),4);
+                    assert!(current.iter().any(|row|row.name=="农历生日"));
+                    assert!(!current.iter().any(|row|row.name=="本机日期"));
+                } else {assert_eq!(serde_json::to_value(current).unwrap(),original);}
+                Ok(())
+            }).unwrap();
+        }
+    }
 }

@@ -35,7 +35,7 @@ pub async fn run(
                     Ok(current)
                 })).await.unwrap_or_else(|_| Err(crate::error::AppError::storage()));
                 match result {
-                    Ok(current) => { calendar_date = Some(current); calendar_error = None; proactive_events.festivals_changed(""); }
+                    Ok(current) => { calendar_date = Some(current); calendar_error = None; proactive_events.festivals_changed(); }
                     Err(error) => {
                         // 母表失败独立记录，保持可重试；不归类为模型故障或桌宠休眠。
                         if calendar_error.as_ref() != Some(&error.message) {

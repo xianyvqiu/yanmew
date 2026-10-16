@@ -319,17 +319,17 @@ export const travelJournalsApi = {
   retry: (context:CurrentContext) => invoke<void>("retry_journal_generation",{context}),
 };
 
-import type { FestivalCatalogRecord, SessionFestivalInput, SessionFestivalRecord } from "./types";
-/** 母表只读，子表修改始终携带当前会话和旧记录token。 */
+import type { FestivalCatalogRecord, CustomFestivalInput, CustomFestivalRecord } from "./types";
+/** 母表只读，全局自定义日期修改携带旧记录token，不依赖当前会话。 */
 export const festivalsApi = {
   month: (year: number, month: number) => invoke<import("./types").CalendarMonth>("get_calendar_month", { year, month }),
   listen: (receive: (event: { sessionId: RecordId | null }) => void) => listen<{ sessionId: RecordId | null }>("festivals-changed", event => receive(event.payload)),
   catalog: () => invoke<FestivalCatalogRecord[]>("list_festival_catalog"),
-  list: (context: CurrentContext, beforeId: RecordId | null = null, limit = 30) => invoke<SessionFestivalRecord[]>("list_session_festivals", { context, beforeId, limit }),
-  get: (context: CurrentContext, id: RecordId) => invoke<SessionFestivalRecord>("get_session_festival", { context, id }),
-  create: (context: CurrentContext, input: SessionFestivalInput) => invoke<SessionFestivalRecord>("create_session_festival", { context, input }),
-  update: (context: CurrentContext, id: RecordId, expected: string, input: SessionFestivalInput) => invoke<SessionFestivalRecord>("update_session_festival", { context, id, expected, input }),
-  delete: (context: CurrentContext, id: RecordId, expected: string) => invoke<void>("delete_session_festival", { context, id, expected }),
+  list: (beforeId: RecordId | null = null, limit = 30) => invoke<CustomFestivalRecord[]>("list_custom_festivals", { beforeId, limit }),
+  get: (id: RecordId) => invoke<CustomFestivalRecord>("get_custom_festival", { id }),
+  create: (input: CustomFestivalInput) => invoke<CustomFestivalRecord>("create_custom_festival", { input }),
+  update: (id: RecordId, expected: string, input: CustomFestivalInput) => invoke<CustomFestivalRecord>("update_custom_festival", { id, expected, input }),
+  delete: (id: RecordId, expected: string) => invoke<void>("delete_custom_festival", { id, expected }),
 };
 
 export type CardKind="travels"|"letters"|"journals"|"accessories"|"souvenirs"|"dates";

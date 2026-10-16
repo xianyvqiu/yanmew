@@ -100,6 +100,9 @@ pub(crate) async fn run_regenerated(
             runtime.jobs_cancel.check()?;
             tx.commit()?;
             store.chat_requests.remove(&session);
+            if let Ok(sample) = runtime.clock.sample() {
+                store.pet.finish_chat_expression(sample.running);
+            }
             Ok(saved)
         })
     }).await;

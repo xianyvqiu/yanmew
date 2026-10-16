@@ -97,29 +97,7 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
     }
   }, [contextRevision]);
 
-  useEffect(() => {
-    mounted.current = true;
-    void readCache();
-    void loadSettings();
-
-    const refreshCache = () => { void readCache(); };
-    window.addEventListener("focus", refreshCache);
-    const timer = window.setInterval(refreshCache, 60_000);
-    return () => {
-      mounted.current = false;
-      cacheGeneration.current++;
-      operation.current++;
-      settingsGeneration.current++;
-      window.removeEventListener("focus", refreshCache);
-      window.clearInterval(timer);
-      if (refreshActive.current) {
-        refreshActive.current = false;
-        void weatherApi.cancel().catch(() => {});
-      }
-    };
-  }, [loadSettings, readCache]);
-
-  const refreshWeather = async () => {
+  const refreshWeather = useCallback(async () => {
     if (locked.current) return;
     locked.current = true;
     const token = ++operation.current;
@@ -149,7 +127,34 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
         if (mounted.current) { setRefreshing(false); setLoading(false); }
       }
     }
-  };
+  }, [contextRevision]);
+
+  useEffect(() => {
+    mounted.current = true;
+    const entry = ++operation.current;
+    // 缓存先展示，再刷新一次；手动操作、离页或 StrictMode 清理使旧初始化失效。
+    void readCache().then(() => {
+      if (mounted.current && entry === operation.current) void refreshWeather();
+    });
+    void loadSettings();
+
+    const refreshCache = () => { void readCache(); };
+    window.addEventListener("focus", refreshCache);
+    const timer = window.setInterval(refreshCache, 60_000);
+    return () => {
+      mounted.current = false;
+      cacheGeneration.current++;
+      operation.current++;
+      settingsGeneration.current++;
+      window.removeEventListener("focus", refreshCache);
+      window.clearInterval(timer);
+      if (refreshActive.current) {
+        refreshActive.current = false;
+        void weatherApi.cancel().catch(() => {});
+      }
+      locked.current = false;
+    };
+  }, [loadSettings, readCache, refreshWeather]);
 
   const cancelRefresh = async () => {
     if (!refreshActive.current || canceling) return;
@@ -230,7 +235,7 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
   const fieldError = settingsError?.field === "apiHost" ? settingsError.message : "";
   return <section className="ym-page-card" aria-label="时间与天气">
     <div className="ym-page-heading"><h2>时间与天气</h2></div>
-    <p className="ym-page-note">打开页面只读取已有缓存，不会自动请求定位。点击“刷新天气”后才会获取当前位置和天气。</p>
+    <p className="ym-page-note">打开页面会先显示已有天气，再自动获取当前位置并刷新一次；也可手动刷新。刷新失败会保留已有天气。</p>
     {loading && <p role="status">正在读取天气缓存…</p>}
     {weatherError && <div className="ym-page-error" role="alert">{weatherError}</div>}
     {weather && <WeatherCard weather={weather} />}

@@ -149,7 +149,7 @@ it("状态首次读取失败时禁用签到，可手动重新读取", async () =
 it("节日与会话日期合并展示祝福，签到一次固定十币", async () => {
   const today = { ...status(), festivals: [
     { id: "1", scope: "catalog" as const, name: "清明", blessing: "缅怀故人。", isMemorial: true },
-    { id: "9", scope: "session" as const, name: "纪念日", blessing: "珍惜相伴的时光。", isMemorial: false },
+    { id: "9", scope: "custom" as const, name: "纪念日", blessing: "珍惜相伴的时光。", isMemorial: false },
   ] };
   api.status.mockResolvedValue(today);
   api.signIn.mockResolvedValue({ status: { ...today, signedIn: true, wallet: { ...today.wallet, coins: "10" } }, grantedCoins: "10" });
@@ -176,7 +176,7 @@ it("签到等待期间切换会话，旧会话祝福不能覆盖目标会话", a
   api.intimacy.mockResolvedValue(intimacy(5, "3", 2));
   await act(async () => { view.rerender(<PetStatusPanel snapshot={snapshot("3", 2)} />); });
   await act(async () => { pending.resolve({ status: { ...status("10", true), festivals: [
-    { id: "9", scope: "session", name: "旧会话生日", blessing: "旧会话祝福", isMemorial: false },
+    { id: "9", scope: "custom", name: "旧会话生日", blessing: "旧会话祝福", isMemorial: false },
   ] }, grantedCoins: "10" }); });
   expect(screen.queryByText(/旧会话生日/)).toBeNull();
   expect(screen.getByLabelText("喵币余额").textContent).toBe("10 喵币");

@@ -11,24 +11,28 @@ pub struct ConnectionTest {
     pub base_url: String,
     pub model: String,
     pub api_key: Option<String>,
+    pub max_output_tokens: u32,
+    pub context_window_override: Option<u32>,
 }
 pub fn connection_test_config(
     c: &Connection,
     id: i64,
     protector: &dyn SecretProtector,
 ) -> AppResult<ConnectionTest> {
-    let row: Option<(Option<String>, String, Option<String>)> = c
+    let row: Option<(Option<String>, String, Option<String>, u32, Option<u32>)> = c
         .query_row(
-            "SELECT base_url,model,api_key_encrypted FROM provider_effective WHERE id=?1",
+            "SELECT base_url,model,api_key_encrypted,max_output_tokens,context_window_override FROM provider_effective WHERE id=?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
-    let (base_url, model, key) = row.ok_or_else(AppError::not_found)?;
+    let (base_url, model, key, max_output_tokens, context_window_override) = row.ok_or_else(AppError::not_found)?;
     Ok(ConnectionTest {
         base_url: base_url.unwrap_or_else(|| "https://api.openai.com/v1".into()),
         model,
         api_key: key.map(|v| protector.unprotect(&v)).transpose()?,
+        max_output_tokens,
+        context_window_override,
     })
 }
 pub async fn test_connection(
@@ -43,7 +47,7 @@ pub async fn test_connection(
                 &config,
                 &crate::ai::provider::GenerateRequest {
                     messages: vec![crate::ai::provider::Message::new("user", "请回复 OK")],
-                    max_tokens: 32,
+                    max_tokens: config.max_output_tokens,
                     tools: vec![],
                     json: false,
                 },
@@ -306,6 +310,8 @@ mod tests {
             let result = tauri::async_runtime::block_on(test_connection(
                 &client,
                 ConnectionTest {
+                    max_output_tokens: default_max_output_tokens(),
+                    context_window_override: None,
                     base_url: format!("http://{address}/v1"),
                     model: "fake-model".into(),
                     api_key: None,

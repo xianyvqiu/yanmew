@@ -8,6 +8,8 @@ pub struct Message {
     pub tool_calls: Option<Vec<Value>>,
     pub tool_call_id: Option<String>,
     pub images:Vec<String>,
+    /// 仅本轮工具协议回传使用，不进入聊天消息表或前端事件。
+    pub reasoning_content: Option<String>,
 }
 impl Serialize for Message {
     fn serialize<S:serde::Serializer>(&self,serializer:S)->Result<S::Ok,S::Error> {
@@ -21,6 +23,7 @@ impl Serialize for Message {
         }
         if let Some(calls)=&self.tool_calls{map.serialize_entry("tool_calls",calls)?;}
         if let Some(id)=&self.tool_call_id{map.serialize_entry("tool_call_id",id)?;}
+        if let Some(reasoning)=&self.reasoning_content{map.serialize_entry("reasoning_content",reasoning)?;}
         map.end()
     }
 }
@@ -32,11 +35,13 @@ impl Message {
             tool_calls: None,
             tool_call_id: None,
             images:vec![],
+            reasoning_content: None,
         }
     }
     /// 工具调用参数必须作为 JSON 字符串发送，不能直接序列化内部 ToolCall。
     pub fn tool_request(choice: &Choice) -> Self {
         let mut message = Self::new("assistant", choice.content.clone());
+        message.reasoning_content = choice.reasoning_content.clone();
         message.tool_calls = Some(choice.tools.iter().map(|call| serde_json::json!({
             "id":call.id,"type":"function","function":{"name":call.name,"arguments":call.arguments.to_string()}
         })).collect());
@@ -49,6 +54,7 @@ impl Message {
     }
 }
 /// 只在后端创建；不允许前端提交整份权威会话上下文。
+#[derive(Clone)]
 pub struct GenerateRequest {
     pub messages: Vec<Message>,
     pub max_tokens: u32,
@@ -76,6 +82,8 @@ pub struct Choice {
     pub content: String,
     pub tools: Vec<ToolCall>,
     pub finish: Finish,
+    #[serde(skip_serializing)]
+    pub reasoning_content: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

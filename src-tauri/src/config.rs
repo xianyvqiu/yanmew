@@ -92,8 +92,8 @@ pub fn save_weather(
 /// 全局数值设置的唯一默认值入口；内部上下文和密钥不经过此接口。
 pub const DEFAULTS: &[(&str, i64)] = &[
     ("hungry_minutes", 120),
-    ("bored_minutes", 45),
-    ("sleep_idle_minutes", 45),
+    ("standby_minutes", 10),
+    ("idle_event_minutes", 45),
     ("sleep_min_minutes", 60),
     ("sleep_max_minutes", 120),
     ("short_memory_min_chars", 12),
@@ -126,6 +126,18 @@ pub const DEFAULTS: &[(&str, i64)] = &[
     ("letter_reply_max_minutes", 30),
 ];
 pub type Settings = BTreeMap<String, String>;
+
+/// 旧版分别配置无聊/入睡；统一后优先保留无聊值，只有缺失时使用入睡值。
+/// 初始化在业务事务内调用，导入仅在隔离暂存库调用，不留下两套可独立修改的阈值。
+pub(crate) fn normalize_legacy_idle_settings(conn: &Connection) -> AppResult<()> {
+    conn.execute_batch("INSERT OR IGNORE INTO settings(key,value)
+        SELECT 'idle_event_minutes', COALESCE(
+            (SELECT value FROM settings WHERE key='bored_minutes'),
+            (SELECT value FROM settings WHERE key='sleep_idle_minutes'))
+        WHERE EXISTS(SELECT 1 FROM settings WHERE key IN ('bored_minutes','sleep_idle_minutes'));
+        DELETE FROM settings WHERE key IN ('bored_minutes','sleep_idle_minutes');")?;
+    Ok(())
+}
 
 pub fn defaults() -> Settings {
     let mut values: Settings = DEFAULTS
@@ -382,8 +394,8 @@ mod tests {
         crate::db::initialize(&mut connection).unwrap();
         validate(&defaults()).unwrap();
         let changes = [
-            ("hungry_minutes", "90"), ("bored_minutes", "30"),
-            ("sleep_idle_minutes", "40"), ("sleep_min_minutes", "20"),
+            ("hungry_minutes", "90"), ("standby_minutes", "5"),
+            ("idle_event_minutes", "40"), ("sleep_min_minutes", "20"),
             ("sleep_max_minutes", "50"), ("travel_min_online_hours", "3"),
             ("travel_max_online_hours", "5"), ("intimacy_threshold_1", "15"),
             ("intimacy_threshold_2", "60"), ("intimacy_threshold_3", "200"),
@@ -399,7 +411,8 @@ mod tests {
             ("sleep_min_minutes", "51"), ("travel_min_online_hours", "6"),
             ("intimacy_threshold_2", "15"), ("intimacy_threshold_4", "1000"),
             ("accessory_cost_1", "-1"), ("hungry_minutes", "0"),
-            ("bored_minutes", "1.5"), ("sleep_idle_minutes", "2147483648"),
+            ("standby_minutes", "1.5"), ("idle_event_minutes", "2147483648"),
+            ("bored_minutes", "10"), ("sleep_idle_minutes", "10"),
         ] {
             let invalid = [(key.into(), value.into()), ("accessory_cost_2".into(), "100".into())].into_iter().collect();
             assert!(save(&mut connection, invalid).is_err(), "{key}");

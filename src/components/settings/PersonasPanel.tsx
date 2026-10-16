@@ -18,7 +18,7 @@ function expressionGroups(persona: Persona): { label: string; values: string[] }
   const library = persona.expressions;
   const click = library?.click && typeof library.click === "object" ? library.click as Record<string, unknown> : {};
   const groups: [string, unknown][] = [["点击 · 开心", click.happy], ["点击 · 惊讶", click.surprised], ["点击 · 害羞", click.shy],
-    ["饥饿", library?.hungry], ["进食", library?.eating], ["困倦", library?.sleepy], ["无聊", library?.bored], ["思考", library?.thinking]];
+    ["待机", library?.standby], ["饥饿", library?.hungry], ["进食", library?.eating], ["困倦", library?.sleepy], ["无聊", library?.bored], ["思考", library?.thinking]];
   return groups.map(([label, value]) => ({ label, values: Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [] }));
 }
 
@@ -173,7 +173,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
     </section>
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="persona-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       {confirmation && <><h2 id="persona-confirm-title">{confirmation.action === "delete" ? `删除 ${confirmation.persona.name}` : confirmation.action === "baseline" ? "更新初始设定" : "恢复初始设定"}</h2>
-        <p>{confirmation.action === "delete" ? `这会删除该人设及其全部会话、聊天、记忆、记事本、出行、游记、信件、伴手礼、饰品和节日记录。${confirmation.persona.isActive ? "当前使用项会切回系统默认人设。" : ""}全局喵币、账单、提醒、设置和小游戏插件数据保留。`
+        <p>{confirmation.action === "delete" ? `这会删除该人设及其全部会话、聊天、记忆、记事本、出行、游记、信件、伴手礼和饰品。${confirmation.persona.isActive ? "当前使用项会切回系统默认人设。" : ""}全局自定义日期、喵币、账单、提醒、设置和小游戏插件数据保留。`
           : confirmation.action === "baseline" ? "将当前已保存的设定替换初始设定，之后的差异比较会以新初始设定为准，当前累计差异会清空。" : "将当前设定替换为初始设定，当前累计差异会清空，聊天和记忆记录保留。"}</p>
         {error && <p className="ym-page-error" role="alert">{error.message}</p>}
         <div className="ym-inline-form"><button className="ym-button" disabled={busy} onClick={() => setConfirmation(null)}>取消</button><button className="ym-button" disabled={busy} onClick={() => { void confirm(); }}>{busy ? "正在处理…" : "确认"}</button></div></>}

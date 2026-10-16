@@ -551,6 +551,7 @@ pub(super) fn commit(
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
     if full {
+        tx.execute("DELETE FROM custom_festivals", [])?;
         crate::travel::cancel_current(&tx, &date)?;
         // 保留本机程序登记供兼容存档关联；不沿用其旧使用数据。
         for table in [
@@ -625,7 +626,6 @@ pub(super) fn commit(
         "accessories",
         "letters",
         "souvenirs",
-        "session_festivals",
     ] {
         rows(source, table, |mut r| {
             if r.contains_key("id") {
@@ -646,7 +646,14 @@ pub(super) fn commit(
             if table == "accessories" {
                 resource(source, &mut r, "image_file", "accessory")?;
             }
-            if table == "session_festivals" {
+            put(&tx, table, &r, table == "session_pet_states")?;
+            Ok(())
+        })?;
+    }
+    if full {
+        rows(source, "custom_festivals", |mut r| {
+            map_field(source, &mut r, "id", "custom_festivals")?;
+            {
                 if let Some(old) = r.get("festival_id").and_then(Value::as_str) {
                     let code: String = source.query_row(
                         "SELECT code FROM festival_catalog WHERE id=?1",
@@ -661,10 +668,10 @@ pub(super) fn commit(
                     r.insert("festival_id".into(), Value::String(target.to_string()));
                 }
             }
-            put(&tx, table, &r, table == "session_pet_states")?;
-            if table == "session_festivals" {
+            put(&tx, "custom_festivals", &r, false)?;
+            {
                 let id = parse_id(r.get("id").and_then(Value::as_str).ok_or_else(invalid_import)?)?;
-                crate::festivals::session::refresh_imported_in_transaction(
+                crate::festivals::custom::refresh_imported_in_transaction(
                     &tx, now.with_timezone(&chrono::Local).date_naive(), id,
                 )?;
             }

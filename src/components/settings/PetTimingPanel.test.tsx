@@ -7,12 +7,12 @@ const api = vi.hoisted(() => ({ getSettings: vi.fn(), getSettingsDefaults: vi.fn
 vi.mock("../../api", () => ({ configurationApi: api, errorMessage: (error: { message?: string }) => error.message ?? "读取失败" }));
 
 const keys = [
-  "hungry_minutes", "bored_minutes", "sleep_idle_minutes", "sleep_min_minutes", "sleep_max_minutes",
+  "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
   "travel_min_online_hours", "travel_max_online_hours",
   "intimacy_threshold_1", "intimacy_threshold_2", "intimacy_threshold_3", "intimacy_threshold_4",
   "accessory_cost_1", "accessory_cost_2", "accessory_cost_3", "accessory_cost_4",
 ] as const;
-const values = ["120", "45", "45", "60", "120", "2", "4", "10", "50", "150", "300", "20", "50", "120", "300"];
+const values = ["120", "10", "45", "60", "120", "2", "4", "10", "50", "150", "300", "20", "50", "120", "300"];
 const makeSettings = (overrides: Partial<Settings> = {}) => ({
   ...Object.fromEntries(keys.map((key, index) => [key, values[index]])),
   theme_mode: "system",
@@ -29,13 +29,28 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it("共同触发时间只有一个输入，待机与睡眠持续时间独立保存", async () => {
+  render(<PetTimingPanel />);
+  const standby = await screen.findByLabelText("待机等待时间");
+  const shared = screen.getByLabelText("无聊／睡觉触发时间");
+  expect((standby as HTMLInputElement).value).toBe("10");
+  expect((shared as HTMLInputElement).value).toBe("45");
+  expect(screen.queryByLabelText("无聊触发")).toBeNull();
+  expect(screen.queryByLabelText("无互动入睡")).toBeNull();
+  expect(screen.getByText(/各50%随机进入无聊或睡觉/)).toBeTruthy();
+  fireEvent.change(standby, { target: { value: "5" } });
+  fireEvent.change(shared, { target: { value: "35" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ standby_minutes: "5", idle_event_minutes: "35" }));
+});
+
 it("读取真实配置并展示全部 15 个可编辑字段", async () => {
   render(<PetTimingPanel />);
   await screen.findByRole("heading", { name: "时间与桌宠" });
   expect((await screen.findByLabelText("饥饿触发")).getAttribute("value")).toBe("120");
   expect(api.getSettings).toHaveBeenCalledTimes(1);
   const fields = keys.map(key => screen.getByLabelText({
-    hungry_minutes: "饥饿触发", bored_minutes: "无聊触发", sleep_idle_minutes: "无互动入睡",
+    hungry_minutes: "饥饿触发", standby_minutes: "待机等待时间", idle_event_minutes: "无聊／睡觉触发时间",
     sleep_min_minutes: "睡眠最短时长", sleep_max_minutes: "睡眠最长时长",
     travel_min_online_hours: "出行最短在线时长", travel_max_online_hours: "出行最长在线时长",
     intimacy_threshold_1: "档位 1 亲密度", intimacy_threshold_2: "档位 2 亲密度",

@@ -25,6 +25,7 @@ fn output() -> Output {
 }
 fn choice() -> Choice {
     Choice {
+        reasoning_content: None,
         index: 0,
         content: json!({"title":output().title,"content":"湖边散步🙂ABC!?"}).to_string(),
         finish: Finish::Stop,

@@ -28,7 +28,7 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $runtimeDirectory.FullName $required) -PathType Leaf)) { throw "运行库缺少 $required" }
     }
 
-    $releaseRoot = Join-Path $projectRoot ('my_doc/releases/' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $releaseRoot = Join-Path $projectRoot ('releases/' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     if (Test-Path -LiteralPath $releaseRoot) { throw '发布目录已存在，请稍后重试，原产物不覆盖' }
     $portable = Join-Path $releaseRoot "YanMew-$($config.version)-windows-x64"
     New-Item -ItemType Directory -Path $portable | Out-Null

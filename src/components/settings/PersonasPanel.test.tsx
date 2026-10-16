@@ -144,7 +144,7 @@ describe("PersonasPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: `删除 ${currentPersona.name}` }));
     const modal = within(screen.getByRole("dialog"));
-    expect(modal.getByText(/全部会话、聊天、记忆、记事本、出行、游记、信件、伴手礼、饰品和节日记录/)).toBeTruthy();
+    expect(modal.getByText(/全部会话、聊天、记忆、记事本、出行、游记、信件、伴手礼和饰品/)).toBeTruthy();
     expect(modal.getByText(/当前使用项会切回系统默认人设/)).toBeTruthy();
     expect(api.deletePersona).not.toHaveBeenCalled();
 

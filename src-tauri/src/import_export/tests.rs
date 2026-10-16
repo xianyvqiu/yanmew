@@ -29,7 +29,7 @@ pub(super) fn runtime() -> Runtime {
         s.connection.execute("INSERT INTO accessories(id,session_id,name,display_text,description,cost,source,created_at) VALUES(10,2,'小帽子','🎩','描述',20,'crafted',?1)", [NOW]).unwrap();
         s.connection.execute("INSERT INTO letters(id,session_id,travel_id,sender,content,has_been_replied,letter_kind,created_at) VALUES(10,2,10,'ai','原信',1,'midway',?1)", [NOW]).unwrap();
         s.connection.execute("INSERT INTO letters(id,session_id,travel_id,sender,content,reply_to_id,reply_due_at,reply_state,letter_kind,created_at) VALUES(11,2,10,'user','回信',10,?1,'cancelled','user',?1)", [NOW]).unwrap();
-        s.connection.execute("INSERT INTO session_festivals(session_id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES(2,(SELECT id FROM festival_catalog WHERE code='solar_new_year'),'festival','元旦',2026,'solar',1,1,'祝福','user',?1,?1)", [NOW]).unwrap();
+        s.connection.execute("INSERT INTO custom_festivals(festival_id,kind,name,year,calendar_type,solar_month,solar_day,blessing,source,created_at,updated_at) VALUES((SELECT id FROM festival_catalog WHERE code='solar_new_year'),'festival','元旦',2026,'solar',1,1,'祝福','user',?1,?1)", [NOW]).unwrap();
         s.connection.execute("INSERT INTO game_plugins(plugin_id,name,author,installed_version,api_version,source_type,package_path,package_sha256,repository,network_origins_json,installed_at,updated_at) VALUES('test.game','测试游戏','作者','1.0.0','1.0.0','local','本机插件路径',?1,'https://github.com/example/game','[\"https://example.com\"]',?2,?2)", params!["a".repeat(64), NOW]).unwrap();
         s.connection.execute("INSERT INTO game_permissions VALUES('test.game','wallet.modify','','allowed','1.0.0',?1),('test.game','network.fetch','https://example.com','allowed','1.0.0',?1)", [NOW]).unwrap();
         s.connection.execute("INSERT INTO game_plugin_settings VALUES('test.game','volume','0.5',?1)", [NOW]).unwrap();
@@ -181,11 +181,15 @@ fn six_kinds_have_closed_scopes_and_preserve_states() {
             assert!(tables["travel_journals"].is_empty());
             assert_eq!(tables["letters"][0]["has_been_replied"], 1);
             assert_eq!(tables["letters"][1]["reply_to_id"], "10");
-            assert_eq!(tables["session_festivals"][0]["festival_code"], "solar_new_year");
-            assert!(!tables["session_festivals"][0].contains_key("festival_id"));
+            if kind == PackageKind::Full {
+                assert_eq!(tables["custom_festivals"][0]["festival_code"], "solar_new_year");
+                assert!(!tables["custom_festivals"][0].contains_key("festival_id"));
+            } else {
+                assert!(!tables.contains_key("custom_festivals"));
+            }
         }
         if kind == PackageKind::PersonaProfile {
-            assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["personas"]);
+            assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["personas", "pet_artworks"]);
         }
         if kind == PackageKind::UserProfile && !include_sessions {
             assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["user_profiles"]);

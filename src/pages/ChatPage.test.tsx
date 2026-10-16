@@ -103,6 +103,29 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("用户与AI历史气泡都能复制各自原文且不修改消息", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    try {
+      const user = message("1", "session-1", "用户原文");
+      const assistant = { ...message("2", "session-1", "AI原文\n(^_^) [资料](https://example.com)"), role: "assistant" as const };
+      api.messages.mockResolvedValue({ items: [user, assistant], nextAfterId: null } satisfies MessagePage);
+      render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
+      await screen.findByText("用户原文");
+      const bubbles = within(screen.getByRole("region", { name: "聊天记录" })).getAllByRole("listitem");
+      expect(bubbles).toHaveLength(2);
+      fireEvent.click(within(bubbles[0]).getByRole("button", { name: "复制" }));
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(user.content));
+      fireEvent.click(within(bubbles[1]).getByRole("button", { name: "复制" }));
+      await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(assistant.content));
+      expect(api.edit).not.toHaveBeenCalled();
+      expect(api.deleteTail).not.toHaveBeenCalled();
+    } finally {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
   it("用户设定卡片可打开详情并绑定，绑定失败保留弹窗供重试", async () => {
     const current=snapshot("session-1"), refresh=vi.fn();
     current.userProfiles=[{id:"7",name:"日常",content:"喜欢猫咪",createdAt:"2026-10-15",updatedAt:"2026-10-15"}];

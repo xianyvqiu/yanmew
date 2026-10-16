@@ -836,6 +836,7 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
     let client=runtime.ai.clone()?;
     let result = crate::providers::test_connection(&client, crate::providers::ConnectionTest {
         base_url:config.base_url.clone(),model:config.model.clone(),api_key:config.api_key.clone(),
+        max_output_tokens:config.max_output_tokens,context_window_override:config.context_window_override,
     }).await;
     if result.is_ok() {client.discover_capacity(&config).await;}
     let health_result = result.clone();
@@ -2323,7 +2324,7 @@ pub async fn retry_journal_generation(window:WebviewWindow,app:AppHandle,runtime
     let _=app.emit(crate::events::TRAVEL_CHANGED,serde_json::json!({"sessionId":session}));Ok(())
 }
 
-/// 母表只读；会话日期管理复用已有可信窗口与当前上下文校验。
+/// 母表只读；全局日期管理复用已有可信窗口权限与记录快照校验。
 #[tauri::command]
 pub async fn browse_cards(window:WebviewWindow,runtime:State<'_,Runtime>,input:crate::card_browser::Query)->AppResult<crate::card_browser::Page> {
     authorize(&window)?;storage(runtime.inner().clone(),move|s,_|crate::card_browser::browse(s,input)).await
@@ -2332,43 +2333,41 @@ pub async fn browse_cards(window:WebviewWindow,runtime:State<'_,Runtime>,input:c
 pub async fn get_calendar_month(window:WebviewWindow,runtime:State<'_,Runtime>,year:i32,month:u32)->AppResult<crate::festivals::calendar::Month> {
     authorize(&window)?;
     storage(runtime.inner().clone(),move|store,_| {
-        let context=crate::persona::context(&store.connection,store.context_revision)?;
-        let session=context.session_id.as_deref().map(parse_id).transpose()?;
-        crate::festivals::calendar::month(&store.connection,session,year,month)
+        crate::festivals::calendar::month(&store.connection,year,month)
     }).await
 }
 #[tauri::command]
-pub async fn list_festival_catalog(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<crate::festivals::session::CatalogRecord>> {
+pub async fn list_festival_catalog(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<crate::festivals::custom::CatalogRecord>> {
     authorize(&window)?;let clock=runtime.clock.clone();
-    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::catalog(&store.connection,today)}).await
+    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::catalog(&store.connection,today)}).await
 }
 #[tauri::command]
-pub async fn list_session_festivals(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::festivals::session::Record>> {
+pub async fn list_custom_festivals(window:WebviewWindow,runtime:State<'_,Runtime>,before_id:Option<String>,limit:i64)->AppResult<Vec<crate::festivals::custom::Record>> {
     authorize(&window)?;let before=before_id.as_deref().map(parse_id).transpose()?;let clock=runtime.clock.clone();
-    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::list(&store.connection,session,before,limit,today)}).await
+    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::list(&store.connection,before,limit,today)}).await
 }
 #[tauri::command]
-pub async fn get_session_festival(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<crate::festivals::session::Record> {
+pub async fn get_custom_festival(window:WebviewWindow,runtime:State<'_,Runtime>,id:String)->AppResult<crate::festivals::custom::Record> {
     authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();
-    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::get(&store.connection,session,id,today)}).await
+    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::get(&store.connection,id,today)}).await
 }
 #[tauri::command]
-pub async fn create_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,input:crate::festivals::session::Input)->AppResult<crate::festivals::session::Record> {
-    authorize(&window)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
-    let result=storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::create(&mut store.connection,session,input,"user",today,now)}).await?;
-    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(result)
+pub async fn create_custom_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,input:crate::festivals::custom::Input)->AppResult<crate::festivals::custom::Record> {
+    authorize(&window)?;let clock=runtime.clock.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::create(&mut store.connection,input,"user",today,now)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":null}));Ok(result)
 }
 #[tauri::command]
-pub async fn update_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,expected:String,input:crate::festivals::session::Input)->AppResult<crate::festivals::session::Record> {
-    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
-    let result=storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::update(&mut store.connection,session,id,&expected,input,today,now)}).await?;
-    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(result)
+pub async fn update_custom_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,expected:String,input:crate::festivals::custom::Input)->AppResult<crate::festivals::custom::Record> {
+    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();
+    let result=storage(runtime.inner().clone(),move|store,_|{let now=clock.sample()?.utc;let today=now.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::update(&mut store.connection,id,&expected,input,today,now)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":null}));Ok(result)
 }
 #[tauri::command]
-pub async fn delete_session_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String,expected:String)->AppResult<()> {
-    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();let session_id=context.session_id.clone();
-    storage(runtime.inner().clone(),move|store,_|{let session=crate::festivals::current_scope(store,&context)?;let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::session::delete(&mut store.connection,session,id,&expected,today)}).await?;
-    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":session_id}));Ok(())
+pub async fn delete_custom_festival(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,id:String,expected:String)->AppResult<()> {
+    authorize(&window)?;let id=parse_id(&id)?;let clock=runtime.clock.clone();
+    storage(runtime.inner().clone(),move|store,_|{let today=clock.sample()?.utc.with_timezone(&chrono::Local).date_naive();crate::festivals::synchronize(&mut store.connection,today)?;crate::festivals::custom::delete(&mut store.connection,id,&expected,today)}).await?;
+    let _=app.emit(crate::events::FESTIVALS_CHANGED,serde_json::json!({"sessionId":null}));Ok(())
 }
 
 #[tauri::command]

@@ -65,6 +65,7 @@ struct PartialTool {
 #[derive(Default)]
 struct PartialChoice {
     content: String,
+    reasoning_content: Option<String>,
     tools: BTreeMap<u32, PartialTool>,
     finish: Option<Finish>,
 }
@@ -128,10 +129,14 @@ impl StreamAccumulator {
                     });
                 }
             }
-            // 仅识别适配层支持的字符串推理增量；不保存或展示模型内部推理。
+            // 推理不作为正文发事件或落库；工具调用所需原字段仅在本轮内存暂存。
             for field in ["reasoning_content", "reasoning"] {
                 if let Some(reasoning) = delta.get(field).filter(|v| !v.is_null()) {
-                    self.progress |= !reasoning.as_str().ok_or_else(protocol)?.is_empty();
+                    let reasoning = reasoning.as_str().ok_or_else(protocol)?;
+                    self.progress |= !reasoning.is_empty();
+                    if field == "reasoning_content" {
+                        choice.reasoning_content.get_or_insert_with(String::new).push_str(reasoning);
+                    }
                 }
             }
             if let Some(tools) = delta.get("tool_calls").filter(|v| !v.is_null()) {
@@ -233,6 +238,7 @@ impl StreamAccumulator {
                     content: choice.content,
                     tools,
                     finish,
+                    reasoning_content: choice.reasoning_content,
                 })
             })
             .collect()

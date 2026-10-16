@@ -48,7 +48,7 @@ fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
         let provider = store.connection.query_row("SELECT id FROM provider_effective WHERE is_active=1", [], |r| r.get::<_,i64>(0)).optional()?
             .ok_or_else(|| AppError::new("PROVIDER_UNAVAILABLE", "尚无可用聊天提供商，旅行事实等待生成"))?;
         let target = providers::connection_test_config(&store.connection,provider,secrets)?;
-        let max_tokens = store.connection.query_row("SELECT max_output_tokens FROM provider_effective WHERE id=?1",[provider],|r|r.get::<_,u32>(0))?.min(4096);
+        let max_tokens = target.max_output_tokens;
         let start = DateTime::parse_from_rfc3339(&started).map_err(|_|AppError::storage())?;
         let end = DateTime::parse_from_rfc3339(&planned).map_err(|_|AppError::storage())?;
         let duration_minutes = end.signed_duration_since(start).num_minutes();

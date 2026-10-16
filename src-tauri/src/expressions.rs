@@ -24,6 +24,9 @@ pub struct ExpressionLibrary {
     pub sleepy: Vec<String>,
     pub bored: Vec<String>,
     pub thinking: Vec<String>,
+    /// 兼容旧人设和旧备份；新生成的表情库必须包含独立待机表情。
+    #[serde(default)]
+    pub standby: Vec<String>,
 }
 pub fn validate_expression(text: &str) -> AppResult<()> {
     // 保守宽度预算避免固定画布裁切；排除控制和双向文本控制字符。
@@ -42,6 +45,10 @@ pub fn validate_expression(text: &str) -> AppResult<()> {
     Ok(())
 }
 pub fn validate_library(value: &ExpressionLibrary) -> AppResult<()> {
+    if value.standby.len() > 8 {
+        return Err(AppError::new("AI_PROTOCOL_ERROR", "待机分类最多包含 8 个颜文字"));
+    }
+    for expression in &value.standby { validate_expression(expression)?; }
     for group in [
         &value.click.happy,
         &value.click.surprised,
@@ -61,6 +68,14 @@ pub fn validate_library(value: &ExpressionLibrary) -> AppResult<()> {
         for expression in group {
             validate_expression(expression)?;
         }
+    }
+    Ok(())
+}
+
+fn validate_generated_library(value: &ExpressionLibrary) -> AppResult<()> {
+    validate_library(value)?;
+    if value.standby.is_empty() {
+        return Err(AppError::new("AI_PROTOCOL_ERROR", "新生成的表情库必须包含待机颜文字"));
     }
     Ok(())
 }
@@ -145,12 +160,12 @@ pub async fn generate_persona_expressions(
             .await
             .map_err(|_| AppError::storage())??;
     let input=GenerateRequest{messages:vec![
-        Message::new("system","只返回 JSON 对象，不附加 Markdown。结构必须为 {\"click\":{\"happy\":[\"颜文字\"],\"surprised\":[\"颜文字\"],\"shy\":[\"颜文字\"]},\"hungry\":[\"颜文字\"],\"eating\":[\"颜文字\"],\"sleepy\":[\"颜文字\"],\"bored\":[\"颜文字\"],\"thinking\":[\"颜文字\"]}。每类生成 3 个符合人设的单行颜文字，不写解释。每个颜文字最多 14 个半角宽度，非 ASCII 字符按 2 个宽度计算。"),
-        Message::new("user",format!("人设名称：{}\n人设设定：{}",snapshot.name,snapshot.prompt))],max_tokens:2048,tools:vec![],json:true};
+        Message::new("system","只返回 JSON 对象，不附加 Markdown。结构必须为 {\"click\":{\"happy\":[\"颜文字\"],\"surprised\":[\"颜文字\"],\"shy\":[\"颜文字\"]},\"hungry\":[\"颜文字\"],\"eating\":[\"颜文字\"],\"sleepy\":[\"颜文字\"],\"bored\":[\"颜文字\"],\"thinking\":[\"颜文字\"],\"standby\":[\"颜文字\"]}。每类生成 3 个符合人设的单行颜文字，不写解释。standby 表示安静待机，须区别于默认、无聊和睡觉。每个颜文字最多 14 个半角宽度，非 ASCII 字符按 2 个宽度计算。"),
+        Message::new("user",format!("人设名称：{}\n人设设定：{}",snapshot.name,snapshot.prompt))],max_tokens:snapshot.config.max_output_tokens,tools:vec![],json:true};
     let result = runtime
         .ai
         .clone()?
-        .structured(&snapshot.config, &input, &lease.cancel, validate_library)
+        .structured(&snapshot.config, &input, &lease.cancel, validate_generated_library)
         .await;
     if let Err(error) = &result {
         let _ = runtime.read(|s, p| {
@@ -173,7 +188,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn library() -> ExpressionLibrary {
-        serde_json::from_value(json!({"click":{"happy":["(^_^)"],"surprised":["(O_O)"],"shy":["(>_<)"]},"hungry":["(・ω・)"],"eating":["(・ω・)"],"sleepy":["(-_-)"],"bored":["(._.)"],"thinking":["(?)"]})).unwrap()
+        serde_json::from_value(json!({"click":{"happy":["(^_^)"],"surprised":["(O_O)"],"shy":["(>_<)"]},"hungry":["(・ω・)"],"eating":["(・ω・)"],"sleepy":["(-_-)"],"bored":["(._.)"],"thinking":["(?)"],"standby":["(｡-ω-｡)"]})).unwrap()
     }
     #[test]
     fn categories_and_display_width_are_validated() {
@@ -185,6 +200,16 @@ mod tests {
         for bad in ["", "\n(^_^)", "123456789012345", "\u{202e}abc"] {
             assert!(validate_expression(bad).is_err());
         }
+    }
+    #[test]
+    fn legacy_library_reads_without_standby_but_new_generation_requires_it() {
+        let mut json=serde_json::to_value(library()).unwrap();
+        json.as_object_mut().unwrap().remove("standby");
+        let legacy:ExpressionLibrary=serde_json::from_value(json).unwrap();
+        validate_library(&legacy).unwrap();
+        assert!(legacy.standby.is_empty());
+        assert!(validate_generated_library(&legacy).is_err());
+        validate_generated_library(&library()).unwrap();
     }
     #[test]
     fn stale_or_cancelled_result_never_overwrites_library() {

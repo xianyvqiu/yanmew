@@ -37,7 +37,9 @@
   --ym-info: #496b91;
   --ym-info-soft: #e8f0f8;
 
-  --ym-pet-halo: rgba(255, 255, 255, 0.94);
+  --ym-pet-halo: #7b3f52;
+  --ym-pet-ink: #8e4e65;
+  --ym-pet-ink-muted: #96536a;
   --ym-scrim: rgba(20, 18, 22, 0.38);
 }
 
@@ -75,7 +77,9 @@
   --ym-info: #9ab8d9;
   --ym-info-soft: #233244;
 
-  --ym-pet-halo: rgba(0, 0, 0, 0.68);
+  --ym-pet-halo: #4a2d37;
+  --ym-pet-ink: #a05d77;
+  --ym-pet-ink-muted: #aa6881;
   --ym-scrim: rgba(0, 0, 0, 0.58);
 }
 

@@ -150,6 +150,29 @@ pub struct Budget {
     pub reduced: bool,
 }
 pub const SAFETY: usize = 256;
+/// 所有生成任务共用用途配置及确切模型能力，不按预期正文长度压缩推理预算。
+pub fn prepare_request(
+    config: &ConnectionTest,
+    input: &crate::ai::provider::GenerateRequest,
+) -> AppResult<crate::ai::provider::GenerateRequest> {
+    if config.max_output_tokens == 0 || input.max_tokens == 0 {
+        return Err(AppError::validation("maxOutputTokens", "最大输出必须为正整数"));
+    }
+    let capacity = resolve(&config.base_url, &config.model, config.context_window_override);
+    let mut output = input.max_tokens.min(config.max_output_tokens)
+        .min(capacity.max_output_tokens.unwrap_or(u32::MAX));
+    if let Some(window) = capacity.context_window {
+        let estimated = estimate(&input.messages, &input.tools)?;
+        let available = (window as usize).saturating_sub(estimated.saturating_add(SAFETY));
+        if available == 0 {
+            return Err(too_large());
+        }
+        output = output.min(available.min(u32::MAX as usize) as u32);
+    }
+    let mut request = input.clone();
+    request.max_tokens = output;
+    Ok(request)
+}
 pub fn too_large() -> AppError {
     AppError::new(
         "CONTEXT_TOO_LARGE",
@@ -200,6 +223,8 @@ mod tests {
         );
         assert_eq!(resolve(base, "bad", None).source, "unknown");
         let config = ConnectionTest {
+            max_output_tokens: crate::providers::default_max_output_tokens(),
+            context_window_override: None,
             base_url: base.into(),
             model: "exact-model".into(),
             api_key: None,
@@ -213,5 +238,40 @@ mod tests {
             resolve("https://proxy.invalid/v1", "gpt-4.1", None).source,
             "unknown"
         );
+    }
+}
+
+#[cfg(test)]
+mod generation_budget_tests {
+    use super::*;
+    use crate::ai::provider::{GenerateRequest, Message};
+
+    #[test]
+    fn generation_uses_configured_budget_for_any_model_and_respects_actual_limits() {
+        let mut config = ConnectionTest {
+            base_url: "https://generation-budget.invalid/v1".into(),
+            model: "unlisted-reasoning-model".into(),
+            api_key: None,
+            max_output_tokens: 32768,
+            context_window_override: None,
+        };
+        let mut input = GenerateRequest {
+            messages: vec![Message::new("user", "hi")],
+            max_tokens: config.max_output_tokens,
+            tools: vec![],
+            json: true,
+        };
+        assert_eq!(prepare_request(&config, &input).unwrap().max_tokens, 32768);
+        remember(&config.base_url, &config.model, &serde_json::json!({
+            "id":config.model,"max_output_tokens":8192,"context_window":100000
+        }));
+        assert_eq!(prepare_request(&config, &input).unwrap().max_tokens, 8192);
+        config.max_output_tokens = 6000;
+        assert_eq!(prepare_request(&config, &input).unwrap().max_tokens, 6000);
+        config.context_window_override = Some(2048);
+        let available = 2048 - estimate(&input.messages, &input.tools).unwrap() - SAFETY;
+        assert_eq!(prepare_request(&config, &input).unwrap().max_tokens, available as u32);
+        input.messages[0].content = "x".repeat(4096);
+        assert_eq!(prepare_request(&config, &input).err().unwrap().code, "CONTEXT_TOO_LARGE");
     }
 }

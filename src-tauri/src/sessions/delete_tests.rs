@@ -5,12 +5,12 @@ const AT: &str = "2026-10-06T10:00:00.000Z";
 const SESSION_TABLES: &[&str] = &[
     "session_pet_states", "chat_rounds", "messages", "short_memories",
     "long_memories", "long_memory_embeddings", "notebooks", "travels",
-    "travel_journals", "letters", "souvenirs", "accessories", "session_festivals",
+    "travel_journals", "letters", "souvenirs", "accessories",
 ];
 const GLOBAL_TABLES: &[&str] = &[
     "personas", "user_profiles", "providers", "embedding_providers", "user_state",
     "currency_ledger", "game_plugins", "game_permissions", "game_plugin_settings",
-    "game_plugin_data", "game_runs", "reminders", "reminder_occurrences", "festival_catalog",
+    "game_plugin_data", "game_runs", "reminders", "reminder_occurrences", "festival_catalog", "custom_festivals",
 ];
 
 fn database() -> Connection {
@@ -174,10 +174,10 @@ fn session_tree(connection: &Connection, session_id: i64, title: &str) {
         }
     }
     connection.execute(
-        "INSERT INTO session_festivals(session_id,festival_id,kind,name,year,calendar_type,
+        "INSERT INTO custom_festivals(festival_id,kind,name,year,calendar_type,
            solar_month,solar_day,blessing,source,created_at,updated_at)
-         VALUES(?1,1000,'festival','共同节日',2026,'solar',10,6,'节日快乐','user',?2,?2)",
-        params![session_id, AT],
+         VALUES(1000,'festival','共同节日',2026,'solar',10,6,'节日快乐','user',?1,?1)",
+        [AT],
     ).unwrap();
 }
 

@@ -195,6 +195,7 @@ fn known_budget_removes_whole_optional_parts_and_keeps_large_persona_and_tool_pa
     let (reply, _) = submit(&runtime, 1, 1, 0, "完整当前输入".into()).unwrap();
     let dynamic = vec![
         Message {
+            reasoning_content: None,
             role: "assistant".into(),
             content: String::new(),
             tool_calls: Some(vec![

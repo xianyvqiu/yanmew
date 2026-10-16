@@ -7,14 +7,14 @@ import sys
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "my_doc/model-build"))
+sys.path.insert(0, str(ROOT / ".test-temp/model-build"))
 import numpy as np
 import onnxruntime as ort
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 REVISION = "7999e1d3359715c523056ef9478215996d62a620"
-SOURCE = ROOT / "my_doc/model-source"
+SOURCE = ROOT / ".test-temp/model-source"
 OUTPUT = ROOT / "resources/models/bge-small-zh-v1.5"
 SOURCE.mkdir(parents=True, exist_ok=True)
 OUTPUT.mkdir(parents=True, exist_ok=True)

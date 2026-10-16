@@ -33,12 +33,7 @@ pub fn get_sign_in_status<T: TimeZone>(
             .and_then(|value| value.parse().ok())
             .ok_or_else(AppError::storage)
     };
-    let context = crate::persona::context(connection, 0)?;
-    let session = context.session_id.as_deref().map(str::parse::<i64>)
-        .transpose().map_err(|_| AppError::storage())?;
-    let festivals = crate::festivals::session::today(
-        connection, now.with_timezone(zone).date_naive(), session,
-    )?;
+    let festivals = crate::festivals::custom::today(connection, now.with_timezone(zone).date_naive())?;
     Ok(SignInStatus {
         wallet: get_wallet(connection)?,
         local_date: now.with_timezone(zone).date_naive().to_string(),

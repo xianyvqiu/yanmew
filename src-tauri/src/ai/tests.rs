@@ -119,6 +119,8 @@ impl Server {
     }
     pub fn config(&self) -> ConnectionTest {
         ConnectionTest {
+            max_output_tokens: crate::providers::default_max_output_tokens(),
+            context_window_override: None,
             base_url: self.url.clone(),
             model: "fake-model".into(),
             api_key: None,
@@ -392,4 +394,40 @@ fn structured_output_validates_finish_json_and_schema() {
             server.finish();
         }
     });
+}
+
+#[test]
+fn connection_probe_honors_the_selected_budget_instead_of_a_tiny_fixed_limit() {
+    tauri::async_runtime::block_on(async {
+        for budget in [8192, 32768, 65536] {
+            let server = Server::new(vec![Response::json(json!("OK"))]);
+            let mut config = server.config();
+            config.max_output_tokens = budget;
+            crate::providers::test_connection(&client(), config).await.unwrap();
+            let requests = server.requests.lock().unwrap();
+            assert_eq!(requests[0]["max_tokens"], budget);
+            assert!(requests[0].get("thinking").is_none());
+            drop(requests);
+            server.finish();
+        }
+    });
+}
+
+#[test]
+fn reasoning_fragments_survive_tool_round_trip_without_becoming_text_or_public_output() {
+    let mut accumulator = StreamAccumulator::default();
+    for reasoning in ["先检查", "记事本"] {
+        assert!(accumulator.push(&json!({"choices":[{"index":0,"delta":{
+            "reasoning_content":reasoning
+        },"finish_reason":null}]}).to_string()).unwrap().is_empty());
+    }
+    accumulator.push(&json!({"choices":[{"index":0,"delta":{"tool_calls":[{
+        "index":0,"id":"call-1","type":"function","function":{"name":"read_notebook","arguments":"{}"}
+    }]},"finish_reason":"tool_calls"}]}).to_string()).unwrap();
+    accumulator.push("[DONE]").unwrap();
+    let choice = accumulator.finish().unwrap().remove(0);
+    assert!(choice.content.is_empty());
+    let message = Message::tool_request(&choice);
+    assert_eq!(serde_json::to_value(&message).unwrap()["reasoning_content"], "先检查记事本");
+    assert!(serde_json::to_value(&choice).unwrap().get("reasoning_content").is_none());
 }

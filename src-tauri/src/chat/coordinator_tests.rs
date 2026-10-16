@@ -149,6 +149,9 @@ fn successful_stream_is_saved_before_terminal_event_is_delivered() {
         .unwrap();
 
         assert_eq!(saved.round.status, ChatRoundStatus::Completed);
+        let pet = runtime.pet_view().unwrap();
+        assert_eq!(pet.activity, crate::pet::controller::Activity::Speaking);
+        assert_eq!(pet.expression, "(^_^)");
         let terminal = events.last().unwrap();
         assert!(terminal.saved.is_some());
         assert!(matches!(

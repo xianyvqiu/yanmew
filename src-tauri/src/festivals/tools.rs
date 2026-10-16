@@ -1,5 +1,5 @@
-//! 聊天中的会话日期工具；与已有工具一样按请求保留快照和写入回执。
-use super::session;
+//! 聊天中的全局日期工具；与已有工具一样按请求保留快照和写入回执。
+use super::custom;
 use crate::{
     ai::provider::ToolCall,
     error::{parse_id, AppError, AppResult},
@@ -10,11 +10,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
-pub const RULES:&str="内置母表是只读的系统节日。会话子表只记录当前会话自己的固定公历或农历月日，例如生日、纪念日、自定义日子，不复制内置节日。只有确有需要且月日、历法和闰月信息已明确时才新增，不知道就询问用户，不能猜日期。新增/修改必须写非空祝福词；纪念、悼念等场合按实际语境用语，不强行说快乐。编辑/删除之前先读取该记录。工具成功才表示已持久化；这些年度日期不等于定时提醒，需要提醒时仍使用提醒工具。";
+pub const RULES:&str="内置母表是只读的系统节日。全局自定义日期由所有人设和会话共用，记录固定公历或农历月日，例如生日、纪念日、自定义日子，不复制内置节日。只有确有需要且月日、历法和闰月信息已明确时才新增，不知道就询问用户，不能猜日期。新增/修改必须写非空祝福词；纪念、悼念等场合按实际语境用语，不强行说快乐。编辑/删除之前先读取该记录。工具成功才表示已持久化；这些年度日期不等于定时提醒，需要提醒时仍使用提醒工具。";
 pub fn is_write(name: &str) -> bool {
     matches!(
         name,
-        "create_session_festival" | "update_session_festival" | "delete_session_festival"
+        "create_custom_festival" | "update_custom_festival" | "delete_custom_festival"
     )
 }
 pub fn definitions() -> Vec<Value> {
@@ -26,12 +26,12 @@ pub fn definitions() -> Vec<Value> {
         "blessing":{"type":"string","minLength":1},"note":{"type":["string","null"]}
     },"required":["kind","name","calendarType","month","day","isLeapMonth","blessing","note"],"additionalProperties":false});
     [
-        ("list_festival_catalog","查询本年只读内置节日母表；不创建会话记录。",json!({"type":"object","properties":{},"additionalProperties":false})),
-        ("list_session_festivals","分页读取当前会话自己的固定日期，返回ID、完整定义及当年全部匹配日期。",json!({"type":"object","properties":{"before_id":{"type":["string","null"]},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false})),
-        ("get_session_festival","读取当前会话的一条日期，编辑或删除之前先读取。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
-        ("create_session_festival","保存当前会话自己的年度固定日期；不填出生年份，不复制系统节日。",json!({"type":"object","properties":{"input":input.clone()},"required":["input"],"additionalProperties":false})),
-        ("update_session_festival","修改已读取的当前会话日期；冲突时重新读取，不强行覆盖。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"},"input":input},"required":["festival_id","input"],"additionalProperties":false})),
-        ("delete_session_festival","删除已读取且确实不再需要的当前会话日期；不能删除母表。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
+        ("list_festival_catalog","查询本年只读内置节日母表；不复制系统节日。",json!({"type":"object","properties":{},"additionalProperties":false})),
+        ("list_custom_festivals","分页读取全局共享的固定日期，返回ID、完整定义及当年全部匹配日期。",json!({"type":"object","properties":{"before_id":{"type":["string","null"]},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false})),
+        ("get_custom_festival","读取全局共享的一条日期，编辑或删除之前先读取。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
+        ("create_custom_festival","保存全局共享的年度固定日期；不填出生年份，不复制系统节日。",json!({"type":"object","properties":{"input":input.clone()},"required":["input"],"additionalProperties":false})),
+        ("update_custom_festival","修改已读取的全局自定义日期；冲突时重新读取，不强行覆盖。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"},"input":input},"required":["festival_id","input"],"additionalProperties":false})),
+        ("delete_custom_festival","删除已读取且确实不再需要的全局自定义日期；不能删除母表。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
     ].into_iter().map(|(name,description,parameters)|json!({"type":"function","function":{"name":name,"description":description,"parameters":parameters}})).collect()
 }
 #[derive(Deserialize)]
@@ -48,13 +48,13 @@ struct Id {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Create {
-    input: session::Input,
+    input: custom::Input,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Update {
     festival_id: String,
-    input: session::Input,
+    input: custom::Input,
 }
 fn parse<T: serde::de::DeserializeOwned>(value: &Value) -> AppResult<T> {
     serde_json::from_value(value.clone())
@@ -106,13 +106,13 @@ impl Tools {
             match call.name.as_str() {
                 "list_festival_catalog" => {
                     if call.arguments.as_object().is_none_or(|o|!o.is_empty()) {return Err(AppError::validation("arguments","母表查询不接受参数"));}
-                    Ok(json!({"records":session::catalog(&store.connection,today)?}))
+                    Ok(json!({"records":custom::catalog(&store.connection,today)?}))
                 }
-                "list_session_festivals" => {let args:Page=parse(&call.arguments)?;let before=args.before_id.as_deref().map(parse_id).transpose()?;let records=session::list(&store.connection,session,before,args.limit.unwrap_or(30),today)?;Ok(json!({"records":records}))}
-                "get_session_festival" => {let args:Id=parse(&call.arguments)?;Ok(json!({"record":session::get(&store.connection,session,parse_id(&args.festival_id)?,today)?}))}
-                "create_session_festival" => {let args:Create=parse(&call.arguments)?;Ok(json!({"record":session::create(&mut store.connection,session,args.input,"ai",today,now)?,"already_applied":false}))}
-                "update_session_festival" => {let args:Update=parse(&call.arguments)?;let expected=self.observed.get(&args.festival_id).ok_or_else(||AppError::new("FESTIVAL_READ_REQUIRED","修改前请先读取日期记录"))?;Ok(json!({"record":session::update(&mut store.connection,session,parse_id(&args.festival_id)?,expected,args.input,today,now)?,"already_applied":false}))}
-                "delete_session_festival" => {let args:Id=parse(&call.arguments)?;let expected=self.observed.get(&args.festival_id).ok_or_else(||AppError::new("FESTIVAL_READ_REQUIRED","删除前请先读取日期记录"))?;session::delete(&mut store.connection,session,parse_id(&args.festival_id)?,expected,today)?;Ok(json!({"deleted_id":args.festival_id,"already_applied":false}))}
+                "list_custom_festivals" => {let args:Page=parse(&call.arguments)?;let before=args.before_id.as_deref().map(parse_id).transpose()?;let records=custom::list(&store.connection,before,args.limit.unwrap_or(30),today)?;Ok(json!({"records":records}))}
+                "get_custom_festival" => {let args:Id=parse(&call.arguments)?;Ok(json!({"record":custom::get(&store.connection,parse_id(&args.festival_id)?,today)?}))}
+                "create_custom_festival" => {let args:Create=parse(&call.arguments)?;Ok(json!({"record":custom::create(&mut store.connection,args.input,"ai",today,now)?,"already_applied":false}))}
+                "update_custom_festival" => {let args:Update=parse(&call.arguments)?;let expected=self.observed.get(&args.festival_id).ok_or_else(||AppError::new("FESTIVAL_READ_REQUIRED","修改前请先读取日期记录"))?;Ok(json!({"record":custom::update(&mut store.connection,parse_id(&args.festival_id)?,expected,args.input,today,now)?,"already_applied":false}))}
+                "delete_custom_festival" => {let args:Id=parse(&call.arguments)?;let expected=self.observed.get(&args.festival_id).ok_or_else(||AppError::new("FESTIVAL_READ_REQUIRED","删除前请先读取日期记录"))?;custom::delete(&mut store.connection,parse_id(&args.festival_id)?,expected,today)?;Ok(json!({"deleted_id":args.festival_id,"already_applied":false}))}
                 _=>Err(AppError::new("UNKNOWN_TOOL","未注册此日期工具")),
             }
         })?;

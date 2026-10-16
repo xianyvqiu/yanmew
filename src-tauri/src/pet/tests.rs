@@ -125,34 +125,33 @@ fn sleep_deadline_is_drawn_once_and_expiry_starts_new_idle_cycle() {
 }
 
 #[test]
-fn distinct_thresholds_choose_earliest_even_when_both_crossed_in_one_tick() {
-    for (bored, sleep, expected) in [
-        ("10", "20", IdleBranch::Bored),
-        ("20", "10", IdleBranch::Sleeping),
-    ] {
+fn shared_threshold_keeps_both_random_branches_reachable() {
+    for (draw, expected) in [(0, IdleBranch::Bored), (1, IdleBranch::Sleeping)] {
         let mut connection = database();
-        setting(&connection, "bored_minutes", bored);
-        setting(&connection, "sleep_idle_minutes", sleep);
+        setting(&connection, "idle_event_minutes", "20");
         setting(&connection, "sleep_min_minutes", "60");
         setting(&connection, "sleep_max_minutes", "60");
-        let mut random = Random::new(&[]);
-        let result = run(&mut connection, tick(25), &mut random).unwrap();
+        let mut random = Random::new(&[draw]);
+        assert_eq!(run(&mut connection, tick(19), &mut random).unwrap().snapshot.idle_branch, IdleBranch::None);
+        let result = run(&mut connection, tick(1), &mut random).unwrap();
         assert_eq!(result.snapshot.idle_branch, expected);
-        assert!(random.bounds.is_empty());
+        assert_eq!(random.bounds, vec![2]);
+        run(&mut connection, tick(0), &mut random).unwrap();
+        assert_eq!(random.bounds, vec![2]);
     }
 }
 
 #[test]
 fn settings_changes_take_effect_without_reselecting_an_existing_branch() {
     let mut connection = database();
-    let mut random = Random::new(&[]);
+    let mut random = Random::new(&[0]);
     run(&mut connection, tick(20), &mut random).unwrap();
-    setting(&connection, "bored_minutes", "15");
+    setting(&connection, "idle_event_minutes", "15");
     setting(&connection, "hungry_minutes", "15");
     let changed = run(&mut connection, tick(0), &mut random).unwrap();
     assert_eq!(changed.transition, Transition::EnteredBored);
     assert!(changed.hungry);
-    setting(&connection, "sleep_idle_minutes", "1");
+    setting(&connection, "idle_event_minutes", "1");
     setting(&connection, "hungry_minutes", "120");
     let stable = run(&mut connection, tick(0), &mut random).unwrap();
     assert_eq!(stable.snapshot.idle_branch, IdleBranch::Bored);

@@ -36,10 +36,13 @@ it("新连接只填写连接信息，不再要求填写某一种用途的模型"
   expect(screen.queryByLabelText("模型名称")).toBeNull();fireEvent.change(screen.getByLabelText("提供商名称"),{target:{value:"新连接"}});fireEvent.click(screen.getByRole("button",{name:"保存"}));
   await waitFor(()=>expect(api.createProvider).toHaveBeenCalledWith({name:"新连接",baseUrl:null,apiKey:{action:"keep"}}));
 });
-it("记忆用途可以选择已添加连接并独立填写模型",async()=>{
+it("记忆用途可以选择已添加连接并独立保存模型及生成预算",async()=>{
   render(<ProvidersPanel/>);fireEvent.click(await screen.findByRole("button",{name:"配置记忆"}));
-  fireEvent.change(screen.getByLabelText("提供商"),{target:{value:"1"}});fireEvent.change(screen.getByLabelText("记忆模型"),{target:{value:"memory-model"}});fireEvent.click(screen.getByRole("button",{name:"保存用途"}));
-  await waitFor(()=>expect(api.saveRole).toHaveBeenCalledWith("memory","1","memory-model",false,3,undefined,undefined));
+  fireEvent.change(screen.getByLabelText("提供商"),{target:{value:"1"}});fireEvent.change(screen.getByLabelText("记忆模型"),{target:{value:"memory-model"}});
+  fireEvent.change(screen.getByLabelText("最大输出（tokens）"),{target:{value:"65536"}});
+  fireEvent.change(screen.getByLabelText("上下文容量（自动时留空）"),{target:{value:"128000"}});
+  fireEvent.click(screen.getByRole("button",{name:"保存用途"}));
+  await waitFor(()=>expect(api.saveRole).toHaveBeenCalledWith("memory","1","memory-model",false,3,65536,128000));
 });
 it("切换聊天连接恢复各自保存的模型和预算",async()=>{
   const other={...provider,id:"2",name:"另一个连接",isActive:false,model:"other-model",maxOutputTokens:4096,contextWindowOverride:128000};

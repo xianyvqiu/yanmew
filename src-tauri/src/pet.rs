@@ -53,6 +53,8 @@ pub enum Transition {
 pub struct AdvanceResult {
     pub snapshot: PetSnapshot,
     pub hungry: bool,
+    /// 从同一无互动累计派生的待机显示资格，不增加持久化状态或计时器。
+    pub standby: bool,
     /// 仅成功提交本次状态变化时返回事件，重复 tick 不会重复发进入事件。
     pub transition: Transition,
     /// 计时器事务已提交出发；调用者此后显示出门状态，不再处理在家分支。
@@ -68,8 +70,8 @@ pub struct InteractionResult {
 
 struct Thresholds {
     hungry_ms: i64,
-    bored_ms: i64,
-    sleep_idle_ms: i64,
+    standby_ms: i64,
+    idle_event_ms: i64,
     sleep_min_minutes: u64,
     sleep_max_minutes: u64,
 }
@@ -91,8 +93,8 @@ impl Thresholds {
         };
         Ok(Self {
             hungry_ms: milliseconds("hungry_minutes")?,
-            bored_ms: milliseconds("bored_minutes")?,
-            sleep_idle_ms: milliseconds("sleep_idle_minutes")?,
+            standby_ms: milliseconds("standby_minutes")?,
+            idle_event_ms: milliseconds("idle_event_minutes")?,
             sleep_min_minutes: minutes("sleep_min_minutes")? as u64,
             sleep_max_minutes: minutes("sleep_max_minutes")? as u64,
         })
@@ -177,14 +179,9 @@ fn advance_impl(
             if was_sleeping { 0 } else { seconds }, tick.now, random)?
     } else { false };
     if !away && !woke && tick.allow_idle_transition && snapshot.idle_branch == IdleBranch::None {
-        let earliest = thresholds.bored_ms.min(thresholds.sleep_idle_ms);
-        if snapshot.idle_elapsed_ms >= earliest {
-            // 不同阈值即使在同一 tick 都已到达，仍选择较早的阈值，不重新随机。
-            let sleeping = match thresholds.bored_ms.cmp(&thresholds.sleep_idle_ms) {
-                std::cmp::Ordering::Less => false,
-                std::cmp::Ordering::Greater => true,
-                std::cmp::Ordering::Equal => draw(random, 2)? == 1,
-            };
+        if snapshot.idle_elapsed_ms >= thresholds.idle_event_ms {
+            // 统一阈值每个无互动周期只随机一次，分支仍由既有仓储保存。
+            let sleeping = draw(random, 2)? == 1;
             let (branch, deadline) = if sleeping {
                 let range = thresholds.sleep_max_minutes - thresholds.sleep_min_minutes;
                 let extra = if range == 0 {
@@ -215,10 +212,13 @@ fn advance_impl(
         }
     }
     let hungry = snapshot.hunger_elapsed_ms >= thresholds.hungry_ms;
+    let standby = !away && snapshot.idle_branch == IdleBranch::None
+        && snapshot.idle_elapsed_ms >= thresholds.standby_ms;
     transaction.commit()?;
     Ok(AdvanceResult {
         snapshot,
         hungry,
+        standby,
         transition,
         away,
     })

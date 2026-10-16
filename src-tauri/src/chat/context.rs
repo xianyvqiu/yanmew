@@ -108,8 +108,8 @@ impl Context {
             Some(data) => json!({"availability":weather.availability,"position":data.position,"observation":data.observation,"fetchedAt":data.fetched_at}).to_string(),
             None => "地点与天气未知；不能虚构当前天气。".into(),
         };
-        let holidays = crate::festivals::session::today(c,local.date_naive(),Some(session))?;
-        result.push("system", format!("当前本地时间：{}，时区偏移{}。环境：{}。当天已登记日期：{}；isMemorial=true使用纪念向文案，不说快乐，不猜测未登记的日期。当前记忆参数：{}。工具只允许当前会话；只有成功结果才表示操作完成。记事本建议上限{}字，超限不截断，应优先整理。",local.to_rfc3339(),local.offset(),weather_text,json!(holidays),json!({"k":settings["memory_merge_count"],"recentMessages":count,"recentLongMemories":recent_long}),settings["notebook_max_chars"]),None);
+        let holidays = crate::festivals::custom::today(c,local.date_naive())?;
+        result.push("system", format!("当前本地时间：{}，时区偏移{}。环境：{}。当天已登记日期：{}；isMemorial=true使用纪念向文案，不说快乐，不猜测未登记的日期。当前记忆参数：{}。记忆、记事本及旅行等会话工具只允许当前会话；自定义日期工具维护全局共享日期，不属于某个会话。只有成功结果才表示操作完成。记事本建议上限{}字，超限不截断，应优先整理。",local.to_rfc3339(),local.offset(),weather_text,json!(holidays),json!({"k":settings["memory_merge_count"],"recentMessages":count,"recentLongMemories":recent_long}),settings["notebook_max_chars"]),None);
         let profile: Option<String> = c.query_row("SELECT u.content FROM sessions s JOIN user_profiles u ON u.id=s.user_profile_id WHERE s.id=?1",[session],|r|r.get(0)).optional()?;
         if let Some(value) = profile {
             result.push("system", format!("绑定的用户设定：\n{value}"), None);

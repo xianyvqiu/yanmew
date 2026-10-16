@@ -55,7 +55,7 @@ export default function CalendarView({ revision, onAdd, onEdit,canAdd=true }: {r
       </button>)}</div>}</div>
     {chosen&&<section className="ym-calendar-detail" aria-label="所选日期"><div className="ym-page-heading"><h3>{chosen.date} · {chosen.lunar}{chosen.solarTerm&&` · ${chosen.solarTerm}`}</h3><button className="ym-button" disabled={!canAdd} onClick={()=>onAdd(chosen.date)}>新增日期</button></div>
       {!chosen.events.length&&<p className="ym-page-note">这一天没有节日或会话纪念日。</p>}
-      {chosen.events.map(e=><div className="ym-calendar-event" key={`${e.scope}:${e.id}`}><strong>{e.name}</strong><span className="ym-page-note">{e.scope==="catalog"?"内置节日":"当前会话"}</span><p>{e.blessing}</p>{e.scope==="session"&&<button className="ym-button" onClick={()=>onEdit(e.id)}>查看 / 编辑</button>}</div>)}
+      {chosen.events.map(e=><div className="ym-calendar-event" key={`${e.scope}:${e.id}`}><strong>{e.name}</strong><span className="ym-page-note">{e.scope==="catalog"?"内置节日":"自定义日期"}</span><p>{e.blessing}</p>{e.scope==="custom"&&<button className="ym-button" onClick={()=>onEdit(e.id)}>查看 / 编辑</button>}</div>)}
     </section>}
   </section>;
 }

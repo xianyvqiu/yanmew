@@ -1,6 +1,18 @@
 .pet-window {
   position: relative; width: 100%; height: 100%; overflow: hidden;
   background-color: rgba(0, 0, 0, 0) !important; user-select: none;
+  /* 局部加强透明宠窗的轮廓，不改变其他窗口的边框或表面。 */
+  --ym-border: var(--ym-accent-strong);
+  --ym-border-strong: var(--ym-accent-strong);
+  --ym-text: var(--ym-pet-ink);
+  --ym-text-secondary: var(--ym-pet-ink-muted);
+  --ym-text-muted: var(--ym-pet-ink-muted);
+  --ym-pet-text-outline: var(--ym-accent-soft);
+  color: var(--ym-text);
+  /* 先画单层细轮廓、再画实心字，避免叠影侵占小字号笔画。 */
+  text-shadow: none;
+  -webkit-text-stroke: .3px var(--ym-pet-text-outline);
+  paint-order: stroke fill;
 }
 .pet-face {
   position: absolute; bottom: 32px; left: 50%; transform: translate(calc(-50% + var(--ym-wander-x, 0px)), var(--ym-wander-y, 0px));
@@ -8,9 +20,8 @@
   cursor: grab; touch-action: none; white-space: nowrap;
   color: var(--ym-pet-color, var(--ym-accent-strong));
   font: var(--ym-font-pet)/1.4 var(--ym-font-kaomoji); font-variant-ligatures: none;
-  text-shadow: -1px -1px 0 var(--ym-pet-halo), 0 -1px 0 var(--ym-pet-halo), 1px -1px 0 var(--ym-pet-halo),
-    -1px 0 0 var(--ym-pet-halo), 1px 0 0 var(--ym-pet-halo),
-    -1px 1px 0 var(--ym-pet-halo), 0 1px 0 var(--ym-pet-halo), 1px 1px 0 var(--ym-pet-halo);
+  text-shadow: none;
+  -webkit-text-stroke: 1.25px var(--ym-pet-halo);
 }
 .pet-window[data-ready="false"] { visibility: hidden; }
 .pet-window[data-transitioning="true"] > :not(.pet-visibility) { visibility: hidden; }
@@ -101,12 +112,23 @@
   box-shadow:none;
   border-color:var(--ym-border-strong);
   color:var(--ym-text);
+  outline:1px solid var(--ym-pet-text-outline);
+  outline-offset:0;
+  text-shadow:inherit;
 }
+.pet-window :is(button, input, textarea, select) { text-shadow:none; -webkit-text-stroke:inherit; paint-order:inherit; }
+.pet-window :is(input, textarea)::placeholder { color:var(--ym-pet-ink-muted); opacity:1; text-shadow:none; -webkit-text-stroke:inherit; }
 .pet-window .ym-button:hover:not(:disabled),
 .pet-window .ym-button:focus-visible,
-.pet-window .ym-button[aria-expanded="true"] { border-color:var(--ym-focus); color:var(--ym-accent-strong); }
+.pet-window .ym-button[aria-expanded="true"] { border-color:var(--ym-focus); color:var(--ym-text); }
+.pet-window .ym-button:focus-visible { outline:2px solid var(--ym-focus); outline-offset:2px; }
+.pet-window .ym-button svg { filter:none; }
+.pet-window :is(.pet-menu, .pet-options-menu, .pet-chat-tooltip, .pet-chat-input, .pet-chat-bubble, .pet-state-bubble, .pet-error, .ym-reminder-notification) {
+  outline:1px solid var(--ym-pet-text-outline);
+  outline-offset:0;
+}
 .pet-window .ym-button.chat-composer__submit { color:var(--ym-text); }
-.pet-window .ym-button.chat-composer__submit:hover:not(:disabled) { border-color:var(--ym-focus); color:var(--ym-accent-strong); }
+.pet-window .ym-button.chat-composer__submit:hover:not(:disabled) { border-color:var(--ym-focus); color:var(--ym-text); }
 .pet-window .ym-button:disabled { color:var(--ym-text-secondary); cursor:not-allowed; }
 .pet-window .ym-button[data-variant="danger"],
 .pet-window .ym-button[data-variant="danger"]:hover:not(:disabled) { color:var(--ym-danger); border-color:var(--ym-danger); }

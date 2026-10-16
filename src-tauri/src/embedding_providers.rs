@@ -33,6 +33,8 @@ pub struct Stamp {
 impl Stamp {
     pub fn connection(&self, secrets: &dyn SecretProtector) -> AppResult<ConnectionTest> {
         Ok(ConnectionTest {
+            max_output_tokens: crate::providers::default_max_output_tokens(),
+            context_window_override: None,
             base_url: self.base_url.clone().unwrap_or_default(),
             model: self.model.clone(),
             api_key: self

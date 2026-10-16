@@ -181,8 +181,11 @@ fn preview(runtime: &Runtime, source: &stage::Staged, id: String) -> AppResult<P
     runtime.read(|store,_|{
         let c=&source.connection;
         let mut warnings=source.manifest.warnings.iter().map(|w|w.message.clone()).collect::<Vec<_>>();
-        if source.manifest.package_type==PackageKind::Full {warnings.push("全局喵币、账单、设置、提醒、提供商和插件使用数据将按备份恢复；主程序密钥需要重新填写，生图开关关闭。原有会话保留。".into());}
+        if source.manifest.package_type==PackageKind::Full {warnings.push("全局自定义日期、喵币、账单、设置、提醒、提供商和插件使用数据将按备份恢复；主程序密钥需要重新填写，生图开关关闭。原有会话保留。".into());}
         if source.manifest.package_type==PackageKind::PluginData {warnings.push("仅恢复指定插件设置和存档；不改变钱包、账单或运行记录，钱包与联网权限改为待确认。".into());}
+        if source.manifest.schema_version<13 && source.manifest.record_counts.get("session_festivals").copied().unwrap_or(0)>0 {
+            warnings.push(if source.manifest.package_type==PackageKind::Full {"旧备份的会话固定日期将逐条恢复为全局自定义日期，不自动合并同名记录。"}else{"旧部分资料包中的会话固定日期将跳过，不修改本机全局自定义日期。"}.into());
+        }
         let mut q=c.prepare("SELECT plugin_id FROM game_plugins ORDER BY plugin_id")?;
         let plugins=q.query_map([],|r|r.get::<_,String>(0))?.collect::<Result<Vec<_>,_>>()?;
         Ok(Preview {preview_id:id,kind:source.manifest.package_type,exported_at:source.manifest.exported_at.clone(),counts:source.manifest.record_counts.clone(),warnings,

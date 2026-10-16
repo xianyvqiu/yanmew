@@ -139,6 +139,42 @@ pub(super) async fn search(
     let value = post(client, snapshot, path, body, cancel).await?;
     parse_search(snapshot.entry.kind, &value)
 }
+pub(super) async fn extract(
+    client: &AiClient,
+    snapshot: &Snapshot,
+    raw: &str,
+    cancel: &Cancellation,
+) -> AppResult<Page> {
+    let url = page_url(raw)?;
+    // 只按需提取一个网址，不发送聊天内容，也不自动升级为更耗额度的深度模式。
+    let value = post(client, snapshot, "/extract", json!({
+        "urls": [url.as_str()], "extract_depth": "basic", "format": "markdown",
+        "include_images": false, "include_favicon": false,
+    }), cancel).await?;
+    parse_extract(&value, url.as_str())
+}
+pub(super) fn parse_extract(value: &Value, requested: &str) -> AppResult<Page> {
+    let rows = value.get("results").and_then(Value::as_array).ok_or_else(format_error)?;
+    let matching = |row: &&Value| row.get("url").and_then(Value::as_str)
+        .and_then(|raw| page_url(raw).ok()).is_some_and(|url| url.as_str() == requested);
+    if let Some(row) = rows.iter().find(matching) {
+        let content = row.get("raw_content").and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .ok_or_else(|| AppError::new("WEB_PAGE_UNAVAILABLE", "Tavily 未返回该网页正文，不能将搜索摘要当作正文"))?;
+        return Ok(Page {
+            title: limited(row.get("title").and_then(Value::as_str).unwrap_or(""), 120),
+            url: requested.into(), content: limited(content, 6000),
+            truncated: content.chars().count() > 6000,
+            retrieved_at: chrono::Utc::now().to_rfc3339(),
+        });
+    }
+    let failures = value.get("failed_results").and_then(Value::as_array).ok_or_else(format_error)?;
+    if failures.iter().any(|row| matching(&row)) {
+        // 不回传服务商原始报错，避免其中夹带凭据或不可信指令。
+        return Err(AppError::new("WEB_PAGE_UNAVAILABLE", "Tavily 未能提取该网页正文，网站可能限制访问或需要登录；当前未读到正文"));
+    }
+    Err(format_error())
+}
 pub(super) fn parse_search(kind: Kind, value: &Value) -> AppResult<Vec<Source>> {
     let rows = match kind {
         Kind::Tavily | Kind::Custom => {

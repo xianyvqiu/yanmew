@@ -114,7 +114,7 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
         .split(',')
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();
-    if table == "session_festivals" {
+    if table == "custom_festivals" {
         expected.remove("festival_id");
         expected.insert("festival_code".into());
     }
@@ -213,7 +213,7 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
     if table == "embedding_providers" && row.get("is_builtin") != Some(&Value::from(0)) {
         return Err(fail());
     }
-    if table == "session_festivals" {
+    if table == "custom_festivals" {
         let code = row.remove("festival_code").ok_or_else(fail)?;
         let id = if let Some(code) = code.as_str() {
             if code.trim().is_empty() {
@@ -270,17 +270,20 @@ impl<'de> Visitor<'de> for Data<'_> {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut counts = BTreeMap::new();
         while let Some(table) = map.next_key::<String>()? {
+            let legacy_dates = self.schema_version < 13 && table == "session_festivals" && (self.scope.request.kind == PackageKind::Full || self.scope.includes("sessions"));
             if counts.contains_key(&table)
-                || !self.scope.includes(&table)
-                || !super::super::protocol::COLUMNS
+                || (!legacy_dates && !self.scope.includes(&table))
+                || (!legacy_dates && !super::super::protocol::COLUMNS
                     .iter()
-                    .any(|(n, _)| *n == table)
+                    .any(|(n, _)| *n == table))
+                || (self.schema_version < 13 && table == "custom_festivals")
             {
                 return Err(A::Error::custom("不支持或重复的数据表"));
             }
             let count = map.next_value_seed(Rows {
                 c: self.c,
-                table: &table,
+                table: if legacy_dates {"custom_festivals"} else {&table},
+                legacy_dates,
                 schema_version: self.schema_version,
             })?;
             counts.insert(table, count);
@@ -291,6 +294,7 @@ impl<'de> Visitor<'de> for Data<'_> {
 struct Rows<'a> {
     c: &'a Connection,
     table: &'a str,
+    legacy_dates: bool,
     schema_version: i64,
 }
 impl<'de> DeserializeSeed<'de> for Rows<'_> {
@@ -307,6 +311,10 @@ impl<'de> Visitor<'de> for Rows<'_> {
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<u64, A::Error> {
         let mut count = 0;
         while let Some(mut row) = seq.next_element_seed(RecordSeed)? {
+            if self.legacy_dates {
+                let session = row.remove("session_id").ok_or_else(|| A::Error::custom("旧日期缺少会话归属"))?;
+                crate::error::parse_id(session.as_str().ok_or_else(|| A::Error::custom("旧日期会话ID无效"))?).map_err(A::Error::custom)?;
+            }
             if self.schema_version<12 {if self.table=="personas"{row.entry("pet_image_enabled").or_insert(Value::from(0));row.entry("pet_image_revision").or_insert(Value::from(0));}if self.table=="accessories"{row.entry("position_x").or_insert(Value::Null);row.entry("position_y").or_insert(Value::Null);row.entry("scale").or_insert(Value::from(1000));}}
             if self.table == "sessions" && self.schema_version < 11 {
                 row.entry("is_pinned").or_insert(Value::from(0));
@@ -440,7 +448,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         serde_json::from_reader(zip.by_name("manifest.json").map_err(|_| fail())?)
             .map_err(|_| fail())?;
     if manifest.format_version != FORMAT_VERSION
-        || ![6, 7, 8, 9, 10, 11, SCHEMA_VERSION].contains(&manifest.schema_version)
+        || ![6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION].contains(&manifest.schema_version)
     {
         return Err(AppError::new(
             "BACKUP_VERSION_UNSUPPORTED",
@@ -507,13 +515,13 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     let expected = super::super::protocol::COLUMNS
         .iter()
         .filter(|(n, _)| {
-            scope.includes(n)
+            (scope.includes(n) || (manifest.schema_version<13 && *n=="custom_festivals" && scope.includes("sessions")))
                 && (manifest.schema_version >= 7
                     || !["provider_roles", "message_images"].contains(n))
                 && (manifest.schema_version >= 8 || *n != "provider_models")
                 && (manifest.schema_version>=12 || *n!="pet_artworks")
         })
-        .map(|(n, _)| n.to_string())
+        .map(|(n, _)| if *n=="custom_festivals" && manifest.schema_version<13 {"session_festivals".to_string()}else{n.to_string()})
         .collect::<BTreeSet<_>>();
     if counts != manifest.record_counts
         || counts.keys().cloned().collect::<BTreeSet<_>>() != expected
@@ -553,6 +561,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     {
         return Err(fail());
     }
+    crate::config::normalize_legacy_idle_settings(&c)?;
     crate::config::validate(&crate::config::get(&c)?)?;
     let mut used = BTreeSet::new();
     for (table, column) in [

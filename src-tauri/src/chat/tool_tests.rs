@@ -19,12 +19,49 @@ fn calls(items: &[(&str, &str, Value)]) -> String {
 fn append() -> Value { json!({"operation":"append","section_index":null,"content":"中文🙂内容"}) }
 
 #[test]
-fn fragmented_tools_return_matching_ids_and_writes_persist_once() {
+fn chat_user_link_reaches_tavily_extract_without_an_extra_search() {
     tauri::async_runtime::block_on(async {
+        let url = "https://example.com/article";
+        let page = Server::new_at(vec![Response { status:200, mime:"application/json",
+            chunks:vec![(0,serde_json::to_vec(&json!({"results":[{"url":url,"raw_content":"网页事实正文"}],"failed_results":[]})).unwrap())]
+        }], "/v1/extract");
         let server = Server::new(vec![
             Response::json(json!({"expression":"(^_^)"})),
-            Response::sse(&calls(&[("read", "read_notebook", json!({})), ("save", "update_notebook", append()),
-                ("unknown", "execute_sql", json!({"sql":"DELETE FROM notebooks"}))])),
+            Response::sse(&calls(&[("open","open_web_page",json!({"url":url}))])),
+            Response::sse(&(text_event("根据正文回答。") + &finish_event("stop"))),
+        ]);
+        let runtime = crate::runtime::test_runtime(&server.url);
+        runtime.read(|s,secrets| {
+            crate::web_search::save(&mut s.connection,None,crate::web_search::Input {
+                name:"测试搜索".into(),kind:crate::web_search::Kind::Tavily,base_url:page.url.clone(),
+                api_key:crate::crypto::SecretUpdate::Set {value:"fake-test-key".into()},
+            },secrets)?;
+            crate::web_search::enable(&mut s.connection,true)
+        }).unwrap();
+        let (prepared,_) = submit(&runtime,1,1,0,format!("请阅读 {url} 并解释")).unwrap();
+        let saved = run_persisted(&client(),prepared,|_|{}).await.unwrap();
+        assert_eq!(saved.round.status,crate::models::ChatRoundStatus::Completed);
+        let content = saved.assistant_message.unwrap().content;
+        assert!(content.contains("网页来源（已读取正文）"));
+        assert!(!content.contains("搜索来源（摘要）"));
+        let requests = server.requests.lock().unwrap();
+        let result = requests[2]["messages"].as_array().unwrap().iter().find(|message| message["tool_call_id"]=="open").unwrap();
+        let result:Value = serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+        assert_eq!(result["result"]["page"]["content"],"网页事实正文");
+        assert_eq!(page.requests.lock().unwrap().len(),1);
+        drop(requests);
+        server.finish(); page.finish();
+    });
+}
+
+#[test]
+fn fragmented_tools_return_matching_ids_and_writes_persist_once() {
+    tauri::async_runtime::block_on(async {
+        let reasoning = event(json!({"choices":[{"index":0,"delta":{"reasoning_content":"先检查记事本，再记录用户要求。"},"finish_reason":null}]}));
+        let server = Server::new(vec![
+            Response::json(json!({"expression":"(^_^)"})),
+            Response::sse(&(reasoning + &calls(&[("read", "read_notebook", json!({})), ("save", "update_notebook", append()),
+                ("unknown", "execute_sql", json!({"sql":"DELETE FROM notebooks"}))]))),
             Response::sse(&calls(&[("save", "update_notebook", append())])),
             Response::sse(&(text_event("已经记下来了。") + &finish_event("stop"))),
         ]);
@@ -38,6 +75,7 @@ fn fragmented_tools_return_matching_ids_and_writes_persist_once() {
         let requests = server.requests.lock().unwrap();
         let messages = requests[2]["messages"].as_array().unwrap();
         let assistant = messages.iter().find(|m| m["tool_calls"].is_array()).unwrap();
+        assert_eq!(assistant["reasoning_content"], "先检查记事本，再记录用户要求。");
         assert!(assistant["tool_calls"][0]["function"]["arguments"].is_string());
         let results: Vec<_> = messages.iter().filter(|m| m["role"] == "tool").collect();
         assert_eq!(results.iter().map(|m| m["tool_call_id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["read","save","unknown"]);
@@ -188,16 +226,16 @@ fn festival_tool_loop_saves_once_and_returns_receipt_to_model() {
         let input=json!({"kind":"birthday","name":"用户生日","calendarType":"solar","month":4,"day":6,"isLeapMonth":false,"blessing":"生日快乐","note":null});
         let args=json!({"input":input});
         let server=Server::new(vec![Response::json(json!({"expression":"(^_^)"})),
-            Response::sse(&calls(&[("date-write","create_session_festival",args.clone())])),
-            Response::sse(&calls(&[("date-write","create_session_festival",args)])),
+            Response::sse(&calls(&[("date-write","create_custom_festival",args.clone())])),
+            Response::sse(&calls(&[("date-write","create_custom_festival",args)])),
             Response::sse(&(text_event("已经记住你的生日日期。")+&finish_event("stop")))]);
         let runtime=crate::runtime::test_runtime(&server.url);
         let (prepared,_)=submit(&runtime,1,1,0,"我的公历生日是4月6日，请记录。".into()).unwrap();
         let saved=run_persisted(&client(),prepared,|_|{}).await.unwrap();
         assert_eq!(saved.assistant_message.unwrap().content,"已经记住你的生日日期。");
-        runtime.read(|s,_|{assert_eq!(s.connection.query_row("SELECT count(*) FROM session_festivals WHERE session_id=1 AND source='ai' AND festival_id IS NULL",[],|r|r.get::<_,i64>(0))?,1);Ok(())}).unwrap();
+        runtime.read(|s,_|{assert_eq!(s.connection.query_row("SELECT count(*) FROM custom_festivals WHERE source='ai' AND festival_id IS NULL",[],|r|r.get::<_,i64>(0))?,1);Ok(())}).unwrap();
         let requests=server.requests.lock().unwrap();
-        assert!(requests[1]["tools"].as_array().unwrap().iter().any(|t|t["function"]["name"]=="create_session_festival"));
+        assert!(requests[1]["tools"].as_array().unwrap().iter().any(|t|t["function"]["name"]=="create_custom_festival"));
         let reply=requests[3]["messages"].as_array().unwrap().last().unwrap();
         assert_eq!(reply["tool_call_id"],"date-write");
         let receipt:Value=serde_json::from_str(reply["content"].as_str().unwrap()).unwrap();
@@ -210,12 +248,12 @@ fn festival_tool_loop_saves_once_and_returns_receipt_to_model() {
 fn regeneration_hides_and_rejects_festival_mutation_tools() {
     tauri::async_runtime::block_on(async {
         let args=json!({"input":{"kind":"custom","name":"禁止写入","calendarType":"solar","month":1,"day":1,"isLeapMonth":false,"blessing":"祝福","note":null}});
-        let server=Server::new(vec![Response::sse(&calls(&[("forbidden-date","create_session_festival",args)]))]);
+        let server=Server::new(vec![Response::sse(&calls(&[("forbidden-date","create_custom_festival",args)]))]);
         let runtime=crate::runtime::test_runtime(&server.url);
         let (mut prepared,_)=submit(&runtime,1,1,0,"重说测试".into()).unwrap();prepared.regenerating=true;
         let result=tools::run(&client(),&prepared,&mut |_|Ok(())).await;
         assert_eq!(result.unwrap_err().code,"PERMISSION_DENIED");
-        runtime.read(|s,_|{assert_eq!(s.connection.query_row("SELECT count(*) FROM session_festivals",[],|r|r.get::<_,i64>(0))?,0);Ok(())}).unwrap();
+        runtime.read(|s,_|{assert_eq!(s.connection.query_row("SELECT count(*) FROM custom_festivals",[],|r|r.get::<_,i64>(0))?,0);Ok(())}).unwrap();
         let requests=server.requests.lock().unwrap();
         assert!(!requests[0]["tools"].as_array().unwrap().iter().any(|t|crate::festivals::tools::is_write(t["function"]["name"].as_str().unwrap())));
         drop(requests);server.finish();

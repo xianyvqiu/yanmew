@@ -6,7 +6,9 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 12;
+const VERSION: i64 = 14;
+const STANDBY_MIGRATION: &str = include_str!("../../db/migrations/014_pet_standby.sql");
+const CUSTOM_FESTIVALS_MIGRATION: &str = include_str!("../../db/migrations/013_global_custom_festivals.sql");
 const PET_CREATION_MIGRATION: &str = include_str!("../../db/migrations/012_pet_creation.sql");
 const SESSION_PINNING_MIGRATION: &str = include_str!("../../db/migrations/011_session_pinning.sql");
 const CHAT_APPEARANCE_MIGRATION: &str = include_str!("../../db/migrations/010_chat_appearance.sql");
@@ -100,7 +102,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 => {}
+        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -138,6 +140,19 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
         tx.pragma_update(None, "user_version", VERSION)?;
     }
     if (1..12).contains(&version) { tx.execute_batch(PET_CREATION_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..13).contains(&version) {
+        // 允许已转换结构的开发库保持幂等；真实旧库在此逐条搬迁。
+        if tx.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_festivals')", [], |r| r.get::<_,bool>(0))? {
+            tx.execute_batch(CUSTOM_FESTIVALS_MIGRATION)?;
+        }
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..14).contains(&version) {
+        let sql: String = tx.query_row("SELECT sql FROM sqlite_master WHERE name='pet_artworks'", [], |r| r.get(0))?;
+        if !sql.contains("'standby'") { tx.execute_batch(STANDBY_MIGRATION)?; }
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    config::normalize_legacy_idle_settings(&tx)?;
     crate::provider_roles::migrate_legacy(&tx)?;
     for (key, value) in config::defaults() {
         tx.execute(
@@ -219,6 +234,14 @@ fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
 #[cfg(test)]
 #[path = "db/onboarding_tests.rs"]
 mod onboarding_tests;
+
+#[cfg(test)]
+#[path = "db/custom_festival_tests.rs"]
+mod custom_festival_tests;
+
+#[cfg(test)]
+#[path = "db/standby_tests.rs"]
+mod standby_tests;
 
 #[cfg(test)]
 mod tests {

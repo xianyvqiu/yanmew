@@ -58,6 +58,113 @@ fn input(action: Action) -> InteractionInput {
 }
 
 #[test]
+fn standby_uses_existing_idle_counter_library_and_interaction_reset() {
+    let (runtime, clock) = setup(0);
+    runtime.read(|s,_| {
+        let library=serde_json::json!({"click":{"happy":["(^_^)"],"surprised":["(O_O)"],"shy":["(>_<)"]},"hungry":["(>_<)"],"eating":["(^_^)"],"sleepy":["(-_-)"],"bored":["(._.)"],"thinking":["(?)"],"standby":["(u_u)"]});
+        s.connection.execute("UPDATE personas SET expressions=?1 WHERE id=1",[library.to_string()])?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Normal);
+    clock.advance(599);
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Normal);
+    clock.advance(1);
+    let standby=runtime.pet_view().unwrap();
+    assert_eq!(standby.activity,Activity::Standby);
+    assert_eq!(standby.expression,"(u_u)");
+    assert!(standby.can_interact && standby.can_wander);
+    assert_eq!(snapshot(&runtime,1).idle_elapsed_ms,600_000);
+    assert_eq!(runtime.pet_view().unwrap().revision,standby.revision);
+    let lease=runtime.requests.start("chat:1".into(),1).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Thinking);
+    clock.advance(120);
+    runtime.pet_view().unwrap();
+    assert_eq!(snapshot(&runtime,1).idle_elapsed_ms,600_000);
+    drop(lease);
+    runtime.pet_view().unwrap();
+    runtime.pet_interact(input(Action::Click)).unwrap();
+    assert_eq!(snapshot(&runtime,1).idle_elapsed_ms,0);
+    clock.advance(3);
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Normal);
+    runtime.read(|s,_| {crate::config::save(&mut s.connection,[("standby_minutes".into(),"2".into())].into_iter().collect())?;Ok(())}).unwrap();
+    clock.advance(120);
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Standby);
+}
+
+#[test]
+fn standby_legacy_library_and_image_category_remain_usable() {
+    let (runtime,clock)=setup(1);
+    runtime.pet_view().unwrap();
+    clock.advance(600);
+    let old=runtime.pet_view().unwrap();
+    assert_eq!(old.activity,Activity::Standby);
+    assert_ne!(old.expression,"(・ω・)");
+    runtime.read(|s,_| {
+        s.connection.execute_batch("INSERT INTO pet_artworks(persona_id,kind,name,category,image_file,created_at,updated_at) VALUES(1,'base','默认','normal','base.png','a','a'),(1,'expression','待机','standby','standby.png','a','a');")?;
+        let revision=crate::pet_creation::library(&s.connection,1)?.revision;
+        crate::pet_creation::set_enabled(&s.connection,1,true,revision)?;
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().expression,"@pet-image:2");
+    clock.advance(35*60);
+    assert_eq!(runtime.pet_view().unwrap().activity,Activity::Sleeping);
+}
+
+#[test]
+fn completed_chat_expression_stays_for_three_seconds_after_a_long_reply() {
+    let (runtime, clock) = setup(0);
+    runtime.pet_view().unwrap();
+    let lease = runtime.requests.start("chat:1".into(), 1).unwrap();
+    runtime.read(|store, _| {
+        store.pet.start_chat_expression(Some("(^_^)".into()));
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().expression, "(^_^)");
+    clock.advance(30);
+    assert_eq!(runtime.pet_view().unwrap().activity, Activity::Speaking);
+    runtime.read(|store, _| {
+        store.pet.finish_chat_expression(clock.sample()?.running);
+        Ok(())
+    }).unwrap();
+    drop(lease);
+    let held = runtime.pet_view().unwrap();
+    assert_eq!(held.activity, Activity::Speaking);
+    assert_eq!(held.expression, "(^_^)");
+    assert!(!held.can_wander);
+    clock.advance(2);
+    assert_eq!(runtime.pet_view().unwrap().expression, "(^_^)");
+    clock.advance(1);
+    let restored = runtime.pet_view().unwrap();
+    assert_eq!(restored.activity, Activity::Normal);
+    assert_eq!(restored.expression, "(・ω・)");
+}
+
+#[test]
+fn new_reply_and_context_reset_remove_the_previous_expression_hold() {
+    let (runtime, clock) = setup(0);
+    runtime.pet_view().unwrap();
+    runtime.read(|store, _| {
+        store.pet.start_chat_expression(Some("旧表情".into()));
+        store.pet.finish_chat_expression(clock.sample()?.running);
+        Ok(())
+    }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().expression, "旧表情");
+    let prepared = crate::chat::prepare_reply(&runtime, 1, 1, 0, "下一轮".into()).unwrap();
+    let thinking = runtime.pet_view().unwrap();
+    assert_eq!(thinking.activity, Activity::Thinking);
+    assert_ne!(thinking.expression, "旧表情");
+    runtime.read(|store, _| {
+        store.pet.chat_expression = Some("新表情".into());
+        store.pet.finish_chat_expression(clock.sample()?.running);
+        Ok(())
+    }).unwrap();
+    drop(prepared);
+    assert_eq!(runtime.pet_view().unwrap().expression, "新表情");
+    runtime.read(|store, _| { store.pet.reset_context(); Ok(()) }).unwrap();
+    assert_eq!(runtime.pet_view().unwrap().activity, Activity::Normal);
+}
+
+#[test]
 fn failed_visibility_checkpoint_still_blocks_idle_until_recovery() {
     let (runtime, clock) = setup(0);
     runtime.pet_view().unwrap();
@@ -92,7 +199,7 @@ fn running_timer_reaches_bored_once_and_interaction_is_capped() {
         .unwrap();
     runtime.pet_view().unwrap();
     clock.advance(44 * 60);
-    assert_eq!(runtime.pet_view().unwrap().activity, Activity::Normal);
+    assert_eq!(runtime.pet_view().unwrap().activity, Activity::Standby);
     clock.advance(60);
     let bored = runtime.pet_view().unwrap();
     assert_eq!(bored.activity, Activity::Bored);

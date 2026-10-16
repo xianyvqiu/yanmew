@@ -71,6 +71,7 @@ impl AiClient {
         cancel.check()?;
         crate::providers::validate_url(&config.base_url)?;
         let mut body = openai_compatible::request_body(&config.model, input, stream)?;
+        openai_compatible::apply_message_protocol(&config.base_url, &mut body);
         if crate::chat_capacity::output_parameter(config) == "max_completion_tokens" {
             if let Some(value) = body.as_object_mut().and_then(|v| v.remove("max_tokens")) {
                 body["max_completion_tokens"] = value;
@@ -143,6 +144,9 @@ impl AiClient {
         input: &GenerateRequest,
         cancel: &Cancellation,
     ) -> AppResult<Choice> {
+        cancel.check()?;
+        let request = crate::chat_capacity::prepare_request(config, input)?;
+        let input = &request;
         cancel
             .wait(self.timeouts.total, async {
                 let mut response = self.send(config, input, false, cancel).await?;
@@ -159,7 +163,15 @@ impl AiClient {
                     bytes.extend_from_slice(&chunk);
                 }
                 cancel.check()?;
-                openai_compatible::complete_response(&bytes)
+                openai_compatible::complete_response(&bytes).map_err(|mut error| {
+                    if error.code == "AI_TRUNCATED" {
+                        error.message = format!(
+                            "模型达到本次最大输出上限（{} tokens，可能包含思考内容），尚未生成完整结果；可在提供商高级设置调整最大输出。原数据未修改",
+                            input.max_tokens,
+                        );
+                    }
+                    error
+                })
             })
             .await
     }
@@ -204,6 +216,9 @@ impl AiClient {
         cancel: &Cancellation,
         mut emit: impl FnMut(Delta) -> AppResult<()>,
     ) -> AppResult<Vec<Choice>> {
+        cancel.check()?;
+        let request = crate::chat_capacity::prepare_request(config, input)?;
+        let input = &request;
         cancel
             .wait(self.timeouts.total, async {
                 let started = tokio::time::Instant::now();

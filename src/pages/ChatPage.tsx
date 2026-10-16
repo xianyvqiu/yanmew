@@ -6,6 +6,7 @@ import { useChat } from "../hooks/useChat";
 import type { Message,ChatImageInput,Session } from "../types";
 import ChatImage from "../components/ChatImage";
 import ChatComposer from "../components/ChatComposer";
+import CopyMessageButton from "../components/CopyMessageButton";
 import ChatBackgroundSettings from "../components/ChatBackgroundSettings";
 import UserProfilePicker from "../components/UserProfilePicker";
 import ChatSessionSidebar from "../components/ChatSessionSidebar";
@@ -277,10 +278,12 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
             <p className="ym-page-note">仅修改消息原文，短期记忆、长期记忆和旅行游记不会同步修改；需要同步时请进入记忆小窗操作。</p>
             {messageError && <p role="alert" className="ym-page-error">{messageError}</p>}
             <div className="ym-message-actions">
+              <CopyMessageButton content={message.content} />
               <button type="button" className="ym-button" disabled={busy} onClick={() => { setEditing(null); setEditDraft(""); setMessageError(""); }}>取消编辑</button>
               <button type="submit" className="ym-button" disabled={busy || chat.busy || !chat.ready || !editDraft.trim()}>{busy ? "保存中…" : "保存消息"}</button>
             </div>
           </form> : <div className="ym-message-actions">
+            <CopyMessageButton content={message.content} />
             <button className="ym-button" disabled={busy || chat.busy || loading || !chat.ready || dialogOpen || Boolean(editing)}
               onClick={() => { if (!locked.current && !chat.busy) { setMessageError(""); setEditing({ context: { ...context }, message: { ...message } }); setEditDraft(message.content); } }}>编辑</button>
             {message.id === deletableTail?.id && <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)}
@@ -299,9 +302,11 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
         <ChatMessageText content={chat.active.partialContent || "正在想怎么回答你…"} />
         {chat.active.webActivity && <p role="status" className="ym-page-note">{chat.active.webActivity === "searching" ? "正在搜索网络资料…" : "正在读取网页…"}</p>}
         <span className="ym-page-note">{chat.active.regenerating ? "正在准备回复和记忆，完成后一起替换；中断保留旧结果。" : "正在回复，尚未保存"}</span>
-        {!chat.active.regenerating && deletableTail && deletableTail.id === chat.active.round.assistantMessage?.id && <div className="ym-message-actions">
-          <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)} onClick={() => openTailDelete(deletableTail)}>删除本轮</button>
-        </div>}
+        <div className="ym-message-actions">
+          <CopyMessageButton content={chat.active.partialContent} />
+          {!chat.active.regenerating && deletableTail && deletableTail.id === chat.active.round.assistantMessage?.id
+            && <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)} onClick={() => openTailDelete(deletableTail)}>删除本轮</button>}
+        </div>
       </div>}
       {chat.notice && <p role="status" className="ym-page-note">{chat.notice}</p>}
       {chat.budget && <p className="ym-page-note">本次最大输出：配置 {chat.budget.configuredMaxOutputTokens} tokens，实际 {chat.budget.effectiveMaxOutputTokens} tokens；
@@ -331,7 +336,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
       <h2 id="session-delete-title">删除会话？</h2>
       <div className="ym-session-dialog-body" id="session-delete-details">
         <p>将删除“{deleting?.title}”，此操作不可恢复。</p>
-        <p>该会话的聊天回合与消息、短期和长期记忆及来源、记事本、出行与旅行游记、节日、饰品、信件和伴手礼将一并清理。</p>
+        <p>该会话的聊天回合与消息、短期和长期记忆及来源、记事本、出行与旅行游记、饰品、信件和伴手礼将一并清理。全局自定义日期会保留。</p>
         <p>全局喵币钱包、账单、提醒，以及小游戏插件、授权、设置、存档和游戏局仍会保留。</p>
         <p>{deleting?.sessionId === context.sessionId ? "删除后切换到同一人设下最近更新的剩余会话；没有剩余会话时进入无会话状态，不会自动创建新会话。" : "删除的不是当前会话，当前聊天和记忆任务保持不变。"}</p>
         {deleteError && <p role="alert" className="ym-page-error">{deleteError}</p>}

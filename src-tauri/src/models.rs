@@ -57,8 +57,8 @@ pub struct SignInStatus {
     pub reward_min: String,
     pub reward_max: String,
     pub intimacy_thresholds: [i64; 4],
-    /// 当天母表与当前会话固定日期；多个命中仍只发一份签到奖励。
-    pub festivals: Vec<crate::festivals::session::Today>,
+    /// 当天母表与全局自定义日期；多个命中仍只发一份签到奖励。
+    pub festivals: Vec<crate::festivals::custom::Today>,
 }
 
 /// granted_coins=None 表示本日已经领取；Some("0") 仍是一次成功签到。

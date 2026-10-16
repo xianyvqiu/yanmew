@@ -32,7 +32,7 @@ impl PetEventSink for PetEvents {
     }
 }
 impl crate::events::ChatToolEventSink for PetEvents {
-    fn festivals_changed(&self, session_id: &str) { let _ = self.0.emit(crate::events::FESTIVALS_CHANGED, serde_json::json!({"sessionId":if session_id.is_empty() {None}else{Some(session_id)}})); }
+    fn festivals_changed(&self) { let _ = self.0.emit(crate::events::FESTIVALS_CHANGED, serde_json::json!({"sessionId":null})); }
     fn accessory_preview_changed(&self,session:&str,preview:&str) {
         let _=self.0.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session,"previewId":preview}));
     }

@@ -9,6 +9,31 @@ use std::{
 };
 const NOW: &str = "2026-10-13T00:00:00Z";
 #[test]
+fn standby_settings_full_backup_and_v13_legacy_thresholds_restore() {
+    for legacy in [false,true] {
+        let source_dir=Directory::new();let target_dir=Directory::new();
+        let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+        source.read(|s,_| {crate::config::save(&mut s.connection,[("standby_minutes".into(),"3".into()),("idle_event_minutes".into(),"25".into())].into_iter().collect())?;Ok(())}).unwrap();
+        let transfer=make(&source,&source_dir.0,PackageKind::Full,&[],false);
+        if legacy {rewrite(&transfer.0,|manifest,data| {
+            manifest.schema_version=13;
+            let settings=data["settings"].as_array_mut().unwrap();
+            settings.retain(|r|r["key"]!="standby_minutes");
+            for row in settings.iter_mut() {if row["key"]=="idle_event_minutes" {row["key"]=Value::String("bored_minutes".into());}}
+            settings.push(serde_json::json!({"key":"sleep_idle_minutes","value":"40"}));
+        });}
+        let p=prepare(&target,&transfer).unwrap().unwrap();
+        confirm(&target,input(&p)).unwrap();
+        target.read(|s,_| {
+            let settings=crate::config::get(&s.connection)?;
+            assert_eq!(settings["idle_event_minutes"],"25");
+            assert_eq!(settings["standby_minutes"],if legacy {"10"} else {"3"});
+            assert_eq!(s.connection.query_row("SELECT count(*) FROM settings WHERE key IN ('bored_minutes','sleep_idle_minutes')",[],|r|r.get::<_,i64>(0))?,0);
+            Ok(())
+        }).unwrap();
+    }
+}
+#[test]
 fn session_pinning_backup_roundtrip_and_v10_defaults() {
     for legacy in [false,true] {
         let source_dir=Directory::new(); let target_dir=Directory::new();
@@ -359,6 +384,15 @@ fn rewrite(path: &Path, change: impl FnOnce(&mut Manifest, &mut Value)) {
     }
     drop(zip);
     change(&mut manifest, &mut data);
+    if manifest.schema_version < 13 {
+        let tables=data.as_object_mut().unwrap();
+        if let Some(mut records)=tables.remove("custom_festivals") {
+            for record in records.as_array_mut().unwrap() {record.as_object_mut().unwrap().insert("session_id".into(),Value::String("2".into()));}
+            tables.insert("session_festivals".into(),records);
+        } else if tables.contains_key("sessions") {
+            tables.entry("session_festivals").or_insert(serde_json::json!([]));
+        }
+    }
     if manifest.schema_version<12 {let tables=data.as_object_mut().unwrap();tables.remove("pet_artworks");if let Some(rows)=tables.get_mut("personas").and_then(Value::as_array_mut){for row in rows{for key in ["pet_image_enabled","pet_image_revision"]{row.as_object_mut().unwrap().remove(key);}}}if let Some(rows)=tables.get_mut("accessories").and_then(Value::as_array_mut){for row in rows{for key in ["position_x","position_y","scale"]{row.as_object_mut().unwrap().remove(key);}}}}
     let raw = serde_json::to_vec(&data).unwrap();
     manifest.data_size = raw.len() as u64;
@@ -714,17 +748,17 @@ fn builtin_festival_links_restore_by_code_with_different_database_ids() {
         let tx = s.connection.transaction()?;
         tx.execute_batch("PRAGMA defer_foreign_keys=ON")?;
         tx.execute("UPDATE festival_catalog SET id=1000 WHERE id=?1", [original])?;
-        tx.execute("UPDATE session_festivals SET festival_id=1000 WHERE festival_id=?1", [original])?;
+        tx.execute("UPDATE custom_festivals SET festival_id=1000 WHERE festival_id=?1", [original])?;
         tx.commit()?;
         Ok(())
     }).unwrap();
     let target_dir = Directory::new();
     let target = fixture(&target_dir.0);
-    let backup = make(&source, &source_dir.0, PackageKind::Session, &["2"], false);
+    let backup = make(&source, &source_dir.0, PackageKind::Full, &[], false);
     let preview = prepare(&target, &backup).unwrap().unwrap();
     confirm(&target, input(&preview)).unwrap();
     target.read(|s, _| {
-        let mapped: i64 = s.connection.query_row("SELECT festival_id FROM session_festivals WHERE session_id=(SELECT MAX(id) FROM sessions)", [], |r| r.get(0))?;
+        let mapped: i64 = s.connection.query_row("SELECT festival_id FROM custom_festivals WHERE name='元旦'", [], |r| r.get(0))?;
         assert_ne!(mapped, 1000);
         assert_eq!(s.connection.query_row("SELECT code FROM festival_catalog WHERE id=?1", [mapped], |r| r.get::<_, String>(0))?, "solar_new_year");
         assert_eq!(count(&s.connection, "festival_catalog"), 13);
@@ -903,8 +937,8 @@ fn reminder_email_import_is_disabled_unverified_and_does_not_replay_outbox() {
 fn pet_creation_backup_keeps_formal_preview_and_accessory_placement(){
  let source_dir=Directory::new();let source=fixture(&source_dir.0);let target_dir=Directory::new();let target=fixture(&target_dir.0);
  let mut image=image::RgbaImage::new(8,8);image.put_pixel(3,3,image::Rgba([120,0,0,255]));let mut cursor=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(image).write_to(&mut cursor,image::ImageFormat::Png).unwrap();let png=crate::pet_creation::normalize(&cursor.into_inner()).unwrap();let file=crate::accessories::images::publish(source.paths.as_ref().unwrap(),&png).unwrap();
- source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,description,category,image_file,preview_file,created_at,updated_at) VALUES(2,'base','初始猫','','默认','normal',?1,?1,?2,?2)",params![file,NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;s.connection.execute("UPDATE accessories SET position_x=125,position_y=-500,scale=1500 WHERE session_id=2",[])?;Ok(())}).unwrap();
- for kind in [PackageKind::PersonaFull,PackageKind::PersonaProfile,PackageKind::Session] {let backup=make(&source,&source_dir.0,kind,&["2"],false);let p=prepare(&target,&backup).unwrap().unwrap();let mut choice=input(&p);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id:i64=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let lib=crate::pet_creation::library(&s.connection,id)?;assert!(lib.enabled);assert_eq!(lib.items.len(),1);assert!(lib.items[0].image_file.is_some());assert!(lib.items[0].preview_file.is_some());let a=&lib.items[0];assert!(crate::accessories::images::read(target.paths.as_ref().unwrap(),a.image_file.as_ref().unwrap()).is_ok());if kind!=PackageKind::PersonaProfile {let (x,y,scale):(Option<i32>,Option<i32>,i32)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!((x,y,scale),(Some(125),Some(-500),1500));}Ok(())}).unwrap();}
+ source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,description,category,image_file,preview_file,created_at,updated_at) VALUES(2,'base','初始猫','','默认','normal',?1,?1,?2,?2)",params![file,NOW])?;s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,image_file,created_at,updated_at) VALUES(2,'expression','待机猫','standby',?1,?2,?2)",params![file,NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;s.connection.execute("UPDATE accessories SET position_x=125,position_y=-500,scale=1500 WHERE session_id=2",[])?;Ok(())}).unwrap();
+ for kind in [PackageKind::PersonaFull,PackageKind::PersonaProfile,PackageKind::Session] {let backup=make(&source,&source_dir.0,kind,&["2"],false);let p=prepare(&target,&backup).unwrap().unwrap();let mut choice=input(&p);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id:i64=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let lib=crate::pet_creation::library(&s.connection,id)?;assert!(lib.enabled);assert_eq!(lib.items.len(),2);assert!(lib.items.iter().any(|a|a.category=="standby"&&a.enabled&&a.image_file.is_some()));let a=lib.items.iter().find(|a|a.kind=="base").unwrap();assert!(a.image_file.is_some());assert!(a.preview_file.is_some());assert!(crate::accessories::images::read(target.paths.as_ref().unwrap(),a.image_file.as_ref().unwrap()).is_ok());if kind!=PackageKind::PersonaProfile {let (x,y,scale):(Option<i32>,Option<i32>,i32)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!((x,y,scale),(Some(125),Some(-500),1500));}Ok(())}).unwrap();}
 }
 
 #[test]

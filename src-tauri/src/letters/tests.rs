@@ -336,6 +336,7 @@ fn scope_target_pagination_and_flags_are_isolated() {
 #[test]
 fn incomplete_ai_output_is_rejected_and_expression_is_preserved() {
     let mut choice = crate::ai::provider::Choice {
+        reasoning_content: None,
         index: 0,
         finish: crate::ai::provider::Finish::Length,
         tools: vec![],

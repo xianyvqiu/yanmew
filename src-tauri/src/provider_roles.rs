@@ -107,8 +107,16 @@ pub fn connection(
     p: &dyn SecretProtector,
 ) -> AppResult<ConnectionTest> {
     let mut value = providers::connection_test_config(c, id, p)?;
+    // 只有明确绑定的用途才使用独立配置；“跟随聊天”不能误用历史保存的记忆模型。
     if let Some(role) = role(c, purpose)?.filter(|r| r.provider_id == id.to_string()) {
+        let (max_output_tokens, context_window_override): (u32, Option<u32>) = c.query_row(
+            "SELECT max_output_tokens,context_window_override FROM provider_models WHERE provider_id=?1 AND purpose=?2",
+            params![id,purpose],
+            |row| Ok((row.get(0)?,row.get(1)?)),
+        )?;
         value.model = role.model;
+        value.max_output_tokens = max_output_tokens;
+        value.context_window_override = context_window_override;
     }
     Ok(value)
 }
@@ -160,7 +168,7 @@ pub fn save(
                 "生图启用前请先保存该连接的Key",
             ));
         }
-        tx.execute("INSERT INTO provider_models(provider_id,purpose,model,max_output_tokens,context_window_override) VALUES(?1,?2,?3,COALESCE(?4,32768),?5) ON CONFLICT(provider_id,purpose) DO UPDATE SET model=excluded.model,max_output_tokens=CASE WHEN ?2='chat' THEN COALESCE(?4,provider_models.max_output_tokens) ELSE provider_models.max_output_tokens END,context_window_override=CASE WHEN ?2='chat' THEN ?5 ELSE provider_models.context_window_override END",params![id,purpose,model.trim(),max_output,capacity])?;
+        tx.execute("INSERT INTO provider_models(provider_id,purpose,model,max_output_tokens,context_window_override) VALUES(?1,?2,?3,COALESCE(?4,32768),?5) ON CONFLICT(provider_id,purpose) DO UPDATE SET model=excluded.model,max_output_tokens=CASE WHEN ?2 IN ('chat','memory','vision') THEN COALESCE(?4,provider_models.max_output_tokens) ELSE provider_models.max_output_tokens END,context_window_override=CASE WHEN ?2 IN ('chat','memory','vision') THEN ?5 ELSE provider_models.context_window_override END",params![id,purpose,model.trim(),max_output,capacity])?;
         tx.execute("INSERT INTO provider_roles(purpose,provider_id,enabled) VALUES(?1,?2,?3) ON CONFLICT(purpose) DO UPDATE SET provider_id=excluded.provider_id,enabled=excluded.enabled",params![purpose,id,if purpose=="image"{enabled}else{true}])?;
     } else {
         tx.execute("DELETE FROM provider_roles WHERE purpose=?1", [purpose])?;
@@ -241,6 +249,39 @@ pub fn migrate_legacy(c: &Connection) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn text_generation_roles_restore_their_own_model_limits() {
+        struct NoSecrets;
+        impl SecretProtector for NoSecrets {
+            fn protect(&self, _: &str) -> AppResult<String> { unreachable!() }
+            fn unprotect(&self, _: &str) -> AppResult<String> { unreachable!() }
+        }
+        let mut c = crate::db::test_database();
+        c.execute("INSERT INTO providers(name,base_url) VALUES('limits','https://models.invalid/v1')", []).unwrap();
+        let id = c.last_insert_rowid();
+        save(&mut c, "chat", Some(&id.to_string()), "chat-model", true, 0, Some(8192), None).unwrap();
+        save(&mut c, "memory", Some(&id.to_string()), "memory-model", true, 1, Some(65536), Some(128000)).unwrap();
+        save(&mut c, "vision", Some(&id.to_string()), "vision-model", true, 2, Some(16384), Some(64000)).unwrap();
+        for (purpose, model, output, context) in [
+            ("chat", "chat-model", 8192, None),
+            ("memory", "memory-model", 65536, Some(128000)),
+            ("vision", "vision-model", 16384, Some(64000)),
+        ] {
+            let target = connection(&c, id, purpose, &NoSecrets).unwrap();
+            assert_eq!(target.model, model);
+            assert_eq!(target.max_output_tokens, output);
+            assert_eq!(target.context_window_override, context);
+        }
+        save(&mut c, "memory", Some(&id.to_string()), "memory-model", true, 3, Some(32768), None).unwrap();
+        let updated = connection(&c, id, "memory", &NoSecrets).unwrap();
+        assert_eq!(updated.max_output_tokens, 32768);
+        assert_eq!(updated.context_window_override, None);
+        assert_eq!(connection(&c, id, "chat", &NoSecrets).unwrap().max_output_tokens, 8192);
+        save(&mut c, "memory", None, "", false, 4, None, None).unwrap();
+        let following_chat = connection(&c, id, "memory", &NoSecrets).unwrap();
+        assert_eq!(following_chat.model, "chat-model");
+        assert_eq!(following_chat.max_output_tokens, 8192);
+    }
     #[test]
     fn shared_connection_has_independent_models_and_delete_protection() {
         let mut c = crate::db::test_database();

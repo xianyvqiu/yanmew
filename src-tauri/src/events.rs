@@ -42,7 +42,7 @@ pub trait MemoryEventSink: Send + Sync {
     fn embedding_changed(&self) {}
 }
 pub trait ChatToolEventSink: ReminderEventSink {
-    fn festivals_changed(&self, _session_id: &str) {}
+    fn festivals_changed(&self) {}
     fn accessory_preview_changed(&self, _session: &str, _preview: &str) {}
     fn notebook_changed(&self);
     fn persona_updated(&self, _update: &PersonaUpdated) {}

@@ -44,6 +44,8 @@ fn vector_validation_and_http_protocol() {
         let client = crate::ai::client::AiClient::new(Default::default()).unwrap();
         let result = tauri::async_runtime::block_on(client.embedding(
             &crate::providers::ConnectionTest {
+                max_output_tokens: crate::providers::default_max_output_tokens(),
+                context_window_override: None,
                 base_url: format!("http://{address}/v1"),
                 model: "model".into(),
                 api_key: None,

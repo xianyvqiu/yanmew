@@ -7,7 +7,7 @@ import "./PetCreationPanel.css";
 const categories: [
     PetArtCategory,
     string
-][] = [["normal", "日常"], ["click", "点击 / 摸摸"], ["hungry", "饥饿"], ["eating", "吃东西"], ["sleepy", "睡觉"], ["bored", "无聊"], ["thinking", "思考"], ["chat", "聊天"]];
+][] = [["normal", "日常"], ["standby", "待机"], ["click", "点击 / 摸摸"], ["hungry", "饥饿"], ["eating", "吃东西"], ["sleepy", "睡觉"], ["bored", "无聊"], ["thinking", "思考"], ["chat", "聊天"]];
 export function PetArtworkImage({ personaId, item, preview = false }: {
     personaId: string;
     item: PetArtwork;
@@ -99,6 +99,8 @@ export default function PetCreationPanel({ personaId, personaName }: {
     const expressions = library?.items.filter(a => a.kind === "expression") ?? [];
     const browser = useCardBrowser(expressions, a => `${a.name} ${a.prompt} ${a.description}`, a => a.createdAt, a => a.id);
     const base = library?.items.find(a => a.kind === "base");
+    const standbyReady = expressions.some(a => a.category === "standby" && a.enabled && a.imageFile);
+    const canEnable = Boolean(base?.imageFile && standbyReady);
     const editor = (item: PetArtwork) => <ArtworkEditor key={item.id} item={item} personaId={personaId} busy={busy} status={statuses[item.id]} selected={selected.includes(item.id)} onSelect={() => setSelected(old => old.includes(item.id) ? old.filter(id => id !== item.id) : [...old, item.id])} run={(job, generating) => { current.current = item.id; return run(job, generating); }}/>;
     const batch = () => run(async () => { stopped.current = false; for (const item of expressions.filter(a => selected.includes(a.id))) {
         if (stopped.current || !alive.current)
@@ -115,9 +117,10 @@ export default function PetCreationPanel({ personaId, personaName }: {
                 setStatuses(old => ({ ...old, [item.id]: errorMessage(e) }));
         }
     } }, true);
-    return <div className="ym-pet-creation"><section className="ym-page-card"><div className="ym-page-heading"><h2>桌宠自定义创作</h2><label className="ym-art-selection"><input type="checkbox" role="switch" checked={library?.enabled ?? false} disabled={busy || !library || !base?.imageFile} onChange={e => { if (library)
-        void run(() => petCreationApi.enable(personaId, e.target.checked, library.revision)); }}/>图片模式{library?.enabled ? "已开启" : "已关闭"}</label></div><p>当前人设：{personaName}。关闭后恢复颜文字模式，保留图片和表情库。</p><p className="ym-page-note">上传静态透明 PNG/WebP；图片和预览会保存。生图使用你在提供商中配置的服务，初始参考图会发送给该服务，可能产生 API 费用。服务须支持参考图编辑及透明输出；不会自动付费重试。</p>{error && <p role="alert" className="ym-page-error">{error}</p>}{busy && generating && <button className="ym-button" onClick={() => { stopped.current = true; if (current.current)
+    return <div className="ym-pet-creation"><section className="ym-page-card"><div className="ym-page-heading"><h2>桌宠自定义创作</h2><label className="ym-art-selection"><input type="checkbox" role="switch" checked={library?.enabled ?? false} disabled={busy || !library || (!library.enabled && !canEnable)} onChange={e => { if (library)
+        void run(() => petCreationApi.enable(personaId, e.target.checked, library.revision)); }}/>图片模式{library?.enabled ? "已开启" : "已关闭"}</label></div><p>当前人设：{personaName}。关闭后恢复颜文字模式，保留图片和表情库。</p><p className="ym-page-note">开启图片模式需要已接受的初始形象和至少一张允许使用的待机图。待机图用于无互动达到设置时间后的姿态，与日常默认形象分开。</p>{library && !standbyReady && <p role="status">尚缺可用待机图：请添加待机表情，上传或生成透明图片并接受预览。旧版已开启的图片模式保留，补图前待机暂用初始形象。</p>}<p className="ym-page-note">上传静态透明 PNG/WebP；图片和预览会保存。生图使用你在提供商中配置的服务，初始参考图会发送给该服务，可能产生 API 费用。服务须支持参考图编辑及透明输出；不会自动付费重试。</p>{error && <p role="alert" className="ym-page-error">{error}</p>}{busy && generating && <button className="ym-button" onClick={() => { stopped.current = true; if (current.current)
         void petCreationApi.cancel(personaId, current.current).catch(e => setError(errorMessage(e))); }}>停止生成</button>}
+ {!expressions.some(a => a.category === "standby") && <button className="ym-button" disabled={busy || !library} onClick={() => { void run(() => petCreationApi.save(personaId, null, null, { kind: "expression", name: "待机姿态", prompt: "保持初始形象，安静等待陪伴的待机姿态，区别于睡觉和无聊，透明背景", description: "没有互动达到待机等待时间时使用", category: "standby", enabled: true })); }}>添加待机表情</button>}
  {!base && <button className="ym-button" disabled={busy || !library} onClick={() => { void run(() => petCreationApi.save(personaId, null, null, { kind: "base", name: "初始形象", prompt: "", description: "日常默认形象", category: "normal", enabled: true })); }}>添加初始形象</button>}</section>
  {base && editor(base)}
  <section className="ym-page-card"><h3>新建表情要求</h3><label className="ym-field">每行一个要求，可一次添加多个<textarea rows={4} value={requirements} disabled={busy} placeholder={"开心地挥手\n抱着枕头睡觉\n委屈地看着我"} onChange={e => setRequirements(e.target.value)}/></label><div className="ym-inline-form"><button className="ym-button" disabled={busy || !library || !requirements.trim()} onClick={() => { void run(async () => { const lines = requirements.split(/\r?\n/).map(s => s.trim()).filter(Boolean); if (lines.some(line => [...line].length > 8000))

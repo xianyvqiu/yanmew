@@ -240,6 +240,11 @@ pub async fn run_persisted(
             }
         }
         store.chat_requests.remove(&session_id);
+        if complete {
+            if let Ok(sample) = runtime.clock.sample() {
+                store.pet.finish_chat_expression(sample.running);
+            }
+        }
         // 聊天事务已成功；候选另行提交，失败不能撤销回复或将回合改成中断。
         let evolution = if complete {
             prepared.evolution.as_ref().map(|pending| {

@@ -1,4 +1,4 @@
-//! 会话自己的年度日期：父表不复制，新建不接受母表关联；修改使用旧快照校验。
+//! 应用全局的年度自定义日期：父表不复制，新建不接受母表关联；修改使用旧快照校验。
 use super::*;
 use crate::error::AppError;
 use chrono::{DateTime, Utc};
@@ -41,7 +41,6 @@ impl Input {
 #[serde(rename_all = "camelCase")]
 pub struct Record {
     pub id: String,
-    pub session_id: String,
     pub festival_id: Option<String>,
     pub kind: String,
     pub name: String,
@@ -62,27 +61,26 @@ pub struct Record {
     /// 派生查询结果，不增加数据库字段；最多两次，农历日不存在则为空。
     pub occurrences: Vec<NaiveDate>,
 }
-const SELECT: &str="SELECT f.id,f.session_id,f.festival_id,f.kind,f.name,f.year,f.calendar_type,f.solar_month,f.solar_day,f.lunar_month,f.lunar_day,f.is_leap_month,f.blessing,f.note,f.source,f.created_at,f.updated_at,COALESCE(p.is_memorial,0) FROM session_festivals f LEFT JOIN festival_catalog p ON p.id=f.festival_id";
+const SELECT: &str="SELECT f.id,f.festival_id,f.kind,f.name,f.year,f.calendar_type,f.solar_month,f.solar_day,f.lunar_month,f.lunar_day,f.is_leap_month,f.blessing,f.note,f.source,f.created_at,f.updated_at,COALESCE(p.is_memorial,0) FROM custom_festivals f LEFT JOIN festival_catalog p ON p.id=f.festival_id";
 fn row(r: &Row<'_>) -> rusqlite::Result<Record> {
     Ok(Record {
         id: r.get::<_, i64>(0)?.to_string(),
-        session_id: r.get::<_, i64>(1)?.to_string(),
-        festival_id: r.get::<_, Option<i64>>(2)?.map(|id| id.to_string()),
-        kind: r.get(3)?,
-        name: r.get(4)?,
-        year: r.get(5)?,
-        calendar_type: r.get(6)?,
-        solar_month: r.get(7)?,
-        solar_day: r.get(8)?,
-        lunar_month: r.get(9)?,
-        lunar_day: r.get(10)?,
-        is_leap_month: r.get(11)?,
-        blessing: r.get(12)?,
-        note: r.get(13)?,
-        source: r.get(14)?,
-        created_at: r.get(15)?,
-        updated_at: r.get(16)?,
-        is_memorial: r.get(17)?,
+        festival_id: r.get::<_, Option<i64>>(1)?.map(|id| id.to_string()),
+        kind: r.get(2)?,
+        name: r.get(3)?,
+        year: r.get(4)?,
+        calendar_type: r.get(5)?,
+        solar_month: r.get(6)?,
+        solar_day: r.get(7)?,
+        lunar_month: r.get(8)?,
+        lunar_day: r.get(9)?,
+        is_leap_month: r.get(10)?,
+        blessing: r.get(11)?,
+        note: r.get(12)?,
+        source: r.get(13)?,
+        created_at: r.get(14)?,
+        updated_at: r.get(15)?,
+        is_memorial: r.get(16)?,
         revision_token: String::new(),
         occurrences: vec![],
     })
@@ -108,19 +106,18 @@ impl Record {
         Ok(self)
     }
 }
-pub fn get(c: &Connection, session: i64, id: i64, today: NaiveDate) -> AppResult<Record> {
+pub fn get(c: &Connection, id: i64, today: NaiveDate) -> AppResult<Record> {
     c.query_row(
-        &format!("{SELECT} WHERE f.session_id=?1 AND f.id=?2"),
-        params![session, id],
+        &format!("{SELECT} WHERE f.id=?1"),
+        params![id],
         row,
     )
     .optional()?
-    .ok_or_else(|| AppError::new("NOT_FOUND", "当前会话没有这条日期记录"))?
+    .ok_or_else(|| AppError::new("NOT_FOUND", "没有这条全局日期记录"))?
     .view(today)
 }
 pub fn list(
     c: &Connection,
-    session: i64,
     before: Option<i64>,
     limit: i64,
     today: NaiveDate,
@@ -132,26 +129,15 @@ pub fn list(
         ));
     }
     let mut q = c.prepare(&format!(
-        "{SELECT} WHERE f.session_id=?1 AND (?2 IS NULL OR f.id<?2) ORDER BY f.id DESC LIMIT ?3"
+        "{SELECT} WHERE (?1 IS NULL OR f.id<?1) ORDER BY f.id DESC LIMIT ?2"
     ))?;
     let records = q
-        .query_map(params![session, before, limit], row)?
+        .query_map(params![before, limit], row)?
         .collect::<Result<Vec<_>, _>>()?;
     records.into_iter().map(|r| r.view(today)).collect()
 }
-fn require_session(c: &Connection, session: i64) -> AppResult<()> {
-    if !c.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
-        [session],
-        |r| r.get::<_, bool>(0),
-    )? {
-        return Err(AppError::new("NOT_FOUND", "会话不存在"));
-    }
-    Ok(())
-}
 pub fn create(
     c: &mut Connection,
-    session: i64,
     input: Input,
     source: &str,
     today: NaiveDate,
@@ -179,16 +165,14 @@ pub fn create(
         )
     };
     let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    require_session(&tx, session)?;
     let stamp = now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    tx.execute("INSERT INTO session_festivals(session_id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at) VALUES(?1,NULL,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![session,input.kind,input.name.trim(),today.year(),input.calendar_type,sm,sd,lm,ld,input.is_leap_month,input.blessing.trim(),input.note,source,stamp])?;
-    let saved = get(&tx, session, tx.last_insert_rowid(), today)?;
+    tx.execute("INSERT INTO custom_festivals(festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at) VALUES(NULL,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?13)",params![input.kind,input.name.trim(),today.year(),input.calendar_type,sm,sd,lm,ld,input.is_leap_month,input.blessing.trim(),input.note,source,stamp])?;
+    let saved = get(&tx, tx.last_insert_rowid(), today)?;
     tx.commit()?;
     Ok(saved)
 }
 pub fn update(
     c: &mut Connection,
-    session: i64,
     id: i64,
     expected: &str,
     input: Input,
@@ -197,7 +181,7 @@ pub fn update(
 ) -> AppResult<Record> {
     input.validate()?;
     let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let old = get(&tx, session, id, today)?;
+    let old = get(&tx, id, today)?;
     if old.revision_token != expected {
         return Err(AppError::new(
             "CONFLICT",
@@ -221,28 +205,27 @@ pub fn update(
             Some(input.day),
         )
     };
-    tx.execute("UPDATE session_festivals SET kind=?1,name=?2,year=?3,calendar_type=?4,solar_month=?5,solar_day=?6,lunar_month=?7,lunar_day=?8,is_leap_month=?9,blessing=?10,note=?11,updated_at=?12 WHERE id=?13 AND session_id=?14",params![input.kind,input.name.trim(),today.year(),input.calendar_type,sm,sd,lm,ld,input.is_leap_month,input.blessing.trim(),input.note,now.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),id,session])?;
-    let saved = get(&tx, session, id, today)?;
+    tx.execute("UPDATE custom_festivals SET kind=?1,name=?2,year=?3,calendar_type=?4,solar_month=?5,solar_day=?6,lunar_month=?7,lunar_day=?8,is_leap_month=?9,blessing=?10,note=?11,updated_at=?12 WHERE id=?13",params![input.kind,input.name.trim(),today.year(),input.calendar_type,sm,sd,lm,ld,input.is_leap_month,input.blessing.trim(),input.note,now.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),id])?;
+    let saved = get(&tx, id, today)?;
     tx.commit()?;
     Ok(saved)
 }
 pub fn delete(
     c: &mut Connection,
-    session: i64,
     id: i64,
     expected: &str,
     today: NaiveDate,
 ) -> AppResult<()> {
     let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    if get(&tx, session, id, today)?.revision_token != expected {
+    if get(&tx, id, today)?.revision_token != expected {
         return Err(AppError::new(
             "CONFLICT",
             "日期记录已变化，请重新读取后删除",
         ));
     }
     tx.execute(
-        "DELETE FROM session_festivals WHERE id=?1 AND session_id=?2",
-        params![id, session],
+        "DELETE FROM custom_festivals WHERE id=?1",
+        params![id],
     )?;
     tx.commit()?;
     Ok(())
@@ -263,13 +246,13 @@ pub(super) fn refresh_in_transaction(tx: &Transaction<'_>, today: NaiveDate) -> 
 fn refresh_record_in_transaction(tx: &Transaction<'_>, today: NaiveDate, r: &Record) -> AppResult<usize> {
     if r.calendar_type == "solar" {
         Ok(tx.execute(
-            "UPDATE session_festivals SET year=?1 WHERE id=?2",
+            "UPDATE custom_festivals SET year=?1 WHERE id=?2",
             params![today.year(), r.id],
         )?)
     } else {
         let dates = r.dates(today.year());
         Ok(tx.execute(
-            "UPDATE session_festivals SET year=?1,solar_month=?2,solar_day=?3 WHERE id=?4",
+            "UPDATE custom_festivals SET year=?1,solar_month=?2,solar_day=?3 WHERE id=?4",
             params![today.year(), dates.first().map(|d| d.month()), dates.first().map(|d| d.day()), r.id],
         )?)
     }
@@ -352,7 +335,7 @@ pub struct Today {
     pub blessing: String,
     pub is_memorial: bool,
 }
-pub fn today(c: &Connection, date: NaiveDate, session: Option<i64>) -> AppResult<Vec<Today>> {
+pub fn today(c: &Connection, date: NaiveDate) -> AppResult<Vec<Today>> {
     let mut matches = catalog(c, date)?
         .into_iter()
         .filter(|r| r.solar_month == Some(date.month()) && r.solar_day == Some(date.day()))
@@ -364,14 +347,14 @@ pub fn today(c: &Connection, date: NaiveDate, session: Option<i64>) -> AppResult
             is_memorial: r.is_memorial,
         })
         .collect::<Vec<_>>();
-    if let Some(session) = session {
-        let mut q = c.prepare(&format!("{SELECT} WHERE f.session_id=?1 ORDER BY f.id"))?;
-        for r in q.query_map([session], row)? {
+    {
+        let mut q = c.prepare(&format!("{SELECT} ORDER BY f.id"))?;
+        for r in q.query_map([], row)? {
             let r = r?;
             if r.dates(date.year()).contains(&date) {
                 matches.push(Today {
                     id: r.id,
-                    scope: "session",
+                    scope: "custom",
                     name: r.name,
                     blessing: r.blessing,
                     is_memorial: r.is_memorial,

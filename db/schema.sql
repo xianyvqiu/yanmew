@@ -50,8 +50,7 @@
 --   long_memory_sources → long_memories.id / short_memories.id，记录整合来源
 --   long_memory_embeddings → long_memories.id / sessions.id，当前模型的可重建向量
 --   notebooks           session_id    → sessions.id          级联删除（主键，一会话一行）
---   session_festivals   session_id    → sessions.id          级联删除
---                        festival_id   → festival_catalog.id  置空
+--   custom_festivals    festival_id   → festival_catalog.id  置空（仅旧关联兼容，全局记录）
 --   travels             session_id    → sessions.id          级联删除
 --   travel_journals     session_id / travel_id → sessions.id / travels.id
 --   accessories         session_id    → sessions.id          级联删除
@@ -67,7 +66,7 @@
 --
 -- 级联行为约定：
 --   删除非内置人设 → 删除它名下所有 sessions 及全部会话级数据；内置默认人设由 Rust 禁止删除
---   删除会话   → 删除该会话的回合 / messages / 记忆 / 记事本 / 节日子表 / 饰品 / 旅行 / 游记 / 信件 / 伴手礼
+--   删除会话   → 删除该会话的回合 / messages / 记忆 / 记事本 / 饰品 / 旅行 / 游记 / 信件 / 伴手礼
 --   删除用户设定 → 会话保留，只把 user_profile_id 置空（前端显示“未绑定”）
 --   删除旅行记录 → 对应旅行游记级联删除；饰品 / 信件 / 伴手礼保留，travel_id 置空
 --   删除插件登记 → 删除它的当前授权、设置和私有存档；历史运行记录与喵币流水保留
@@ -126,13 +125,13 @@ CREATE TABLE IF NOT EXISTS personas (
     chat_bg_blur        INTEGER NOT NULL DEFAULT 0 CHECK (chat_bg_blur BETWEEN 0 AND 40),          -- 聊天窗背景模糊像素 0–40
     is_active           INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),          -- 1=当前使用人设（全局唯一），0=非当前人设
     is_builtin          INTEGER NOT NULL DEFAULT 0 CHECK (is_builtin IN (0, 1)),         -- 1=系统内置默认人设且不可删除，0=用户人设
-    expressions         TEXT,                                -- 分类表情库 JSON；未生成时为 NULL
+    expressions         TEXT,                                -- 分类表情库JSON，含standby待机数组；未生成时为NULL
     created_at TEXT, -- 创建UTC时间；升级前未知时间保留NULL
     updated_at TEXT, -- 最近编辑UTC时间；升级前未知时间保留NULL
     chat_bubble_style TEXT NOT NULL DEFAULT 'solid' CHECK (chat_bubble_style IN ('solid','transparent','outline','frosted')), -- 人设级消息气泡：solid默认；transparent透明；outline仅描边；frosted毛玻璃。
     chat_user_text_color TEXT CHECK (chat_user_text_color IS NULL OR (length(chat_user_text_color)=7 AND substr(chat_user_text_color,1,1)='#' AND substr(chat_user_text_color,2) NOT GLOB '*[^0-9A-Fa-f]*')), -- 用户正文颜色，#RRGGBB；NULL跟随主题。
     chat_assistant_text_color TEXT CHECK (chat_assistant_text_color IS NULL OR (length(chat_assistant_text_color)=7 AND substr(chat_assistant_text_color,1,1)='#' AND substr(chat_assistant_text_color,2) NOT GLOB '*[^0-9A-Fa-f]*')), -- AI正文颜色，#RRGGBB；NULL跟随主题。
-    pet_image_enabled INTEGER NOT NULL DEFAULT 0 CHECK(pet_image_enabled IN (0,1)), -- 0颜文字/1图片模式，开启前要求正式初始图
+    pet_image_enabled INTEGER NOT NULL DEFAULT 0 CHECK(pet_image_enabled IN (0,1)), -- 0颜文字/1图片模式，开启前要求已接受初始图和启用的正式待机图
     pet_image_revision INTEGER NOT NULL DEFAULT 0 CHECK(pet_image_revision>=0) -- 创作库版本，淘汰旧请求
 );
 
@@ -151,7 +150,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 -- ------------------------------------------------------------
 -- 3. 会话
--- 每个会话归属一个人设；回合、消息、记忆、记事本、节日子表、饰品、旅行、游记、信件、伴手礼都按会话隔离。
+-- 每个会话归属一个人设；回合、消息、记忆、记事本、饰品、旅行、游记、信件、伴手礼都按会话隔离。
 -- 旅行相关字段记录当前会话的在线出行计时，只在应用开启、该会话为当前会话且桌宠在家空闲时累计。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sessions (
@@ -264,8 +263,8 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 5. 全局设置（键值对）
 -- 下列是当前 V1 完整键目录；值的格式、默认值、范围和成对校验同时登记在《数据库与持久化设计》2.7 节。
 --   hungry_minutes                    饥饿触发分钟数，默认 120
---   bored_minutes                     无聊触发分钟数，默认 45
---   sleep_idle_minutes                无互动入睡分钟数，默认 45，用户可修改
+--   standby_minutes                   无互动待机分钟数，默认 10，用户可修改
+--   idle_event_minutes                无聊／睡觉共同触发分钟数，默认 45，到点各50%选择一次
 --   sleep_min_minutes                 睡眠最短分钟数，默认 60
 --   sleep_max_minutes                 睡眠最长分钟数，默认 120
 --   short_memory_min_chars            短期记忆最小字数，默认 12
@@ -795,17 +794,16 @@ CREATE TABLE IF NOT EXISTS festival_catalog (
 );
 
 -- ------------------------------------------------------------
--- 19. 会话节日子表（会话级）
--- 由 AI 或用户维护的节日、生日、纪念日、自定义日子。
+-- 19. 全局自定义日期表（不绑定会话）
+-- 由 AI 或用户维护的全局节日、生日、纪念日、自定义日子；所有人设与会话共用，删除人设或会话不删除日期。
 -- 与母表同样只存公历月日与农历月日；农历行每年查内置表推出公历月日后更新。
--- 新增仅保存会话自己的固定日期，不复制母表；festival_id固定NULL。
+-- 新增保存全局共享固定日期，不复制母表；festival_id固定NULL。
 -- festival_id列保留旧数据/备份兼容，不提供新建关联入口。
 -- 行不随年份删除；AI 可删除自己不需要的行。
--- 子表与母表一起参与签到、日常聊天和无聊主动消息上下文。
+-- 自定义日期与母表一起参与签到、日常聊天和无聊主动消息上下文。
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS session_festivals (
+CREATE TABLE IF NOT EXISTS custom_festivals (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
-    session_id    INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
     festival_id   INTEGER,                             -- 旧数据/备份兼容母表引用；当前新增为NULL
     kind          TEXT    NOT NULL CHECK (kind IN ('festival', 'birthday', 'anniversary', 'custom')), -- festival=节日，birthday=生日，anniversary=纪念日，custom=其他自定义日子
     name          TEXT    NOT NULL,                    -- 名称
@@ -821,7 +819,6 @@ CREATE TABLE IF NOT EXISTS session_festivals (
     source        TEXT    NOT NULL CHECK (source IN ('ai', 'user')), -- ai=AI 创建，user=用户手动创建
     created_at    TEXT    NOT NULL,                    -- 创建时间 RFC3339
     updated_at    TEXT    NOT NULL,                    -- 最近更新时间 RFC3339
-    FOREIGN KEY (session_id)  REFERENCES sessions(id)         ON DELETE CASCADE,
     FOREIGN KEY (festival_id) REFERENCES festival_catalog(id) ON DELETE SET NULL
 );
 
@@ -845,7 +842,7 @@ CREATE INDEX IF NOT EXISTS idx_travels_session_status  ON travels (session_id, s
 CREATE INDEX IF NOT EXISTS idx_travel_journals_session ON travel_journals (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_letters_session         ON letters (session_id);
 CREATE INDEX IF NOT EXISTS idx_souvenirs_session       ON souvenirs (session_id);
-CREATE INDEX IF NOT EXISTS idx_session_festivals_session ON session_festivals (session_id);
+CREATE INDEX IF NOT EXISTS idx_custom_festivals_created ON custom_festivals (created_at, id);
 
 -- 全局当前项最多一个；允许无提供商或无显式记忆提供商。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_active ON embedding_providers(is_active) WHERE is_active = 1;
@@ -880,13 +877,13 @@ CREATE INDEX IF NOT EXISTS idx_travels_pending_facts ON travels(status, id) WHER
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_builtin ON embedding_providers(is_builtin) WHERE is_builtin = 1;
 
--- 各连接的模型设置独立保存；切换当前项不会清除之前的模型与聊天预算。
+-- 各连接的用途模型及生成预算独立保存；切换当前项不会清除之前的配置。
 CREATE TABLE IF NOT EXISTS provider_models (
     provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE, -- 所属通用连接
     purpose TEXT NOT NULL CHECK (purpose IN ('chat','memory','image','vision')), -- chat聊天 / memory记忆 / image生图 / vision识图
     model TEXT NOT NULL CHECK (length(trim(model))>0), -- 该连接在此用途的模型名称
-    max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK (max_output_tokens>0), -- 聊天默认32768；其他用途保留默认值
-    context_window_override INTEGER CHECK (context_window_override>0), -- NULL自动解析；聊天可手动覆盖
+    max_output_tokens INTEGER NOT NULL DEFAULT 32768 CHECK (max_output_tokens>0), -- 文本生成默认32768（含模型可能使用的思考）；聊天/记忆/识图可在高级设置调整；生图协议不使用此字段
+    context_window_override INTEGER CHECK (context_window_override>0), -- NULL自动解析；聊天/记忆/识图可手动覆盖，实际请求不超出剩余容量
     PRIMARY KEY(provider_id,purpose)
 );
 -- 当前用途选择；模型与预算只存provider_models，不在此重复存储。
@@ -948,7 +945,7 @@ CREATE TABLE IF NOT EXISTS pet_artworks (
  name TEXT NOT NULL CHECK(length(trim(name))>0), -- 用户可编辑名称
  prompt TEXT NOT NULL DEFAULT '', -- 用户自由填写的图像生成要求
  description TEXT NOT NULL DEFAULT '', -- 给AI参考的使用时机，不作为指令
- category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','click','hungry','eating','sleepy','bored','thinking','chat')), -- 状态或聊天分类
+ category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','standby','click','hungry','eating','sleepy','bored','thinking','chat')), -- normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天
  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), -- 0不参与表情选择/1允许选择
  image_file TEXT, -- 已接受正式透明PNG受管相对路径，NULL尚无正式图
  preview_file TEXT, -- 尚待用户接受的透明PNG；重新生成失败保留旧预览

@@ -29,6 +29,7 @@ impl Scope {
             PackageKind::PersonaProfile => ["personas","pet_artworks"].contains(&table),
             PackageKind::UserProfile if !self.request.include_sessions => table == "user_profiles",
             _ => ![
+                "custom_festivals",
                 "provider_roles",
                 "provider_models",
                 "providers",
@@ -394,7 +395,7 @@ pub(super) fn project(
                 }
             }
         }
-        "session_festivals" => {
+        "custom_festivals" => {
             let code = match row.get("festival_id").and_then(Value::as_str) {
                 Some(id) => Some(
                     c.query_row("SELECT code FROM festival_catalog WHERE id=?1", [id], |r| {

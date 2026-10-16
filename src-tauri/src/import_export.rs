@@ -16,7 +16,7 @@ mod snapshot;
 mod tests;
 
 pub const FORMAT_VERSION: u32 = 1;
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 14;
 pub type Record = Map<String, Value>;
 #[cfg(test)]
 pub type Tables = BTreeMap<String, Vec<Record>>;

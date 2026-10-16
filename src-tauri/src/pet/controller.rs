@@ -19,6 +19,7 @@ pub(crate) struct HealthToken {
 #[serde(rename_all = "snake_case")]
 pub enum Activity {
     Normal,
+    Standby,
     Hungry,
     Bored,
     Sleeping,
@@ -182,6 +183,21 @@ impl Controller {
         self.expression_key = None;
     }
 
+    /// 新回复覆盖上一次的结束停留；续写可继续使用该回合已生成的表情。
+    pub fn start_chat_expression(&mut self, expression: Option<String>) {
+        self.chat_expression = expression;
+        if self.transient.as_ref().is_some_and(|t| t.1 == Activity::Speaking) {
+            self.transient = None;
+        }
+    }
+
+    /// 成功结束时用单调时钟记录停留期限，不新增计时任务或持久化字段。
+    pub fn finish_chat_expression(&mut self, now: Duration) {
+        if let Some(expression) = &self.chat_expression {
+            self.transient = Some((now + Duration::from_secs(3), Activity::Speaking, expression.clone()));
+        }
+    }
+
     pub fn settle(
         &mut self,
         connection: &mut Connection,
@@ -287,6 +303,7 @@ impl Controller {
                     IdleBranch::Sleeping => Activity::Sleeping,
                     _ if result.hungry => Activity::Hungry,
                     IdleBranch::Bored => Activity::Bored,
+                    _ if result.standby => Activity::Standby,
                     _ => Activity::Normal,
                 };
             }
@@ -332,6 +349,7 @@ impl Controller {
         } else if activity == Activity::Speaking {
             self.chat_expression
                 .clone()
+                .or_else(|| self.transient.as_ref().filter(|t| t.1 == Activity::Speaking).map(|t| t.2.clone()))
                 .unwrap_or_else(|| self.expression.clone())
         } else if matches!(activity, Activity::Eating | Activity::Interacting) {
             self.transient
@@ -357,7 +375,7 @@ impl Controller {
                 && !away
                 && matches!(
                     activity,
-                    Activity::Normal | Activity::Hungry | Activity::Bored
+                    Activity::Normal | Activity::Standby | Activity::Hungry | Activity::Bored
                 ),
         };
         view.can_interact &= view.session_id.is_some();
@@ -435,6 +453,7 @@ fn pick_expression(
 ) -> AppResult<String> {
     if let Some(image)=crate::pet_creation::select(connection,persona,image_category(activity),None,random)? {return Ok(image);}
     let fallback = match activity {
+        Activity::Standby => "(｡-ω-｡)",
         Activity::Sleeping => "(-_-) zZ",
         Activity::Bored => "(._.)",
         Activity::Hungry => "(>_<)",
@@ -450,6 +469,7 @@ fn pick_expression(
         serde_json::from_str(raw).map_err(|_| AppError::storage())?;
     crate::expressions::validate_library(&library)?;
     let choices = match activity {
+        Activity::Standby => library.standby,
         Activity::Sleeping => library.sleepy,
         Activity::Bored => library.bored,
         Activity::Hungry => library.hungry,
@@ -463,8 +483,10 @@ fn pick_expression(
         },
         _ => return Ok(fallback.into()),
     };
+    // 旧表情库尚无待机分类时显示独立待机兜底，重新生成表情库后使用 AI 结果。
+    if choices.is_empty() { return Ok(fallback.into()); }
     let index = random.below(choices.len() as u64)? as usize;
     choices.get(index).cloned().ok_or_else(AppError::storage)
 }
 
-fn image_category(activity:Activity)->&'static str {match activity {Activity::Sleeping=>"sleepy",Activity::Bored=>"bored",Activity::Hungry=>"hungry",Activity::Eating=>"eating",Activity::Thinking=>"thinking",Activity::Interacting=>"click",Activity::Speaking=>"chat",_=>"normal"}}
+fn image_category(activity:Activity)->&'static str {match activity {Activity::Standby=>"standby",Activity::Sleeping=>"sleepy",Activity::Bored=>"bored",Activity::Hungry=>"hungry",Activity::Eating=>"eating",Activity::Thinking=>"thinking",Activity::Interacting=>"click",Activity::Speaking=>"chat",_=>"normal"}}

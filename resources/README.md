@@ -16,7 +16,7 @@
 
 完整发布使用项目根目录的 `scripts/build-portable.ps1`，统一调用本地模型、小游戏和日历的复制脚本。ONNX Runtime 的 MSVC 依赖由构建机器 Visual Studio 的 x64 Redistributable CRT 目录复制到 exe 旁，不从 System32 复制系统 DLL；程序和 ONNX Runtime 共用这些运行组件。`portable-README.md` 作为使用说明随包提供，第三方依赖许可文本单独复制到发布目录的 `licenses/`，不复制开发数据库或个人存档。
 
-开发期复现导出：使用 Python 3.12、CPU torch 2.6.0、transformers 4.49.0、onnx 1.17.0、onnxruntime 1.22.0、safetensors 0.5.3，安装到项目临时目录 `my_doc/model-build/`，再运行 `scripts/prepare-embedding-model.py`。脚本下载固定 revision 的官方 safetensors，导出 ONNX opset 17，并比较三个样本的官方 FP32/ONNX 输出，最大绝对误差必须 <1e-5。首次结果为约 3.13e-7。工具目录和原始权重是开发期材料，应用运行不使用它们。
+开发期复现导出：使用 Python 3.12、CPU torch 2.6.0、transformers 4.49.0、onnx 1.17.0、onnxruntime 1.22.0、safetensors 0.5.3，安装到项目临时目录 `.test-temp/model-build/`，再运行 `scripts/prepare-embedding-model.py`。脚本下载固定 revision 的官方 safetensors 到 `.test-temp/model-source/`，导出 ONNX opset 17，并比较三个样本的官方 FP32/ONNX 输出，最大绝对误差必须 <1e-5。首次结果为约 3.13e-7。工具目录和原始权重是开发期材料，应用运行不使用它们；正式模型仍保存在 `resources/models/`，不得移到本地记录或临时目录。
 
 一次 Rust/Windows CPU 验证：Intel Core i7-12700H，20 个逻辑 CPU，推理使用 4 线程，debug 测试进程。加载（含资源校验）1,911 ms，首条短样本 4.72 ms，后续三条平均 3.28 ms；工作集由 6.17 MiB 到加载后 181.95 MiB，测试峰值 184.48 MiB。此数据是本机短样本测量，不是所有机器的速度或完整应用内存承诺。相关查询余弦得分 0.620–0.666，无关查询最高 0.261，首版相关阈值 0.60；检索排名融合不是概率。
 

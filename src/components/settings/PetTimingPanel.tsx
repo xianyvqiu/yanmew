@@ -5,7 +5,7 @@ import "./PetTimingPanel.css";
 
 const MAX_INTEGER = 2_147_483_647;
 const timingKeys = [
-  "hungry_minutes", "bored_minutes", "sleep_idle_minutes", "sleep_min_minutes", "sleep_max_minutes",
+  "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
   "travel_min_online_hours", "travel_max_online_hours",
   "intimacy_threshold_1", "intimacy_threshold_2", "intimacy_threshold_3", "intimacy_threshold_4",
   "accessory_cost_1", "accessory_cost_2", "accessory_cost_3", "accessory_cost_4",
@@ -16,8 +16,8 @@ type FieldErrors = Partial<Record<PetTimingKey, string>>;
 
 const definitions: Record<PetTimingKey, { label: string; unit: string; group: string }> = {
   hungry_minutes: { label: "饥饿触发", unit: "分钟", group: "timing" },
-  bored_minutes: { label: "无聊触发", unit: "分钟", group: "timing" },
-  sleep_idle_minutes: { label: "无互动入睡", unit: "分钟", group: "timing" },
+  standby_minutes: { label: "待机等待时间", unit: "分钟", group: "timing" },
+  idle_event_minutes: { label: "无聊／睡觉触发时间", unit: "分钟", group: "timing" },
   sleep_min_minutes: { label: "睡眠最短时长", unit: "分钟", group: "timing" },
   sleep_max_minutes: { label: "睡眠最长时长", unit: "分钟", group: "timing" },
   travel_min_online_hours: { label: "出行最短在线时长", unit: "小时", group: "travel" },
@@ -213,7 +213,7 @@ export default function PetTimingPanel() {
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>计时</legend>
         <div className="ym-pet-timing-grid">{timingKeys.filter(key => definitions[key].group === "timing").map(field)}</div>
-        <p className="ym-page-note">饥饿、无聊与睡眠分别计时；默认无互动 45 分钟时随机触发无聊或睡眠。阈值不相等时，先达到的事件先触发。睡眠开始后，修改设置不会重算本次睡眠结束时间。</p>
+        <p className="ym-page-note">默认连续没有互动10分钟进入待机；达到共同触发时间（默认45分钟）后，各50%随机进入无聊或睡觉，每个周期只选择一次。点击、摸摸、喂食或发送消息后重新计时。只累计当前会话有效运行时间，隐藏、拖动、聊天、睡眠、出行及故障期间不累计无互动时间；关闭期间不补算。睡眠时长决定睡多久，修改设置不会重算已开始的睡眠结束时间。</p>
       </fieldset>
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>出行</legend>
