@@ -23,7 +23,7 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();vi.useRealTimers();delete document.documentElement.dataset.theme;});
 it("月历标出今天、农历和多个节日，点击后显示全部详情",async()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date(2026,9,14,10));
-  api.month.mockResolvedValue({year:2026,month:10,days:[{date:"2026-10-14",lunar:"初五",solarTerm:null,events:[{id:"1",scope:"catalog",name:"节日一",blessing:"祝福一"},{id:"2",scope:"session",name:"纪念日",blessing:"祝福二"}]}]});
+  api.month.mockResolvedValue({year:2026,month:10,days:[{date:"2026-10-14",lunar:"初五",solarTerm:null,events:[{id:"1",scope:"catalog",name:"节日一",blessing:"祝福一"},{id:"2",scope:"custom",name:"纪念日",blessing:"祝福二"}]}]});
   const add=vi.fn(),edit=vi.fn();await act(async()=>{render(<CalendarView revision="1" onAdd={add} onEdit={edit}/>);});
   const day=screen.getByRole("button",{name:/2026-10-14 初五/});expect(day.getAttribute("data-today")).toBe("true");
   expect(within(day).getByText("初五")).toBeTruthy();

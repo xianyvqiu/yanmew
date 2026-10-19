@@ -48,6 +48,7 @@ describe("PersonaForm", () => {
     expect(onSave).toHaveBeenCalledWith({
       name: persona.name,
       prompt: persona.prompt,
+      initialPrompt: persona.initialPrompt,
       selfEvolveEnabled: persona.selfEvolveEnabled,
       color: persona.color,
       chatBgOpacity: persona.chatBgOpacity,
@@ -66,6 +67,7 @@ describe("PersonaForm", () => {
     expect(onSave).toHaveBeenCalledWith({
       name: "新伙伴",
       prompt: "愿意倾听",
+      initialPrompt: "愿意倾听",
       selfEvolveEnabled: true,
       color: "#ffb6c1",
       chatBgOpacity: 85,

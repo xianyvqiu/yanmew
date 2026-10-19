@@ -103,18 +103,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
-  it("用户与AI历史气泡都能复制各自原文且不修改消息", async () => {
+  it("AI历史渲染Markdown、用户保留标记，双方都复制各自原文且不修改消息", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     try {
-      const user = message("1", "session-1", "用户原文");
-      const assistant = { ...message("2", "session-1", "AI原文\n(^_^) [资料](https://example.com)"), role: "assistant" as const };
+      const user = message("1", "session-1", "**用户原文**");
+      const assistant = { ...message("2", "session-1", "**AI原文**\n(^_^) [资料](https://example.com)"), role: "assistant" as const };
       api.messages.mockResolvedValue({ items: [user, assistant], nextAfterId: null } satisfies MessagePage);
       render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
-      await screen.findByText("用户原文");
+      await screen.findByText("**用户原文**");
       const bubbles = within(screen.getByRole("region", { name: "聊天记录" })).getAllByRole("listitem");
       expect(bubbles).toHaveLength(2);
+      expect(within(bubbles[1]).getByText("AI原文").tagName).toBe("STRONG");
       fireEvent.click(within(bubbles[0]).getByRole("button", { name: "复制" }));
       await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(user.content));
       fireEvent.click(within(bubbles[1]).getByRole("button", { name: "复制" }));
@@ -427,7 +428,8 @@ describe("ChatPage", () => {
     openCurrentSessionDeletion();
     const modal = within(screen.getByRole("dialog", { name: "删除会话？" }));
     expect(modal.getByText(/第一段对话.*此操作不可恢复/)).toBeTruthy();
-    expect(modal.getByText(/聊天回合与消息、短期和长期记忆及来源、记事本、出行与旅行游记、节日、饰品、信件和伴手礼/)).toBeTruthy();
+    expect(modal.getByText(/聊天回合与消息、短期和长期记忆及来源、记事本、出行与旅行游记、饰品、信件和伴手礼/)).toBeTruthy();
+    expect(modal.getByText(/全局自定义日期会保留/)).toBeTruthy();
     expect(modal.getByText(/全局喵币钱包、账单、提醒.*小游戏插件、授权、设置、存档和游戏局仍会保留/)).toBeTruthy();
     expect(modal.getByText(/最近更新的剩余会话.*不会自动创建新会话/)).toBeTruthy();
     fireEvent.click(modal.getByRole("button", { name: "取消" }));

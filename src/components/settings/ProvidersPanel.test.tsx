@@ -39,7 +39,7 @@ it("正在使用的连接不能删除，其他连接确认后删除",async()=>{
 });
 it("模型用途单独选择连接，记忆允许跟随聊天",async()=>{
   render(<ProvidersPanel/>);fireEvent.click(await screen.findByRole("button",{name:"配置记忆"}));fireEvent.change(screen.getByLabelText("提供商"),{target:{value:"2"}});fireEvent.change(screen.getByLabelText("记忆模型"),{target:{value:"memory-two"}});fireEvent.click(screen.getByRole("button",{name:"保存用途"}));
-  await waitFor(()=>expect(api.saveRole).toHaveBeenCalledWith("memory","2","memory-two",false,3,undefined,undefined));
+  await waitFor(()=>expect(api.saveRole).toHaveBeenCalledWith("memory","2","memory-two",false,3,32768,null));
   fireEvent.click(screen.getByRole("button",{name:"配置记忆"}));fireEvent.change(screen.getByLabelText("提供商"),{target:{value:""}});fireEvent.click(screen.getByRole("button",{name:"保存用途"}));
   await waitFor(()=>expect(api.saveRole).toHaveBeenLastCalledWith("memory",null,"",false,4,undefined,undefined));
 });

@@ -569,7 +569,12 @@ pub(super) fn commit(
             "settings",
             "user_state",
         ] {
-            tx.execute(&format!("DELETE FROM {table}"), [])?;
+            if table == "settings" {
+                // 本机的一次性安装标记不随备份替换，避免删除过的角色重新出现。
+                tx.execute("DELETE FROM settings WHERE key<>?1", [crate::preset_personas::SEED_KEY])?;
+            } else {
+                tx.execute(&format!("DELETE FROM {table}"), [])?;
+            }
         }
         tx.execute("DELETE FROM embedding_providers WHERE is_builtin=0", [])?;
         tx.execute("UPDATE embedding_providers SET is_active=0", [])?;

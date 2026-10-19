@@ -26,13 +26,13 @@ it("宠窗发送复用当前会话，头顶流式更新；收起输入不取消�
   fireEvent.change(screen.getByRole("textbox"),{target:{value:"你好"}});fireEvent.click(screen.getByRole("button",{name:"发送"}));
   await screen.findByRole("region",{name:"桌宠聊天回复"});
   expect(api.submit).toHaveBeenCalledWith({personaId:"1",sessionId:"2",contextRevision:3},"你好");
-  act(()=>receive({...receipt,type:"text",seq:1,text:"你好",saved:null}));expect(screen.getByText("你好")).toBeTruthy();
+  act(()=>receive({...receipt,type:"text",seq:1,text:"**你好",saved:null}));expect(screen.getByText("**你好")).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:"切换输入"}));
-  act(()=>receive({...receipt,type:"text",seq:2,text:"，喵",saved:null}));expect(screen.getByText("你好，喵")).toBeTruthy();expect(api.cancel).not.toHaveBeenCalled();
-  const saved:RoundSnapshot={...round,round:{...round.round,status:"completed"},assistantMessage:{...round.userMessage,id:"21",role:"assistant",content:"你好，喵"}};
+  act(()=>receive({...receipt,type:"text",seq:2,text:"**，喵",saved:null}));expect(screen.getByText("你好").tagName).toBe("STRONG");expect(api.cancel).not.toHaveBeenCalled();
+  const saved:RoundSnapshot={...round,round:{...round.round,status:"completed"},assistantMessage:{...round.userMessage,id:"21",role:"assistant",content:"**你好**，喵"}};
   api.lastRound.mockResolvedValue(saved);
   await act(async()=>receive({...receipt,type:"finished",seq:3,finish:"stop",saved}));
-  expect(screen.getByText("你好，喵")).toBeTruthy();fireEvent.click(screen.getByRole("button",{name:"聊天详情"}));expect(details).toHaveBeenCalled();
+  expect(screen.getByRole("region",{name:"桌宠聊天回复"}).textContent).toContain("你好，喵");expect(screen.getByText("你好").tagName).toBe("STRONG");fireEvent.click(screen.getByRole("button",{name:"聊天详情"}));expect(details).toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button",{name:"收起聊天回复"}));expect(screen.queryByRole("region",{name:"桌宠聊天回复"})).toBeNull();
 });
 it("暂停沿用当前请求，切换会话清理快捷草稿及旧回复",async()=>{

@@ -6,6 +6,7 @@ import { useChat } from "../hooks/useChat";
 import type { Message,ChatImageInput,Session } from "../types";
 import ChatImage from "../components/ChatImage";
 import ChatComposer from "../components/ChatComposer";
+import { plainDisplay } from "../components/plainDisplay";
 import CopyMessageButton from "../components/CopyMessageButton";
 import ChatBackgroundSettings from "../components/ChatBackgroundSettings";
 import UserProfilePicker from "../components/UserProfilePicker";
@@ -270,7 +271,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
         : !messages.length && !loading ? <p className="ym-page-empty">这个会话还没有消息。</p>
         : <ol className="ym-message-list">{messages.filter(message => chat.active?.regenerating || message.id !== chat.active?.round.assistantMessage?.id).map(message => <li key={message.id} data-role={message.role}>
           <div className="ym-message-meta"><strong>{message.role === "user" ? "你" : persona.name}</strong><time>{new Date(message.createdAt).toLocaleString()}</time></div>
-          <ChatMessageText content={message.content} />
+          <ChatMessageText content={message.content} markdown={message.role === "assistant"} />
           {message.images?.map(image=><ChatImage key={image.id} image={image} context={context}/>)}
           {editing?.message.id === message.id ? <form className="ym-message-editor" onSubmit={event => { event.preventDefault(); void saveEdit(); }}>
             <label className="ym-field">编辑消息<textarea aria-label="编辑消息正文" value={editDraft} rows={4} disabled={busy || chat.busy}
@@ -278,12 +279,12 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
             <p className="ym-page-note">仅修改消息原文，短期记忆、长期记忆和旅行游记不会同步修改；需要同步时请进入记忆小窗操作。</p>
             {messageError && <p role="alert" className="ym-page-error">{messageError}</p>}
             <div className="ym-message-actions">
-              <CopyMessageButton content={message.content} />
+              <CopyMessageButton content={message.role === "assistant" ? plainDisplay(message.content).copy : message.content} />
               <button type="button" className="ym-button" disabled={busy} onClick={() => { setEditing(null); setEditDraft(""); setMessageError(""); }}>取消编辑</button>
               <button type="submit" className="ym-button" disabled={busy || chat.busy || !chat.ready || !editDraft.trim()}>{busy ? "保存中…" : "保存消息"}</button>
             </div>
           </form> : <div className="ym-message-actions">
-            <CopyMessageButton content={message.content} />
+            <CopyMessageButton content={message.role === "assistant" ? plainDisplay(message.content).copy : message.content} />
             <button className="ym-button" disabled={busy || chat.busy || loading || !chat.ready || dialogOpen || Boolean(editing)}
               onClick={() => { if (!locked.current && !chat.busy) { setMessageError(""); setEditing({ context: { ...context }, message: { ...message } }); setEditDraft(message.content); } }}>编辑</button>
             {message.id === deletableTail?.id && <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)}
@@ -303,7 +304,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
         {chat.active.webActivity && <p role="status" className="ym-page-note">{chat.active.webActivity === "searching" ? "正在搜索网络资料…" : "正在读取网页…"}</p>}
         <span className="ym-page-note">{chat.active.regenerating ? "正在准备回复和记忆，完成后一起替换；中断保留旧结果。" : "正在回复，尚未保存"}</span>
         <div className="ym-message-actions">
-          <CopyMessageButton content={chat.active.partialContent} />
+          <CopyMessageButton content={plainDisplay(chat.active.partialContent).copy} />
           {!chat.active.regenerating && deletableTail && deletableTail.id === chat.active.round.assistantMessage?.id
             && <button className="ym-button" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)} onClick={() => openTailDelete(deletableTail)}>删除本轮</button>}
         </div>

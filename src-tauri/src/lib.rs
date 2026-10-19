@@ -19,6 +19,7 @@ mod error;
 mod events;
 mod expressions;
 mod pet_creation;
+mod preset_personas;
 pub mod embedding;
 mod embedding_providers;
 pub mod memory_index;

@@ -1,0 +1,30 @@
+/* 仅排版消息正文，颜色继承人设外观，不改变气泡表面和宠窗透明规则。 */
+.ym-message-text { min-width:0; max-width:100%; overflow-wrap:anywhere; line-height:1.65; }
+.ym-message-text p { white-space:pre-wrap; margin:6px 0; }
+.ym-message-text > :first-child { margin-top:0; }
+.ym-message-text > :last-child { margin-bottom:0; }
+.ym-message-text a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.ym-message-text a:focus-visible { outline:2px solid var(--ym-focus); outline-offset:2px; }
+.ym-message-text.ym-markdown :is(h1, h2, h3, h4, h5, h6) { color:inherit; margin:12px 0 6px; line-height:1.4; font-weight:600; }
+.ym-message-text.ym-markdown h1 { font-size:1.35em; }
+.ym-message-text.ym-markdown h2 { font-size:1.2em; }
+.ym-message-text.ym-markdown :is(h3, h4, h5, h6) { font-size:1.05em; }
+.ym-message-text.ym-markdown > :first-child { margin-top:0; }
+.ym-markdown :is(ul, ol) { margin:6px 0; padding-left:1.6em; }
+.ym-markdown li { margin:3px 0; }
+.ym-markdown li > p { margin:3px 0; }
+.ym-markdown blockquote { margin:8px 0; padding:2px 0 2px 12px; border-left:3px solid var(--ym-accent); }
+.ym-markdown :is(code, pre) { font-family:Consolas, "Cascadia Code", monospace; font-size:.92em; }
+.ym-markdown :not(pre) > code { padding:1px 4px; border:1px solid var(--ym-border-strong); border-radius:4px; white-space:break-spaces; }
+.ym-markdown pre { min-width:0; max-width:100%; margin:8px 0; padding:10px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; white-space:pre; border:1px solid var(--ym-border-strong); border-radius:var(--ym-radius-md); background:transparent; }
+.ym-markdown pre code { font-size:1em; overflow-wrap:normal; }
+.ym-markdown-table { min-width:0; max-width:100%; overflow-x:auto; overscroll-behavior:contain; scrollbar-width:thin; margin:8px 0; }
+.ym-markdown table { border-collapse:collapse; font-size:inherit; }
+.ym-markdown :is(th, td) { min-width:5em; max-width:24em; padding:6px 9px; border:1px solid var(--ym-border-strong); vertical-align:top; }
+.ym-markdown th { font-weight:600; }
+.ym-markdown hr { margin:12px 0; border:0; border-top:1px solid var(--ym-border-strong); }
+.ym-markdown .contains-task-list { list-style:none; padding-left:.3em; }
+.ym-message-text.ym-markdown input[type="checkbox"] { display:inline-block; width:auto; margin:0 6px 0 0; accent-color:var(--ym-accent); vertical-align:middle; }
+.ym-markdown-image { font-style:italic; }
+
+.ym-plain-display { white-space:pre-wrap; overflow-wrap:anywhere; }

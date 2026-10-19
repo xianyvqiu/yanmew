@@ -123,7 +123,7 @@ fn first_completed_reply_uses_first_user_message_and_generates_once() {
             requests[0]["messages"][1]["content"],
             json!({"first_user_message":"最早用户消息"}).to_string()
         );
-        assert_eq!(requests[0]["max_tokens"], 256);
+        assert_eq!(requests[0]["max_tokens"], 32768);
         drop(requests);
         server.finish();
     });

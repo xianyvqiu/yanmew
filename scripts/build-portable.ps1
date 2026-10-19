@@ -37,6 +37,16 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'resources/portable-README.md') -Destination (Join-Path $portable '使用说明.md')
     & (Join-Path $PSScriptRoot 'copy-embedding-resources.ps1') -Destination $portable
     & (Join-Path $PSScriptRoot 'copy-plugin-resources.ps1') -Destination $portable
+    # 缺图时拒绝分发；四个预置人设及全部基础状态均须随包提供。
+    $personaResources = Join-Path $projectRoot 'resources/personas'
+    foreach ($persona in @('gpt','claude','gemini','deepseek')) {
+        foreach ($pose in @('base','standby','click','hungry','eating','sleepy','bored','thinking','chat')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $personaResources "$persona/$pose.png") -PathType Leaf)) {
+                throw "预置人设图片缺失：$persona/$pose.png"
+            }
+        }
+    }
+    Copy-Item -LiteralPath $personaResources -Destination (Join-Path $portable 'resources/personas') -Recurse
     & (Join-Path $PSScriptRoot 'copy-calendar-notices.ps1') -Destination $portable
     Get-ChildItem -LiteralPath $runtimeDirectory.FullName -Filter '*.dll' -File |
         ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $portable }
@@ -83,8 +93,12 @@ try {
     }
     $notices.Add('')
     $notices.Add('## 前端运行依赖')
-    foreach ($name in @('react', 'react-dom', 'scheduler', '@tauri-apps/api')) {
-        $packageRoot = Join-Path $projectRoot "node_modules/$name"
+    # 从锁文件收集全部生产依赖，包含 Markdown 等间接依赖；开发工具不进入发布清单。
+    $frontendPackages = node -e "const fs=require('node:fs');const lock=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(JSON.stringify(Object.entries(lock.packages).filter(([name,p])=>name.startsWith('node_modules/')&&!p.dev&&!p.link).map(([name])=>name).sort()));" (Join-Path $projectRoot 'package-lock.json')
+    if ($LASTEXITCODE -ne 0) { throw '读取前端生产依赖清单失败' }
+    foreach ($entry in ($frontendPackages | ConvertFrom-Json)) {
+        $packageRoot = Join-Path $projectRoot $entry
+        $name = $entry.Substring('node_modules/'.Length)
         $package = Get-Content -LiteralPath (Join-Path $packageRoot 'package.json') -Raw | ConvertFrom-Json
         $packageTarget = Join-Path $licenseRoot ('frontend/' + $name.Replace('@','').Replace('/','-'))
         New-Item -ItemType Directory -Path $packageTarget -Force | Out-Null

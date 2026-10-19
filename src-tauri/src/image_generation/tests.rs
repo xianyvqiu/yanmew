@@ -7,11 +7,12 @@ fn defaults_keys_are_isolated_encrypted_and_not_in_public_config() {
     let mut c=crate::db::test_database();let original=get(&c).unwrap();assert!(!original.enabled);assert!(original.providers.is_empty());assert!(snapshot(&c,&Protector).unwrap().is_none());
     c.execute_batch("INSERT INTO providers(name,api_key_encrypted) VALUES('聊天','chat-key'); INSERT INTO provider_models(provider_id,purpose,model) VALUES(1,'chat','model'); INSERT INTO provider_roles(purpose,provider_id) VALUES('chat',1);").unwrap();
     let config=save(&mut c,None,0,input(SecretUpdate::Set {value:"private-image-key".into()}),&Protector).unwrap();
-    assert_eq!(config.providers[0].provider.base_url,"https://images.example/v1");assert!(config.providers[0].has_api_key);
+    assert_eq!(config.providers[1].provider.base_url,"https://images.example/v1");assert!(config.providers[1].has_api_key);
     let value=serde_json::to_string(&config).unwrap();assert!(!value.contains("private-image-key"));assert!(!value.contains("encrypted:"));assert!(!value.contains("chat-key"));
-    assert_eq!(secret(&c,"1").unwrap(),Some("encrypted:private-image-key".into()));
+    assert_eq!(secret(&c,"2").unwrap(),Some("encrypted:private-image-key".into()));
     assert!(snapshot(&c,&Protector).unwrap().is_none());
-    let config=select(&mut c,Some("1".into()),config.revision).unwrap();
+    assert_eq!(secret(&c,"1").unwrap(),Some("chat-key".into()));
+    let config=select(&mut c,Some("2".into()),config.revision).unwrap();
     set_enabled(&mut c,true,config.revision).unwrap();let snap=snapshot(&c,&Protector).unwrap().unwrap();assert_eq!(snap.key,"private-image-key");
     assert!(crate::config::get(&c).unwrap().keys().all(|key|!key.starts_with("image_generation")));
     assert!(crate::config::save(&mut c,std::collections::BTreeMap::from([("image_generation_config".into(),"{}".into())])).is_err());

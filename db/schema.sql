@@ -32,6 +32,7 @@
 --   game_runs          历史运行记录，保存插件身份快照，不绑定会话
 --   currency_ledger    喵币流水，与 user_state 逻辑配套；插件流水引用历史运行记录
 --   festival_catalog   系统内置节日母表，独立，不随任何业务数据删除
+--   custom_festivals   全局固定日期，不绑定会话；festival_id 仅保留旧关联兼容，新记录固定 NULL
 --   reminders          全局提醒规则
 --   reminder_occurrences → reminders.id，删除规则级联删除每次触发记录
 --   reminder_email_deliveries 全局本机邮件任务，不进入备份
@@ -50,7 +51,6 @@
 --   long_memory_sources → long_memories.id / short_memories.id，记录整合来源
 --   long_memory_embeddings → long_memories.id / sessions.id，当前模型的可重建向量
 --   notebooks           session_id    → sessions.id          级联删除（主键，一会话一行）
---   custom_festivals    festival_id   → festival_catalog.id  置空（仅旧关联兼容，全局记录）
 --   travels             session_id    → sessions.id          级联删除
 --   travel_journals     session_id / travel_id → sessions.id / travels.id
 --   accessories         session_id    → sessions.id          级联删除
@@ -70,7 +70,7 @@
 --   删除用户设定 → 会话保留，只把 user_profile_id 置空（前端显示“未绑定”）
 --   删除旅行记录 → 对应旅行游记级联删除；饰品 / 信件 / 伴手礼保留，travel_id 置空
 --   删除插件登记 → 删除它的当前授权、设置和私有存档；历史运行记录与喵币流水保留
---   节日母表   → 系统内置数据，不随任何业务删除；子表靠 festival_id 引用它
+--   节日母表与全局自定义日期独立维护，共同参与日期查询；删除会话不删除自定义日期
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -262,6 +262,7 @@ CREATE TABLE IF NOT EXISTS messages (
 -- 验证码摘要、10分钟期限、5次错误及60秒重发冷却只在内存，不写入settings或备份。
 -- 5. 全局设置（键值对）
 -- 下列是当前 V1 完整键目录；值的格式、默认值、范围和成对校验同时登记在《数据库与持久化设计》2.7 节。
+--   preset_personas_seeded_v1          本机预置图片人设安装标记：缺失=未安装，文本1=已安装；不导出，全量恢复保留，删除人设不重置
 --   hungry_minutes                    饥饿触发分钟数，默认 120
 --   standby_minutes                   无互动待机分钟数，默认 10，用户可修改
 --   idle_event_minutes                无聊／睡觉共同触发分钟数，默认 45，到点各50%选择一次
@@ -774,7 +775,7 @@ CREATE TABLE IF NOT EXISTS souvenirs (
 -- 公历节日月日不变，每年只更新 year；
 -- 农历节日与节气每年查内置农历/节气表推出公历月日后写回，行本身不删除。
 -- 除夕这类“腊月最后一天”的节日，农历日（廿九或三十）同样每年查内置农历表推出后写回。
--- code 是稳定标识，用于首次启动幂等写入；子表通过 festival_id 关联本表。
+-- code 是稳定标识，用于首次启动幂等写入；自定义日期不复制本表，festival_id 仅兼容旧关联。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS festival_catalog (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键

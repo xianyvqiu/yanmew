@@ -27,6 +27,14 @@ impl AppPaths {
             Ok(self.resource_root.join("models/bge-small-zh-v1.5"))
         }
     }
+    /// 预置图片人设随完整程序包分发，用户自己的图片保存在data受管目录。
+    pub fn persona_resources(&self) -> AppResult<PathBuf> {
+        if cfg!(debug_assertions) {
+            Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../resources/personas"))
+        } else {
+            Ok(self.resource_root.join("personas"))
+        }
+    }
 }
 
 pub trait SecretProtector: Send + Sync {

@@ -33,3 +33,7 @@ plugins/包含剪刀石头布、骰子、接星星、我的家的.yanmew-game与
 ## 内置日历与许可声明
 
 `calendar/` 是18.1的离线农历/节气资源，采用MIT固定源码生成并编译进程序，运行时不依赖Python或外部资源下载。源码快照、二进制格式、版本、校验和及核对说明见 [日历资源说明](calendar/README.md)。便携打包执行 `./scripts/copy-calendar-notices.ps1 -Destination <便携版目录>`，保留上游版权、MIT许可证、manifest和来源说明。日历源码ZIP只用于开发复现，不随用户包或备份复制。
+
+## 预置图片人设资源
+
+personas/ 含 GPT、Claude、Gemini、DeepSeek 的初始图和独立基础互动图，详情及生成提示见 [资源说明](personas/README.md)。完整便携版/安装版必须带齐四套36张透明PNG；build-portable.ps1 校验并复制。首次运行发布到本机受管图片目录，之后以用户修改为准，不覆盖已删除角色。程序资源不需要生图 Key，用户自定义创作继续使用其配置的服务。

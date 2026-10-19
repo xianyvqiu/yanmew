@@ -50,7 +50,7 @@ fn current_model_test_recovers_only_after_a_valid_completion() {
         let requests = server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0]["model"], "fake-model");
-        assert_eq!(requests[0]["max_tokens"], 32);
+        assert_eq!(requests[0]["max_tokens"], 32768);
         if let Err(error) = result {
             assert!(!error.message.contains("private upstream"));
         }

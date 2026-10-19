@@ -47,7 +47,11 @@ impl Runtime {
         random: Box<dyn crate::pet::RandomSource + Send>,
     ) -> Self {
         let embedding_paths = paths.as_ref().map_err(Clone::clone).and_then(|p| p.embedding_resources());
-        let opened = paths.as_ref().map_err(Clone::clone).and_then(crate::db::open);
+        let opened = paths.as_ref().map_err(Clone::clone).and_then(|paths| {
+            let (mut connection, created) = crate::db::open(paths)?;
+            crate::preset_personas::install(&mut connection, paths)?;
+            Ok((connection, created))
+        });
         let initial_session_created = opened.as_ref().is_ok_and(|(_, created)| *created);
         let store = opened.map(|(connection, _)| Store {
             accessory_crafts: Default::default(),

@@ -489,6 +489,12 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
     let source = fixture(&source_dir.0);
     let target_dir = Directory::new();
     let target = fixture(&target_dir.0);
+    // 本机种子安装状态不属于备份内容，全量恢复也不得重新安装已删除的人设。
+    assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::SEED_KEY));
+    target.read(|s, _| {
+        s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::SEED_KEY])?;
+        Ok(())
+    }).unwrap();
     source
         .read(|s, _| {
             s.connection.execute(
@@ -516,6 +522,7 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
     target
         .read(|s, _| {
             let c = &s.connection;
+            assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::SEED_KEY], |r| r.get::<_, String>(0))?, "1");
             assert_eq!(
                 c.query_row("SELECT coins FROM user_state", [], |r| r.get::<_, i64>(0))?,
                 77
