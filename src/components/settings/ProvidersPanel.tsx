@@ -1,3 +1,4 @@
+import UiIcon from "../UiIcon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Provider, ProviderInput } from "../../types";
@@ -105,6 +106,7 @@ export default function ProvidersPanel() {
       {selected&&<button className="ym-button" disabled={busy||editing!==undefined} onClick={()=>setSelected(null)}>返回提供商列表</button>}
       <div className="ym-object-grid">{(selected?providers.filter(p=>p.id===selected):browser.items).map(provider=><article className="ym-object-card" key={provider.id} onClick={event=>{if(!selected&&!disabled&&editing===undefined&&!(event.target as HTMLElement).closest("button"))setSelected(provider.id);}}>
         <h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(provider.id)}>{provider.name}</button></h3><p className="ym-page-note ym-card-summary">{provider.baseUrl||"https://api.openai.com/v1"}</p>
+        <p className="ym-page-note" aria-label="模型原生能力">{provider.capabilities?.webSearch===true&&<span title="服务声明或官方资料确认此模型支持原生搜索；实际调用仍受接口权限和额度限制"><UiIcon name="globe"/> {provider.capabilities.nativeSearchReady?"原生联网":"联网能力（接口待适配）"}　</span>}{provider.capabilities?.reasoning===true&&<span title="服务声明或实际响应已确认推理能力；普通聊天沿用模型本身的思考模式"><UiIcon name="brain"/> 原生推理</span>}{provider.capabilities?.webSearch==null&&provider.capabilities?.reasoning==null&&"原生能力尚未确认"}</p>
         <p className="ym-page-note">Key：{provider.hasApiKey?"已保存":"未保存"} · {provider.purposes?.map(role=>({chat:"聊天",memory:"记忆",image:"生图",vision:"识图"})[role as "chat"]).join("、")||"尚未指定用途"}</p>
         <p className="ym-page-note">创建：{provider.createdAt?new Date(provider.createdAt).toLocaleString():"时间未知"}</p>
         {selected===provider.id&&<div className="ym-inline-form"><button className="ym-button" disabled={disabled||editing!==undefined} onClick={()=>{setEditing(provider);setError(null);setNotice("");}}>编辑连接</button><button className="ym-button" disabled={disabled||provider.model==="未配置"} title="使用该连接的聊天模型进行请求，可能消耗服务额度" onClick={()=>void test(provider)}>{testingId===provider.id?"正在测试…":"测试聊天连接"}</button><button className="ym-button" data-variant="danger" disabled={disabled} onClick={()=>{setDeleting(provider);setError(null);}}>删除连接</button></div>}

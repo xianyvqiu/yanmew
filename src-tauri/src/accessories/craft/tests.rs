@@ -96,3 +96,9 @@ fn price_change_expires_quote_and_insufficient_wallet_does_not_consume_tier() {
     assert_eq!(get(&f.runtime,&f.context,&next.preview_id).unwrap().cost,"21");
     f.runtime.read(|s,_|{assert_eq!(quote(&s.connection,1)?.unwrap().tier,1);Ok(())}).unwrap();
 }
+
+#[test]fn manual_upload_uses_existing_quote_and_charges_only_on_confirm(){
+ let f=Fixture::new();let mut rgba=image::RgbaImage::new(48,48);for y in 10..38{for x in 10..38{rgba.put_pixel(x,y,image::Rgba([200,80,100,255]));}}let mut bytes=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(rgba).write_to(&mut bytes,image::ImageFormat::Png).unwrap();
+ let preview=upload(&f.runtime,f.context.clone(),"手作蝴蝶结".into(),"自己上传的透明挂件".into(),bytes.into_inner(),Arc::new(Events)).unwrap();assert!(preview.uploaded);assert_eq!(preview.cost,"20");assert_eq!(f.coins(),2000);let item=confirm(&f.runtime,&f.context,&preview.preview_id).unwrap();assert!(item.image_file.is_some());assert!(!item.is_worn);assert_eq!(f.coins(),1980);assert!(confirm(&f.runtime,&f.context,&preview.preview_id).is_err());assert_eq!(f.coins(),1980);
+ let mut opaque=std::io::Cursor::new(Vec::new());image::DynamicImage::new_rgb8(48,48).write_to(&mut opaque,image::ImageFormat::Png).unwrap();assert!(upload(&f.runtime,f.context.clone(),"不透明".into(),"必须拒绝".into(),opaque.into_inner(),Arc::new(Events)).is_err());assert_eq!(f.coins(),1980);
+}

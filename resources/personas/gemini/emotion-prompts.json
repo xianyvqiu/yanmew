@@ -1,0 +1,56 @@
+[
+  {
+    "role": "gemini",
+    "emotion": "happy",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_happy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion HAPPY: exuberant feline happiness: huge sparkling red/gold eyes, joyful open-mouth smile with small fang, both hands raised like playful cat paws, tail curving excitedly upward. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gemini",
+    "emotion": "angry",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_angry.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion ANGRY: mischievous cat hiss without aggression: eyebrows knitted, cheeks puffed, tiny fang shows, hands on hips, ears tilted back and tail fluffed. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gemini",
+    "emotion": "sad",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_sad.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion SAD: expressive kitten sadness: droopy cat ears and tail, glossy tearful red/gold eyes, little pout, both hands loosely clasped near chest. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gemini",
+    "emotion": "shy",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_shy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion SHY: playful girl unexpectedly bashful: red blush, paw-like hands cover cheeks, eyes peek sideways, cat ears gently angled outward, tail curled around feet. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gemini",
+    "emotion": "afraid",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_afraid.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion AFRAID: startled kitten freeze: wide mismatched red/gold eyes, ears flattened, small defensive paw hands close to face, tail puffed up and knees slightly bent. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gemini",
+    "emotion": "speechless",
+    "reference": "gemini/base.png",
+    "file": "gemini/emotion_speechless.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve playful purple long-haired catgirl, red and gold heterochromatic eyes exactly as reference, purple cat ears and fluffy tail, star hairclips, same layered purple-white star costume and boots. Emotion SPEECHLESS: comic feline disbelief: flat half-lidded red/gold eyes, one paw rests on forehead, other palm loosely raised, ears sideways and tail sagging. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  }
+]

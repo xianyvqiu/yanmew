@@ -31,6 +31,7 @@ export type SessionIntimacy = { personaId: RecordId; sessionId: RecordId; contex
 export type MemoryIntegrationState = "pending" | "integrated";
 export type MemoryKind = "short" | "long";
 export type MemoryRecord = {
+  roundNumber?: number | null; sourceStartRoundNumber?: number | null; sourceEndRoundNumber?: number | null; activatedByRoundNumber?: number | null;
   id: RecordId; sessionId: RecordId; kind: MemoryKind; roundId: RecordId | null;
   integrationState: MemoryIntegrationState | null; title: string | null; content: string;
   sourceCount: number | null; activatedByRoundId: RecordId | null; coveredThroughRoundId: RecordId | null;
@@ -38,6 +39,7 @@ export type MemoryRecord = {
   createdAt: string; updatedAt: string;
 };
 export type MemorySource = {
+  roundNumber?: number | null;
   shortMemoryId: RecordId; roundId: RecordId; sourceOrder: number; content: string; updatedAt: string;
 };
 export type MemoryDetail = {
@@ -116,6 +118,7 @@ export type PetWanderLayout = {
   personaId: RecordId; sessionId: RecordId; contextRevision: number; layoutRevision: number;
   area: PetWanderPoint & { width: number; height: number };
   body: PetWanderPoint & { width: number; height: number };
+  anchor?: PetWanderPoint & { width: number; height: number };
   offset: PetWanderPoint; paused: boolean;
 };
 export type PetWanderTarget = Pick<PetWanderLayout, "personaId" | "sessionId" | "contextRevision" | "layoutRevision" | "offset">;
@@ -152,6 +155,7 @@ export type Provider = {
   id: RecordId; name: string; baseUrl: string | null; model: string;
   hasApiKey: boolean; isActive: boolean; memoryIsActive: boolean;
   maxOutputTokens: number; contextWindowOverride: number | null;
+  capabilities?:{nativeSearchReady:boolean;webSearch:boolean|null;reasoning:boolean|null;source:string;reference:string|null};
   capacity: { contextWindow: number | null; maxOutputTokens: number | null; source: string; estimated: boolean; reference?: string | null; checkedAt?: string | null };
 };
 export type EmbeddingProviderInput = { name: string; baseUrl: string | null; model: string; apiKey?: SecretUpdate };
@@ -162,7 +166,7 @@ export type Persona = {
   selfEvolveEnabled: boolean; lastEvolvedAt: string | null; color: string;
   chatBgFile: string | null; chatBgOpacity: number; chatBgBlur: number;
   chatAppearance?: ChatAppearance;
-  isActive: boolean; isBuiltin: boolean; expressions: Record<string, unknown> | null;
+  isActive: boolean; isBuiltin: boolean; expressions: Record<string, unknown> | null; effectiveExpressions?: Record<string, unknown>;
 };
 export type PersonaInput = Pick<Persona, "name" | "prompt" | "selfEvolveEnabled" | "color" | "chatBgOpacity" | "chatBgBlur"> & { saveAsInitial?: boolean; initialPrompt?: string };
 export type ChatAppearance = { bubbleStyle: "solid" | "transparent" | "outline" | "frosted"; userTextColor: string | null; assistantTextColor: string | null };
@@ -173,7 +177,7 @@ export type ChatBackgroundInput = {
   image: { fileName: string; base64: string } | null; reset: boolean;
   appearance?: ChatAppearance;
 };
-export type ExpressionLibrary = { click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[]; standby: string[] };
+export type ExpressionLibrary = { lifted?:string[]; click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[]; standby: string[]; craving?:string[]; craving_favorite?:string[]; eating_favorite?:string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };
 export type Session = {
@@ -189,7 +193,7 @@ export type Message = {
 };
 export type MessagePage = { items: Message[]; nextAfterId: RecordId | null };
 export type NumericSettingKey =
-  | "hungry_minutes" | "standby_minutes" | "idle_event_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
+  | "pet_chat_autocollapse_minutes" | "hungry_minutes" | "standby_minutes" | "idle_event_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
   | "short_memory_min_chars" | "short_memory_max_chars" | "long_memory_min_chars" | "long_memory_max_chars"
   | "memory_merge_count" | "recent_message_count" | "recent_long_memory_count"
   | "travel_journal_min_chars" | "travel_journal_max_chars" | "tool_call_rounds" | "notebook_max_chars"
@@ -284,7 +288,7 @@ export type LetterTarget = CurrentContext & { travelId: RecordId; replyToId: Rec
 export type Accessory = {
   id: RecordId; sessionId: RecordId; name: string; displayText: string; imageFile: string | null;
   description: string; cost: string; source: "crafted" | "travel"; travelId: RecordId | null;
-  isWorn: boolean; createdAt: string; positionX?: number | null; positionY?: number | null; scale?: number;
+  isWorn: boolean; createdAt: string; positionX?: number | null; positionY?: number | null; scale?: number; renderLayer?:"front"|"back";layerOrder?:number;
 };
 export type AccessoryImage = { dataUrl: string | null; notice: string | null };
 export type AccessoryDeleteResult = { deletedId: RecordId };
@@ -297,7 +301,7 @@ export type ImageGenerationProviderInput = { name: string; protocol: "openai-com
 export type AccessoryCraftPreview = {
   previewId: string; context: { personaId: RecordId; sessionId: RecordId; contextRevision: number }; tier: number; cost: string;
   name: string; displayText: string; description: string; status: "preparing" | "ready"; appearance: "image" | "text";
-  imageDataUrl: string | null; notice: string | null;
+  imageDataUrl: string | null; uploaded?:boolean; notice: string | null;
 };
 
 /** 普通文字伴手礼，旅行饰品在Accessory表和管理页中展示。 */
@@ -357,7 +361,7 @@ export interface ReminderEmailDelivery { id: string; recipient: string; subject:
 export interface ReminderEmailView { connection: ReminderEmailConnection; revision: number; enabled: boolean; verified: boolean; hasSecret: boolean; deliveries: ReminderEmailDelivery[] }
 export interface ReminderEmailInput { connection: ReminderEmailConnection; revision: number; secret: { action: "keep" | "clear" } | { action: "set"; value: string } }
 
-export type PetArtCategory = "normal"|"standby"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat";
+export type PetArtCategory = "normal"|"standby"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat"|"craving"|"craving_favorite"|"eating_favorite"|"peek_left"|"peek_right"|"rest_sit"|"rest_lie"|"walk_left"|"walk_right"|"lifted";
 export type PetArtworkInput = {kind:"base"|"expression";name:string;prompt:string;description:string;category:PetArtCategory;enabled:boolean};
 export type PetArtwork = PetArtworkInput & {id:string;personaId:string;imageFile:string|null;previewFile:string|null;revision:number;createdAt:string;updatedAt:string};
 export type PetCreation = {enabled:boolean;revision:number;items:PetArtwork[]};

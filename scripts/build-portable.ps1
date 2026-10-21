@@ -40,7 +40,7 @@ try {
     # 缺图时拒绝分发；四个预置人设及全部基础状态均须随包提供。
     $personaResources = Join-Path $projectRoot 'resources/personas'
     foreach ($persona in @('gpt','claude','gemini','deepseek')) {
-        foreach ($pose in @('base','standby','click','hungry','eating','sleepy','bored','thinking','chat')) {
+        foreach ($pose in @('base','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','emotion_happy','emotion_angry','emotion_sad','emotion_shy','emotion_afraid','emotion_speechless','lifted')) {
             if (-not (Test-Path -LiteralPath (Join-Path $personaResources "$persona/$pose.png") -PathType Leaf)) {
                 throw "预置人设图片缺失：$persona/$pose.png"
             }

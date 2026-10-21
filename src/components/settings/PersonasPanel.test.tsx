@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../api", () => ({ configurationApi: api, backgroundApi: { get: vi.fn(), save: vi.fn() }, errorMessage: (error: { message: string }) => error.message }));
 
+vi.mock("./PetCreationPanel",()=>({default:({personaId}:{personaId:string})=><div data-testid="picture-library">{personaId}</div>}));
 vi.mock("../ChatBackgroundSettings",()=>({default:()=>null}));
 
 const systemPersona: Persona = {
@@ -238,4 +239,22 @@ describe("PersonasPanel", () => {
 
     expect(api.cancelExpressionGeneration).toHaveBeenCalledWith(currentPersona.id);
   });
+});
+
+it("底部编辑入口立即聚焦表单，取消不保存人设",async()=>{
+  await loadPanel();
+  fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
+  fireEvent.click(screen.getByRole("button",{name:`编辑 ${currentPersona.name}`}));
+  expect(document.activeElement).toBe(screen.getByLabelText("人设名称"));
+  expect(api.updatePersona).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"取消"}));
+  expect(screen.queryByLabelText("人设名称")).toBeNull();
+});
+
+it("人设详情展示该人设的图片库和有效基础颜文字",async()=>{
+  rows=[{...systemPersona,effectiveExpressions:{normal:["(・ω・)"],standby:["(｡-ω-｡)"]}}];
+  render(<PersonasPanel detailRequest={{page:"persona",id:systemPersona.id}}/>);
+  expect((await screen.findByTestId("picture-library")).textContent).toBe(systemPersona.id);
+  expect(screen.getByText("(・ω・)")).toBeTruthy();
+  expect(screen.getByText("(｡-ω-｡)")).toBeTruthy();
 });

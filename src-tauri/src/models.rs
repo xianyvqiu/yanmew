@@ -17,6 +17,8 @@ pub struct Accessory {
     pub position_x: Option<i32>,
     pub position_y: Option<i32>,
     pub scale: i32,
+    pub render_layer: String,
+    pub layer_order: i64,
     pub created_at: String,
 }
 
@@ -97,6 +99,7 @@ pub enum CurrencyReason {
     PluginGame,
     AccessoryCraft,
     AccessorySell,
+    FoodPurchase,
 }
 impl CurrencyReason {
     pub fn as_str(self) -> &'static str {
@@ -106,6 +109,7 @@ impl CurrencyReason {
             Self::PluginGame => "plugin_game",
             Self::AccessoryCraft => "accessory_craft",
             Self::AccessorySell => "accessory_sell",
+            Self::FoodPurchase => "food_purchase",
         }
     }
 }

@@ -1,35 +1,35 @@
-//! 原生坐标采样与游走事件适配；规则和边界计算归 pet::wander。
-use crate::{error::{AppError, AppResult}, pet::{controller::View, wander::{Controller, Layout, Point, Rect, Target}, RandomSource}, runtime::Runtime};
+#[cfg(test)]
+use crate::pet::{wander::{Controller,Point,Rect,Target},RandomSource};
+// 原生窗口游走入口；旧画布计算辅助仅保留用于兼容性测试。
+use crate::{error::{AppError, AppResult}, pet::{controller::View, wander::Layout}, runtime::Runtime};
+#[cfg(test)]
 use std::{sync::Mutex, time::Duration};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 #[tauri::command]
-pub fn update_pet_wander_layout(window: tauri::WebviewWindow, app: tauri::AppHandle,
+pub async fn update_pet_wander_layout(window: tauri::WebviewWindow, app: tauri::AppHandle,
     runtime: tauri::State<'_, Runtime>, layout: Layout) -> AppResult<()> {
     if window.label() != "main" { return Err(AppError::new("FORBIDDEN", "只有宠窗可以更新游走布局")) }
     layout.validate()?;
-    runtime.read(|store,_| {
+    let rt=runtime.inner().clone();
+    let handle=app.clone();
+    let snapshot=tauri::async_runtime::spawn_blocking(move || rt.read(|store,_| {
         let context = crate::persona::context(&store.connection,store.context_revision)?;
         if context.persona_id != layout.persona_id || context.session_id.as_deref() != Some(layout.session_id.as_str())
             || context.context_revision != layout.context_revision { return Err(AppError::new("CONTEXT_CHANGED", "游走上下文已改变")) }
-        app.state::<Mutex<Controller>>().lock().map_err(|_|AppError::storage())?.update(layout)
-    })
+        let desktop=handle.state::<crate::pet_desktop::Desktop>();
+        desktop.update(layout)?; desktop.snapshot()
+    })).await.map_err(|_|AppError::storage())??;
+    crate::pet_desktop::publish(&app,&snapshot);
+    Ok(())
 }
 
 pub fn tick(app: &tauri::AppHandle, view: &View) {
-    let runtime = app.state::<Runtime>();
-    let Ok(sample) = runtime.clock.sample() else { return };
-    let managed = app.state::<Mutex<Controller>>();
-    let target = next_target(managed.inner(), runtime.random.as_ref(), view, sample.running,
-        || app.get_webview_window("chat").is_some_and(|w| w.is_visible().unwrap_or(true)),
-        || sample_environment(app));
-    // 事件发送同样不持有业务锁，窗口回调可立即更新布局。
-    if let Some(target) = target {
-        let _ = app.emit("pet-wander-target",target);
-    }
+    crate::pet_desktop::tick(app,view);
 }
 
 /// 窗口查询可能同步等待主线程，不能与游走锁或随机源锁交叠。
+#[cfg(test)]
 fn next_target(
     managed: &Mutex<Controller>, random: &Mutex<Box<dyn RandomSource + Send>>,
     view: &View, now: Duration, chat_open: impl FnOnce() -> bool,
@@ -51,7 +51,7 @@ fn next_target(
     controller.tick(view, now, chat_open, mouse, foreground, random.as_mut()).ok().flatten()
 }
 
-#[cfg(windows)]
+#[cfg(all(test,windows))]
 fn sample_environment(app: &tauri::AppHandle) -> Option<(Option<Point>,Option<Rect>)> {
     use windows::Win32::{Foundation::{HWND,POINT,RECT}, UI::WindowsAndMessaging::{GetClassNameW,GetCursorPos,GetForegroundWindow,GetWindowRect}};
     let window = app.get_webview_window("main")?;
@@ -73,9 +73,10 @@ fn sample_environment(app: &tauri::AppHandle) -> Option<(Option<Point>,Option<Re
     };
     Some((Some(mouse),obstacle))
 }
-#[cfg(not(windows))]
+#[cfg(all(test,not(windows)))]
 fn sample_environment(_: &tauri::AppHandle) -> Option<(Option<Point>,Option<Rect>)> { None }
 
+#[cfg(test)]
 fn screen_rect(left:i32,top:i32,right:i32,bottom:i32,x:i32,y:i32,scale:f64) -> Rect {
     Rect {x:(f64::from(left)-f64::from(x))/scale,y:(f64::from(top)-f64::from(y))/scale,
         width:(f64::from(right)-f64::from(left))/scale,height:(f64::from(bottom)-f64::from(top))/scale}
@@ -91,7 +92,7 @@ mod tests {
         Layout { persona_id: "1".into(), session_id: "1".into(), context_revision: 0,
             layout_revision: 1, area: Rect { x: 0.0, y: 0.0, width: 300.0, height: 250.0 },
             body: Rect { x: 100.0, y: 100.0, width: 60.0, height: 50.0 },
-            offset: Point::default(), paused: false }
+            offset: Point::default(), paused: false, anchor: None }
     }
     fn view() -> View {
         View { persona_id: "1".into(), session_id: Some("1".into()), context_revision: 0,

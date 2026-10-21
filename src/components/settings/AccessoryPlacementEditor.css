@@ -6,3 +6,5 @@
 .ym-placement-accessory .ym-accessory-visual { width:100%;height:100%;pointer-events:none; }
 
 .ym-placement-accessory .ym-accessory-visual img { width:100%;height:100%;object-fit:contain; }
+
+.ym-placement-body{pointer-events:none}.ym-placement-canvas{isolation:isolate}

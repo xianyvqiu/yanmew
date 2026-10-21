@@ -77,3 +77,5 @@
 .ym-profile-picker-select:disabled { cursor:default; }
 .ym-profile-picker-select span { color:var(--ym-text-secondary); font-size:var(--ym-font-caption); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
 .ym-profile-picker-select strong { overflow-wrap:anywhere; }
+
+.ym-value-change{display:inline-block;margin-left:10px;color:var(--ym-accent);font-size:.8em;pointer-events:none;animation:ym-value-float 1.8s ease-out both}@keyframes ym-value-float{0%{opacity:0;transform:translateY(8px)}20%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}

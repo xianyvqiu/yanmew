@@ -84,6 +84,7 @@ fn positive(value: Option<&Value>) -> Option<u32> {
 }
 /// 只接受确切模型 ID 和明确数值；供应商不提供这些字段时仍然未知。
 pub fn remember(base: &str, model: &str, value: &Value) {
+    crate::native_tools::remember(base,model,value);
     let item = if value.get("id").and_then(Value::as_str) == Some(model) {
         Some(value)
     } else {

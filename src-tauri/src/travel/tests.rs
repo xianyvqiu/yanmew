@@ -77,6 +77,7 @@ fn wait_draw_includes_both_seconds_endpoints_and_stays_on_interaction() {
         scope,
         crate::pet_store::Interaction::Click,
         now(),
+        &mut Fixed(99),
     )
     .unwrap();
     assert_eq!(wait(&c, 1), Some(7));

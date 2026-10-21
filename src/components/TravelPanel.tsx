@@ -1,6 +1,6 @@
 import CardBrowserControls from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { errorMessage, lettersApi, travelApi } from "../api";
 import { travelContextKey, useTravel } from "../hooks/useTravel";
 import { navigation } from "../platform/navigation";
@@ -30,9 +30,19 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
   const [journalOpened, setJournalOpened] = useState(selectedTab === "journals");
   useEffect(() => { if (selectedTab === "journals") setJournalOpened(true); }, [selectedTab]);
   const [selection, setSelection] = useState<string | null>(null);
+  const listRef=useRef<HTMLUListElement>(null);
+  const positions=useRef(new Map<string,number>());
+  const closeTimer=useRef<ReturnType<typeof setTimeout>>();
+  const [closing,setClosing]=useState(false);
+  const capture=()=>{positions.current=new Map(Array.from(listRef.current?.children??[]).map(node=>[(node as HTMLElement).dataset.letterId!,node.getBoundingClientRect().top]));};
+  const openLetter=(id:string)=>{if(selection===id){closeLetter();return;}clearTimeout(closeTimer.current);capture();setClosing(false);setSelection(id);setDetail(null);};
+  const closeLetter=()=>{clearTimeout(closeTimer.current);listRef.current?.querySelector<HTMLButtonElement>(`[data-letter-id="${selection}"] > button`)?.focus({preventScroll:true});if(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches){capture();setSelection(null);return;}setClosing(true);closeTimer.current=setTimeout(()=>{capture();setSelection(null);setClosing(false);},180);};
+  useEffect(()=>()=>clearTimeout(closeTimer.current),[]);
+
   const [detail, setDetail] = useState<Letter | null>(null);
   const [deleting, setDeleting] = useState<Letter | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  useLayoutEffect(()=>{if(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)return;const animations:Animation[]=[];for(const node of Array.from(listRef.current?.children??[])){const previous=positions.current.get((node as HTMLElement).dataset.letterId!);if(previous!==undefined){const delta=previous-node.getBoundingClientRect().top;if(Math.abs(delta)>1){const a=(node as HTMLElement).animate?.([{transform:`translateY(${delta}px)`},{transform:"translateY(0)"}],{duration:240,easing:"cubic-bezier(.22,1,.36,1)"});if(a)animations.push(a);}}}positions.current.clear();return()=>animations.forEach(a=>a.cancel());},[selection,detailLoading,detail]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const alive = useRef(true);
@@ -44,14 +54,14 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
   }, [tripsBrowser.items]);
   useEffect(() => {
     let disposed = false;
-    if (!selection) { setDetail(null); return; }
+    if (!selection) { setDetail(null); setDetailLoading(false); return; }
     setDetailLoading(true);
     void (async () => {
       try {
         let letter = await lettersApi.get(context, selection);
         if (disposed) return;
         if (!letter.isRead) letter = await lettersApi.flags(context, letter.id, { read: true });
-        if (!disposed) setDetail(letter);
+        if (!disposed) {capture();setDetail(letter);}
       } catch (cause) {
         if (disposed) return;
         setError(errorMessage(cause));
@@ -119,19 +129,16 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
     </section> : <section className="ym-page-card" aria-label="邮箱">
       <h2>邮箱</h2>{mailBrowser.loading && <p role="status">正在读取信件…</p>}
       {!mailBrowser.loading && !mailBrowser.total && !mailBrowser.search && !mailBrowser.error && <p className="ym-page-note">还没有信件。出门期间可以寄一封信。</p>}
-      {!selection&&<CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>}
+      <CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
       {mailBrowser.error&&<p role="alert" className="ym-page-error">{mailBrowser.error}</p>}
-      <div className="ym-mailbox-layout" data-detail={!!selection}><ul className="ym-letter-list ym-object-grid">{mailBrowser.items.map(letter => <li key={letter.id}>
-        <button className="ym-letter-item" aria-pressed={selection === letter.id} onClick={() => { if (selection !== letter.id) { setSelection(letter.id); setDetail(null); } }}>
-          <strong>{letter.sender === "user" ? "我寄出的信" : `${personaName}的来信`}</strong>
-          <p className="ym-card-summary">{letter.content}</p>
-          <span className="ym-letter-meta">{letter.isRead ? "已读" : "未读"}{letter.isFavorite && " · 已收藏"}{letter.hasBeenReplied && " · 已回复"}</span>
-          <time>{travelTime(letter.createdAt)}</time>
-          {letter.replyState !== "none" && <span className="ym-letter-meta">{replyStateName[letter.replyState]}</span>}
+      <ul ref={listRef} className="ym-letter-list ym-mailbox-list">{mailBrowser.items.map(letter=><li key={letter.id} data-letter-id={letter.id} className="ym-letter-card" data-expanded={selection===letter.id}>
+        <button className="ym-letter-item" aria-expanded={selection===letter.id} aria-controls={`letter-detail-${letter.id}`} onClick={()=>openLetter(letter.id)}>
+          <span className="ym-letter-card-heading"><strong>{letter.sender==="user"?"我寄出的信":`${personaName}的来信`}</strong><time>{travelTime(letter.createdAt)}</time></span>
+          <span className="ym-card-summary">{letter.content.replace(/\s+/g," ").slice(0,140)}{letter.content.length>140?"…":""}</span>
+          <span className="ym-letter-card-footer"><span className="ym-letter-meta">{letter.isRead?"已读":"未读"}{letter.isFavorite&&" · 已收藏"}{letter.hasBeenReplied&&" · 已回复"}{letter.replyState!=="none"&&` · ${replyStateName[letter.replyState]}`}</span><span className="ym-letter-disclosure">{selection===letter.id?"收起":"查看详情"}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></span>
         </button>
-      </li>)}</ul>
-      <div className="ym-letter-detail" aria-label="信件详情">{detailLoading ? <p role="status">正在读取信件…</p> : detail ? <>
-        <div className="ym-page-heading"><h3>{detail.sender === "user" ? "我寄出的信" : `${personaName}的来信`}</h3><button className="ym-button" onClick={() => { setSelection(null); }}>关闭详情</button></div>
+        {selection===letter.id&&<div id={`letter-detail-${letter.id}`} className="ym-letter-detail" data-closing={closing} role="region" aria-label="信件详情">{detailLoading ? <p role="status">正在读取信件…</p> : detail ? <>
+        <div className="ym-page-heading"><h3>{detail.sender === "user" ? "我寄出的信" : `${personaName}的来信`}</h3><button className="ym-button" onClick={closeLetter}>收起信件</button></div>
         <p className="ym-letter-meta">{travelTime(detail.createdAt)} · {detail.isFavorite ? "已收藏" : "未收藏"}</p>
         <p className="ym-letter-body">{detail.content}</p>
         {detail.replyState !== "none" && <p className="ym-page-note">{replyStateName[detail.replyState]}{detail.replyState === "pending" && `，预计 ${travelTime(detail.replyDueAt)} 之后回复；旅行结束则取消。`}</p>}
@@ -139,7 +146,8 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
         <div className="ym-inline-form"><button className="ym-button" disabled={busy} onClick={() => { void act(() => lettersApi.flags(context, detail.id, {favorite:!detail.isFavorite})); }}>{detail.isFavorite ? "取消收藏" : "收藏"}</button>
           {detail.sender === "ai" && <button className="ym-button" disabled={busy || !canReply} onClick={() => { void act(() => navigation.openLetter(context, detail.travelId!, detail.id)); }}>回信</button>}
           <button className="ym-button" data-variant="danger" disabled={busy} onClick={() => { setDeleting(detail); }}>删除信件</button></div>
-      </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</div></div>
+      </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</div>}
+      </li>)}</ul>
 
     </section>}
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="letter-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>

@@ -115,6 +115,12 @@ impl Context {
             result.push("system", format!("绑定的用户设定：\n{value}"), None);
         }
         result.push("system", prompt, None);
+        let skill_persona:i64=c.query_row("SELECT persona_id FROM sessions WHERE id=?1",[session],|r|r.get(0))?;
+        let favorite=crate::foods::preferences(c,skill_persona)?.favorite_food_id;
+        let favorite_name=favorite.map(|id|c.query_row("SELECT name FROM food_catalog WHERE id=?1",[id],|r|r.get::<_,String>(0))).transpose()?;
+        result.push("system",format!("当前人设保存的喜好食物：{}。这是现有配置，不代表已经拥有或吃到；喜好变更以此配置为准，不能凭回复更改库存或奖励。",favorite_name.as_deref().unwrap_or("尚未设置")),None);
+        let skill_text=crate::skills::context(c,skill_persona)?;
+        if !skill_text.is_empty(){result.push("system",skill_text,None);}
         result.push("system",format!("当前会话饰品制作资格：{}。只有用户确认才扣币，候选不等于已购买。",crate::accessories::craft::hint(store,session)),None);
         let notebook: Option<(String, String)> = c
             .query_row(

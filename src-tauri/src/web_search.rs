@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 mod network;
-pub(crate) use network::public_ip;
+pub(crate) use network::{public_ip,Source};
 mod tools;
 pub use tools::{definitions, SearchSession, RULES};
 #[cfg(test)]

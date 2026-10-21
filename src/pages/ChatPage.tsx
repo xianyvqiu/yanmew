@@ -6,6 +6,8 @@ import { useChat } from "../hooks/useChat";
 import type { Message,ChatImageInput,Session } from "../types";
 import ChatImage from "../components/ChatImage";
 import ChatComposer from "../components/ChatComposer";
+import SkillUpdateConfirmation from "../components/SkillUpdateConfirmation";
+import {useSkillUpdate} from "../hooks/useSkillUpdate";
 import { plainDisplay } from "../components/plainDisplay";
 import CopyMessageButton from "../components/CopyMessageButton";
 import ChatBackgroundSettings from "../components/ChatBackgroundSettings";
@@ -28,6 +30,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
 }) {
   const { context, persona, sessions, userProfiles } = snapshot;
   const chat = useChat(context);
+  const skillUpdate=useSkillUpdate(context);
   const history = useRef<HTMLElement>(null);
   const followHistory = useRef(true);
   useEffect(() => { if (followHistory.current && history.current) history.current.scrollTop = history.current.scrollHeight; }, [chat.active?.partialContent, chat.messages.length]);
@@ -318,6 +321,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
       {loading && <p role="status">正在读取聊天记录…</p>}
       {afterId && <button className="ym-button" disabled={loading || busy || dialogOpen} onClick={() => { void chat.loadMore(); }}>加载后续消息</button>}
     </section>
+    <SkillUpdateConfirmation update={skillUpdate}/>
     {away && <section className="ym-page-card" aria-label="旅行中的会话">
       <h2>{persona.name}出门啦</h2><p>本次旅行期间只能写信。切换人设或会话会取消旅行和待回信，不生成返回奖励。</p>
       <div className="ym-inline-form"><button className="ym-button" disabled={busy || travel.loading || Boolean(travel.error)} onClick={() => { void act(() => navigation.openLetter(context, travel.current!.id)); }}>写信</button>

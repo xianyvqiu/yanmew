@@ -1,11 +1,24 @@
 :root {
-  --ym-ease-standard: cubic-bezier(.2,0,0,1);
-  --ym-duration-fast: 100ms;
-  --ym-duration-normal: 160ms;
-  --ym-duration-slow: 240ms;
+  --ym-ease-standard: cubic-bezier(.22,1,.36,1);
+  --ym-duration-fast: 150ms;
+  --ym-duration-normal: 200ms;
+  --ym-duration-slow: 280ms;
 }
 @keyframes ym-breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(2px) scale(1.01); } }
 @keyframes ym-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.ym-motion-region { min-width:0; }
+/* 仅对交互属性过渡，避免transition:all让排版或流式文字反复重排。 */
+.ym-button { transition:transform var(--ym-duration-normal) var(--ym-ease-standard),opacity var(--ym-duration-normal) var(--ym-ease-standard); }
+.ym-workspace-page details[open] > :not(summary) { animation:ym-appear var(--ym-duration-slow) var(--ym-ease-standard); }
+.ym-workspace-page :is(.ym-skill-body,.ym-profile-form) { animation:ym-appear var(--ym-duration-slow) var(--ym-ease-standard); }
+.pet-options-menu,.pet-menu,.pet-quick-chat { animation:ym-menu-fade var(--ym-duration-normal) var(--ym-ease-standard); }
+@keyframes ym-menu-fade { from { opacity:0; } to { opacity:1; } }
+/* 支持离散过渡的WebView2会在关闭时保留弹窗至动画结束；旧版仍可正常开合。 */
+dialog { opacity:0; translate:0 7px; transition:opacity 180ms var(--ym-ease-standard),translate 180ms var(--ym-ease-standard),display 180ms allow-discrete,overlay 180ms allow-discrete; }
+dialog[open] { opacity:1; translate:0 0; }
+dialog::backdrop { opacity:0; transition:opacity 180ms,display 180ms allow-discrete,overlay 180ms allow-discrete; }
+dialog[open]::backdrop { opacity:1; }
+@starting-style { dialog[open] { opacity:0; translate:0 7px; } dialog[open]::backdrop { opacity:0; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
 }

@@ -1,6 +1,18 @@
+import PetAwayElapsed from "../components/PetAwayElapsed";
+import {usePetAutoCollapse} from "./usePetAutoCollapse";
+import PetMail from "../components/PetMail";
+import {usePetMail} from "./usePetMail";
+import RealMoneyCatchupNotice,{useRealMoneyNotice} from "../components/RealMoneyCatchupNotice";
+import ValueChange from "../components/ValueChange";
+import SkillUpdateConfirmation from "../components/SkillUpdateConfirmation";
+import {useSkillUpdate} from "../hooks/useSkillUpdate";
+import {useFoodFeeding} from "./useFoodFeeding";
+import FoodPicker from "../components/FoodPicker";
+import {foodImage} from "../companionApi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { configurationApi, errorMessage, petApi, travelApi } from "../api";
+import { getPetLiftExpression, petCreationApi, configurationApi, errorMessage, petApi, travelApi } from "../api";
 import { usePetWindow } from "./usePetWindow";
 import { usePetAppearance } from "./usePetAppearance";
 import { usePetActivity } from "./usePetActivity";
@@ -8,6 +20,7 @@ import { usePetChat } from "./usePetChat";
 import { PetChatBubble, PetChatInput } from "../components/PetChat";
 import { usePetMemoryErrors } from "./usePetMemoryErrors";
 import { usePetWander } from "./usePetWander";
+import { usePetDesktop } from "./usePetDesktop";
 import { navigation, type ApplicationPage } from "../platform/navigation";
 import PetArtworkDisplay from "../components/PetArtworkDisplay";
 import AccessoryLayer from "../components/AccessoryLayer";
@@ -26,28 +39,58 @@ export default function PetWindow() {
   const face = useRef<HTMLDivElement>(null);
   const seenTravelIds = useRef(new Set<string>());
   const seenProactiveMessages = useRef(new Set<string>());
-  const { state, error, pending, toggleHidden, setChatOpen, retry, fail } = usePetWindow(root);
+  const { state, error, pending, toggleHidden, setChatOpen, setImageMode, retry, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
   const draggingStarted = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [lifted,setLifted]=useState<{personaId:string;expression:string}|null>(null);
+
   const [startupError, setStartupError] = useState("");
   const appearance = usePetAppearance();
   const activity = usePetActivity();
   const quickChat = usePetChat(activity.view);
-  const [showChatLabel, setShowChatLabel] = useState(false);
+  const [tooltip, setTooltip] = useState<string | null>(null);
+  // 显式属性变化让原生裁剪区域跟随提示出现/收起，不能只依赖CSS :hover。
+  const tooltipEvents = (name: string) => ({
+    "data-tooltip-open": tooltip === name,
+    onPointerEnter: () => setTooltip(name), onPointerLeave: () => setTooltip(null),
+    onFocus: () => setTooltip(name), onBlur: () => setTooltip(null),
+  });
   const [optionsOpen, setOptionsOpen] = useState(false);
   const options = useRef<HTMLDivElement>(null);
   const accessoryContext = { personaId: activity.view?.personaId ?? "", sessionId: activity.view?.sessionId ?? null, contextRevision: activity.view?.contextRevision ?? -1 };
+  const quickMail=usePetMail(accessoryContext,activity.view?.activity==="away");
   const craft = useAccessoryCraft(accessoryContext);
+  const realMoneyNotice=useRealMoneyNotice();
+  const skillUpdate=useSkillUpdate(accessoryContext);
+  const feeding=useFoodFeeding(accessoryContext,!!activity.view?.canInteract,state.hidden,activity.refresh);
+  const desktop = usePetDesktop(accessoryContext.personaId, accessoryContext.contextRevision);
+  const layoutDock = useRef("");
+  useEffect(() => {
+    if (pending || state.hidden || state.revision < 0 || desktop.revision < 0 || layoutDock.current === desktop.dock) return;
+    layoutDock.current = desktop.dock;
+    // 已展开输入时拖入或拖离侧边，按新停靠布局重新计算透明区域。
+    if (state.chatOpen) void setChatOpen(true);
+  }, [desktop.dock, desktop.revision, state.hidden, state.revision, state.chatOpen, pending]);
   const memoryErrors = usePetMemoryErrors(activity.view);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const mainError = activity.view?.error;
   const reportedErrors = [mainError ? `连接错误：${mainError}` : "", ...memoryErrors].filter(Boolean);
-  const visibleError = error || startupError || appearance.error || activity.error || (showErrors ? reportedErrors.join("\n") : "");
-  const wanderStyle = usePetWander(root, face, activity.view, appearance.ready && !state.hidden && !pending
-    && !dragging && !pressed && !menuOpen && !optionsOpen && !state.chatOpen && !quickChat.busy && !quickChat.reply && !visibleError && !craft.preview);
+  const visibleError = error || startupError || appearance.error || activity.error || desktop.error || (showErrors ? reportedErrors.join("\n") : "");
+  const wanderEnabled = desktop.fullscreenWander && desktop.dock === "none" && appearance.ready && !state.hidden && !pending
+    && !feeding.held && !feeding.open && !dragging && !pressed && !menuOpen && !optionsOpen && !state.chatOpen && !quickChat.busy && !quickChat.reply && !visibleError && !craft.preview;
+  const wanderStyle = usePetWander(root, face, activity.view, wanderEnabled);
+  const dailyActivity = ["normal", "standby", "hungry", "bored"].includes(activity.view?.activity ?? "");
+  const dockActivity = dailyActivity || activity.view?.activity === "dormant";
+  const walking = wanderEnabled && dailyActivity && desktop.walking?.personaId === accessoryContext.personaId && desktop.walking?.sessionId === accessoryContext.sessionId && desktop.walking?.contextRevision === accessoryContext.contextRevision ? desktop.walking : null;
+  useEffect(()=>{let alive=true;let sequence=0;const stops:(()=>void)[]=[];setLifted(null);const id=accessoryContext.personaId;const read=()=>{const request=++sequence;if(id)void getPetLiftExpression(id).then(expression=>{if(alive&&request===sequence)setLifted({personaId:id,expression});}).catch(()=>{});};const saveStop=(stop:()=>void)=>{if(alive)stops.push(stop);else stop();};void listen("configuration_changed",read).then(saveStop).catch(()=>{});void petCreationApi.listen(read).then(saveStop).catch(()=>{});read();return()=>{alive=false;sequence++;stops.forEach(stop=>stop());};},[accessoryContext.personaId,accessoryContext.contextRevision]);
+  const petExpression = (dragging?(lifted?.personaId===accessoryContext.personaId?lifted.expression:"(｡>﹏<｡)"):null) || feeding.expression || ((dockActivity && desktop.dock !== "none") || walking ? desktop.expression : undefined) || activity.view?.expression || "(・ω・)";
+  const hungry = activity.view?.activity === "hungry" && !feeding.held && !petExpression.includes("饿");
+  const [collapseMinutes,setCollapseMinutes]=useState(3);
+  useEffect(()=>{let alive=true;const read=()=>void configurationApi.getSettings().then(s=>{if(alive)setCollapseMinutes(Number(s.pet_chat_autocollapse_minutes??3));}).catch(()=>{});read();let stop:(()=>void)|undefined;void listen("configuration_changed",read).then(fn=>{if(alive)stop=fn;else fn();}).catch(()=>{});return()=>{alive=false;stop?.();};},[]);
+  usePetAutoCollapse(root,{minutes:collapseMinutes,visible:state.chatOpen||!!quickChat.reply,hidden:state.hidden,busy:quickChat.busy||quickChat.uploading||(activity.view?.activity==="away"&&quickMail.busy),hasDraft:!!quickChat.draft.trim()||quickChat.images.length>0||(activity.view?.activity==="away"&&!!quickMail.draft.trim()),onCollapse:()=>{quickChat.dismissReply();if(state.chatOpen)void setChatOpen(false);}});
   const openPage = async (page: ApplicationPage) => {
     setOptionsOpen(false);
     try { await navigation.open(page); }
@@ -88,33 +131,47 @@ export default function PetWindow() {
     return () => window.removeEventListener("keydown", close);
   }, [state.chatOpen, setChatOpen]);
   useEffect(() => {
-    const reset = () => { pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false); setOptionsOpen(false); setShowChatLabel(false); };
+    const reset = () => {
+      // 原生拖动可能使 WebView 失焦，不能把鼠标交接误判为松手。
+      if (!draggingStarted.current) { pointerStart.current = null; setDragging(false); setPressed(false); }
+      setOptionsOpen(false); setTooltip(null);
+    };
     window.addEventListener("blur", reset);
     return () => window.removeEventListener("blur", reset);
   }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || pointerStart.current) return;
+    if(feeding.held){event.preventDefault();void feeding.feed();return;}
     setMenuOpen(false); setOptionsOpen(false);
     setPressed(true);
     pointerStart.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     draggingStarted.current = false;
     event.currentTarget.setPointerCapture?.(event.pointerId);
   };
+  useEffect(() => {
+    let disposed = false;
+    const stop = listen("pet-drag-finished", () => {
+      if (disposed) return;
+      pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
+    });
+    void stop.catch(fail);
+    return () => { disposed = true; void stop.then(fn => fn()).catch(() => {}); };
+  }, [fail]);
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const start = pointerStart.current;
     if (!start || start.pointerId !== event.pointerId || draggingStarted.current) return;
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return;
     draggingStarted.current = true; setDragging(true);
-    // 原生拖动可能吞掉 pointerup；结束后清理旧指针并恢复呼吸。
-    void petApi.dragging(true).catch(fail).then(() => getCurrentWindow().startDragging()).catch(fail).finally(() => {
-      void petApi.dragging(false).catch(fail);
-      if (pointerStart.current === start) {
-        pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
-      }
+    // 请求返回时拖动仍可能进行，正常结束由 Windows 通知；失败才在此恢复。
+    void petApi.dragging(true).then(() => getCurrentWindow().startDragging()).catch(async cause => {
+      fail(cause); await petApi.dragging(false).catch(fail);
+      pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
     });
   };
   const resetPointer = (event: PointerEvent<HTMLDivElement>) => {
+    // 系统接管拖动会取消网页指针；真正结束由 pet-drag-finished 通知。
+    if (draggingStarted.current) return;
     if (pointerStart.current?.pointerId === event.pointerId) {
       pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
     }
@@ -128,41 +185,46 @@ export default function PetWindow() {
   return (
     <div ref={root} data-testid="pet-window" className="pet-window" data-hidden={state.hidden}
       data-transitioning={pending} data-chat-open={Boolean(state.chatOpen)}
+      data-dock={desktop.dock} data-walking={walking?.direction}
+      onContextMenuCapture={event => { if (feeding.held || Date.now() - feeding.cancelledAt.current < 500) { event.preventDefault(); event.stopPropagation(); feeding.cancel(); } }}
       data-dragging={dragging} data-error={Boolean(visibleError)} data-ready={appearance.ready} style={{...appearance.style,...wanderStyle}}>
-      <button className="ym-button pet-visibility" data-pet-interactive
+      <button className="ym-button pet-visibility" data-pet-interactive {...tooltipEvents("visibility")}
         data-variant={error ? "danger" : undefined}
         disabled={pending || (state.revision < 0 && !error)}
         onClick={() => { void (state.revision < 0 ? retry() : toggleHidden()); }}
-        title={error || (pending ? "正在更新宠窗" : state.hidden ? "显示宠窗" : "隐藏宠窗")}
+        aria-label={state.revision < 0 ? (error ? "重试连接" : "正在连接…") : state.hidden ? "显示宠窗" : "隐藏宠窗"}
         aria-description={error || undefined} aria-busy={pending}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           {state.hidden ? <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>
             : <><path d="M3 3l18 18M10.6 6.1A12.8 12.8 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.5M6.1 6.9A18 18 0 0 0 2 12s3.5 6 10 6c1.6 0 3.1-.4 4.4-1"/></>}
         </svg>
-        <span>{state.revision < 0 ? (error ? "重试连接" : "正在连接…") : state.hidden ? "显示宠窗" : "隐藏宠窗"}</span>
+        <span className="pet-tooltip" data-pet-interactive aria-hidden="true">{error || (pending ? "正在更新宠窗" : state.hidden ? "显示宠窗" : "隐藏宠窗")}</span>
       </button>
-      {!!reportedErrors.length && !state.hidden && <button className="ym-button pet-health" data-pet-interactive
+      {!!reportedErrors.length && !state.hidden && <button className="ym-button pet-health" data-pet-interactive {...tooltipEvents("health")}
         data-variant="danger" aria-label="查看错误" aria-expanded={showErrors}
-        onClick={() => { setShowErrors(value => !value); setMenuOpen(false); }}>!</button>}
+        onClick={() => { setShowErrors(value => !value); setMenuOpen(false); }}>!<span className="pet-tooltip" data-pet-interactive aria-hidden="true">查看错误</span></button>}
       {!state.hidden && <>
         <div className="pet-options" ref={options}>
-          <button className="ym-button pet-more" data-pet-interactive aria-label="更多操作" title="更多操作" aria-haspopup="menu" aria-expanded={optionsOpen}
-            onClick={() => { setOptionsOpen(value => !value); setMenuOpen(false); setShowErrors(false); }}>...</button>
+          <button className="ym-button pet-more" data-pet-interactive {...tooltipEvents("more")} aria-label="更多操作" aria-haspopup="menu" aria-expanded={optionsOpen}
+            onClick={() => { setOptionsOpen(value => !value); setMenuOpen(false); setShowErrors(false); }}>...<span className="pet-tooltip" data-pet-interactive aria-hidden="true">更多操作</span></button>
           {optionsOpen && <div className="pet-options-menu" data-pet-interactive role="menu" aria-label="宠窗更多操作">
             <button className="ym-button" role="menuitem" onClick={() => { void openPage("chat"); }}>聊天详情</button>
             <button className="ym-button" role="menuitem" onClick={() => { void openPage("settings"); }}>设置</button>
+            <button className="pet-wander-switch" role="switch" aria-label="全屏游走" aria-checked={desktop.fullscreenWander}
+              disabled={desktop.busy || desktop.revision < 0} onClick={() => void desktop.toggle()}>
+              <span>全屏游走</span><span className="pet-switch-track" aria-hidden="true"><span /></span>
+            </button>
           </div>}
         </div>
         <div className="pet-chat-entry">
-          <button className="ym-button pet-chat-toggle" data-pet-interactive aria-label="聊天" aria-expanded={Boolean(state.chatOpen)} aria-controls="pet-quick-chat"
-            onPointerEnter={() => setShowChatLabel(true)} onPointerLeave={() => setShowChatLabel(false)} onFocus={() => setShowChatLabel(true)} onBlur={() => setShowChatLabel(false)}
+          <button className="ym-button pet-chat-toggle" data-pet-interactive {...tooltipEvents("chat")} data-unread={quickMail.hasUnread} aria-label={activity.view?.activity==="away"?"邮箱":"聊天"} aria-expanded={Boolean(state.chatOpen)} aria-controls="pet-quick-chat"
             disabled={pending || state.revision < 0} onClick={() => { setOptionsOpen(false); setMenuOpen(false); void setChatOpen(!state.chatOpen); }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 1 1 18 0Z"/><path d="M7 10h8M7 14h5"/></svg>
-          </button>
-          {showChatLabel && <span className="pet-chat-tooltip" data-pet-interactive aria-hidden="true">聊天</span>}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{activity.view?.activity==="away"?<><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></>:<><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 1 1 18 0Z"/><path d="M7 10h8M7 14h5"/></>}</svg>
+            <span className="pet-tooltip" data-pet-interactive aria-hidden="true">{activity.view?.activity==="away"?"邮箱":"聊天"}</span>
+          </button>{quickMail.hasUnread&&<span className="pet-new-mail" data-pet-interactive>有新信件！</span>}
         </div>
-        {state.chatOpen && <div id="pet-quick-chat"><PetChatInput chat={quickChat} hasSession={Boolean(activity.view?.sessionId)} away={activity.view?.activity === "away"} pending={pending}
-          onDetails={() => { void openPage("chat"); }} onLetter={() => { void openLetter(); }} /></div>}
+        {state.chatOpen && <div id="pet-quick-chat">{activity.view?.activity==="away"?<PetMail mail={quickMail} onInbox={()=>{void openPage("mailbox");}}/>:<PetChatInput chat={quickChat} hasSession={Boolean(activity.view?.sessionId)} away={false} pending={pending}
+          onDetails={() => { void openPage("chat"); }} onLetter={() => { void openLetter(); }} />}</div>}
       </>}
       {visibleError && !state.hidden && <div className="pet-error" data-pet-interactive role="alert" tabIndex={0}>
         <strong><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 6v7m0 3v2"/></svg>暂时遇到一点问题</strong>
@@ -174,24 +236,32 @@ export default function PetWindow() {
       </div>}
       {menuOpen && !state.hidden && <div className="pet-menu" data-pet-interactive aria-label="桌宠互动">
         <p>{activity.view?.intimacy == null ? "当前未选择会话" : `亲密度 ${activity.view.intimacy} / 999${activity.view.intimacy === 999 ? " · 已达上限" : ""}`}</p>
+        <div className="pet-menu-actions">
         <button className="ym-button" disabled={activity.pending || !activity.view?.canInteract}
-          onClick={() => { setMenuOpen(false); void activity.interact("feed"); }}>喂食</button>
+          onClick={() => { setMenuOpen(false); void feeding.choose(); }}>投喂</button>
         <button className="ym-button" disabled={activity.pending || !activity.view?.canInteract}
           onClick={() => { setMenuOpen(false); void activity.interact("stroke"); }}>摸摸</button>
         <button className="ym-button" onClick={() => { setMenuOpen(false); void openPage("accessories"); }}>饰品</button>
+        </div>
       </div>}
+      {!state.hidden && feeding.open && <FoodPicker feeding={feeding}/>}
+      {!state.hidden && feeding.error && <div className="pet-food-status" data-pet-interactive role="alert">{feeding.error}<button className="ym-button" onClick={feeding.cancel}>取消投喂</button></div>}
+      {!state.hidden && feeding.held && <div className="pet-food-status" data-pet-interactive>拿着 {feeding.held.name} · 右键取消<button className="ym-button" disabled={feeding.busy} onClick={feeding.cancel}>取消</button></div>}
       {!state.hidden && <div ref={face} data-pet-interactive aria-label="桌宠" role="img" className="pet-face"
-        data-away={activity.view?.activity === "away"}
+        data-away={activity.view?.activity === "away"} data-hungry={hungry} title={hungry ? "饿～，可以投喂一点食物" : undefined}
         onContextMenu={event => { event.preventDefault(); setMenuOpen(value => !value); setShowErrors(false); }}
         onLostPointerCapture={resetPointer} onPointerCancel={resetPointer}
         onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={releasePointer}>
         {activity.view?.sessionId && activity.view.activity !== "away" && <AccessoryLayer key={`${accessoryContext.personaId}:${accessoryContext.sessionId}:${accessoryContext.contextRevision}`} context={accessoryContext} face={face} canvas={root} />}
-        <PetArtworkDisplay personaId={accessoryContext.personaId} expression={activity.view?.expression || "(・ω・)"} />
+        {feeding.feedback&&<div key={feeding.feedback.receipt.actionId} className="pet-food-feedback"><img src={foodImage(feeding.feedback.food.id)} alt=""/></div>}
+        <div className="pet-intimacy-reward"><ValueChange key={`${accessoryContext.personaId}:${accessoryContext.sessionId}:${accessoryContext.contextRevision}`} value={activity.view?.intimacy?.toString()} unit="亲密度"/></div>
+        <PetAwayElapsed view={activity.view}/><PetArtworkDisplay personaId={accessoryContext.personaId} dock={desktop.dock} expression={petExpression} onImageMode={setImageMode} />
+        {hungry && <span className="pet-hunger-hint">饿～</span>}
       </div>}
       <PetReminderNotifications hidden={state.hidden} ready={appearance.ready && state.revision >= 0 && !pending}
         context={activity.view ? { personaId: activity.view.personaId, contextRevision: activity.view.contextRevision } : undefined}
         unobscured={!visibleError && !menuOpen && !optionsOpen}
-        stateBubble={!dragging && (craft.preview || craft.error ? <AccessoryCraftPresentation context={accessoryContext} craft={craft} pet /> : activity.view?.activity === "away" ? <PetTravelBubble view={activity.view} seenTravelIds={seenTravelIds.current} /> : quickChat.reply ? <PetChatBubble chat={quickChat} onDetails={() => { void openPage("chat"); }} /> : <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />)} />
+        stateBubble={!dragging && (realMoneyNotice.visible ? <RealMoneyCatchupNotice notice={realMoneyNotice}/> : skillUpdate.preview || skillUpdate.error ? <SkillUpdateConfirmation update={skillUpdate} pet/> : craft.preview || craft.error ? <AccessoryCraftPresentation context={accessoryContext} craft={craft} pet /> : activity.view?.activity === "away" ? <PetTravelBubble view={activity.view} seenTravelIds={seenTravelIds.current} /> : quickChat.reply ? <PetChatBubble chat={quickChat} onDetails={() => { void openPage("chat"); }} /> : <PetConversationBubbles view={activity.view} seenMessageIds={seenProactiveMessages.current} />)} />
     </div>
   );
 }

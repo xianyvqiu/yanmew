@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { errorMessage, festivalsApi } from "../../api";
 import type { CurrentContext, CustomFestivalInput, CustomFestivalRecord } from "../../types";
 import "./FestivalPanel.css";
-import CalendarView from "./CalendarView";
+import CalendarView from "./RealMoneyCalendar";
+import "./RealMoneyPanel.css";
 
 const kinds = { birthday: "生日", anniversary: "纪念日", festival: "固定节日", custom: "自定义日期" };
 const emptyDraft = (): CustomFestivalInput => ({ kind: "birthday", name: "", calendarType: "solar", month: 1, day: 1, isLeapMonth: false, blessing: "", note: null });

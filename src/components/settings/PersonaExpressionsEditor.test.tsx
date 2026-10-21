@@ -1,0 +1,35 @@
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import PersonaExpressionsEditor from "./PersonaExpressionsEditor";
+import type { Persona } from "../../types";
+const save = vi.hoisted(() => vi.fn());
+vi.mock("../../api", () => ({ configurationApi: { saveExpressions: save }, errorMessage: (e: Error) => e.message }));
+const library: Record<string, unknown> = Object.fromEntries(["normal","lifted","walk_left","walk_right","peek_left","peek_right","rest_sit","rest_lie","standby","hungry","craving","craving_favorite","eating","eating_favorite","sleepy","bored","thinking"].map(key => [key,["(^_^)"]]));
+library.click = {happy:["(^_^)"],surprised:["(O_O)"],shy:["(>_<)"]};
+const persona = { id:"1", expressions:null, effectiveExpressions:library } as Persona;
+afterEach(cleanup);
+beforeEach(() => { save.mockReset(); });
+it("每栏可直接编辑，保存只调用本地命令并保留符号与空格", async () => {
+  const onSaved=vi.fn(); save.mockImplementation(async (_id,_expected,value) => ({...persona,expressions:value,effectiveExpressions:value}));
+  render(<PersonaExpressionsEditor persona={persona} disabled={false} onSaved={onSaved}/>);
+  expect((screen.getByLabelText("日常颜文字") as HTMLTextAreaElement).value).toBe("(^_^)");
+  fireEvent.change(screen.getByLabelText("日常颜文字"),{target:{value:" /_*\\ \n(^o^)"}});
+  fireEvent.click(screen.getByRole("button",{name:"保存颜文字"}));
+  await screen.findByText("颜文字已保存");
+  expect(save).toHaveBeenCalledWith("1",null,expect.objectContaining({normal:[" /_*\\ ","(^o^)"],click:library.click}));
+  expect(onSaved).toHaveBeenCalledTimes(1);
+});
+it("后台更新不覆盖未保存草稿，冲突显示错误并结束等待", async () => {
+  save.mockRejectedValue(new Error("表情库已更新"));
+  const view=render(<PersonaExpressionsEditor persona={persona} disabled={false} onSaved={()=>{}}/>);
+  fireEvent.change(screen.getByLabelText("待机颜文字"),{target:{value:"(-_-)"}});
+  view.rerender(<PersonaExpressionsEditor persona={{...persona,expressions:library,effectiveExpressions:{...library,standby:["(o_o)"]}}} disabled={false} onSaved={()=>{}}/>);
+  expect((screen.getByLabelText("待机颜文字") as HTMLTextAreaElement).value).toBe("(-_-)");
+  fireEvent.click(screen.getByRole("button",{name:"保存颜文字"}));
+  await screen.findByRole("alert");
+  await waitFor(()=>expect(screen.getByRole("button",{name:"保存颜文字"}).hasAttribute("disabled")).toBe(false));
+  expect(save.mock.calls[0][1]).toBeNull();
+  expect((screen.getByLabelText("待机颜文字") as HTMLTextAreaElement).value).toBe("(-_-)");
+  await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"取消修改"}));});
+  expect((screen.getByLabelText("待机颜文字") as HTMLTextAreaElement).value).toBe("(o_o)");
+});

@@ -181,6 +181,7 @@ export const configurationApi = {
   listPersonas: () => invoke<Persona[]>("list_personas"),
   createPersona: (input: PersonaInput) => invoke<Persona>("create_persona", { input }),
   generateExpressions: (id: RecordId) => invoke<ExpressionLibrary>("generate_expressions", { id }),
+  saveExpressions: (id: RecordId, expected: Record<string, unknown> | null, library: Record<string, unknown>) => invoke<Persona>("save_persona_expressions", { id, expected, library }),
   cancelExpressionGeneration: (id: RecordId) => invoke<void>("cancel_expression_generation", { id }),
   updatePersona: (id: RecordId, input: PersonaInput) => invoke<Persona>("update_persona", { id, input }),
   deletePersona: (id: RecordId) => invoke<CurrentContext>("delete_persona", { id }),
@@ -361,3 +362,11 @@ export const petCreationApi = {
  listen:(receive:()=>void)=>listen("pet_creation_changed",receive),
 };
 export const saveAccessoryPlacement=(context:CurrentContext,id:string,x:number|null,y:number|null,scale:number)=>invoke<Accessory>("save_accessory_placement",{context,id,x,y,scale});
+
+export const moveAccessoryLayer=(context:CurrentContext,id:string,plane:"front"|"back",action:"keep"|"up"|"down"|"top"|"bottom")=>invoke<Accessory>("move_accessory_layer",{context,id,plane,action});
+
+export const getPetLiftExpression=(personaId:string)=>invoke<string>("get_pet_lift_expression",{personaId});
+
+export const uploadAccessoryCraft=(context:CurrentContext,name:string,description:string,data:number[])=>invoke("upload_accessory_craft",{context,name,description,data});
+
+export const getPetMailStatus=(context:CurrentContext)=>invoke<{travelId:string|null;unread:number}>("get_pet_mail_status",{...context});

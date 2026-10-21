@@ -71,11 +71,12 @@ fn appearance_persists_is_scoped_and_survives_background_reset() {
 #[test]
 fn invalid_appearance_is_rejected_and_concurrent_style_changes_conflict() {
     let f = Fixture::new();
+    let original = f.record().appearance;
     for (style,color) in [("unknown","#123456"),("solid","red"),("outline","#12345g")] {
         let mut input=f.input(None);
         input.appearance=Some(Appearance { bubble_style:style.into(),user_text_color:Some(color.into()),assistant_text_color:None });
         assert_eq!(save(&f.runtime,1,None,input).unwrap_err().code,"VALIDATION_ERROR");
-        assert_eq!(f.record().appearance,Appearance::default());
+        assert_eq!(f.record().appearance,original);
     }
     let stale=f.input(None);
     let mut input=f.input(None); input.appearance=Some(Appearance { bubble_style:"outline".into(),..Appearance::default() });

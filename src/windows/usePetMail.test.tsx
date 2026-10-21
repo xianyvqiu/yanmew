@@ -1,0 +1,9 @@
+import{act,renderHook,waitFor,cleanup}from"@testing-library/react";
+import{afterEach,beforeEach,expect,it,vi}from"vitest";
+import{usePetMail}from"./usePetMail";
+const api=vi.hoisted(()=>({status:vi.fn(),send:vi.fn(),listen:vi.fn(),travelListen:vi.fn()}));
+vi.mock("../api",()=>({getPetMailStatus:api.status,lettersApi:{send:api.send,listen:api.listen},travelApi:{listen:api.travelListen},errorMessage:(e:Error)=>e.message}));
+const context={personaId:"1",sessionId:"2",contextRevision:0};
+afterEach(cleanup);beforeEach(()=>{vi.resetAllMocks();api.status.mockResolvedValue({travelId:"10",unread:1});api.listen.mockResolvedValue(()=>{});api.travelListen.mockResolvedValue(()=>{});api.send.mockResolvedValue({});});
+it("旧旅行草稿可清空但不会寄往新旅行，查询未读不标记已读",async()=>{let refresh:(e:{sessionId:string})=>void=()=>{};api.listen.mockImplementation(async cb=>{refresh=cb;return()=>{};});const{result}=renderHook(()=>usePetMail(context,true));await waitFor(()=>expect(result.current.ready).toBe(true));act(()=>{result.current.begin();result.current.setDraft("旧旅行的信");});expect(result.current.hasUnread).toBe(true);api.status.mockResolvedValue({travelId:"11",unread:0});await act(async()=>{refresh({sessionId:"2"});});await waitFor(()=>expect(result.current.canSend).toBe(false));await act(async()=>{await result.current.send();});expect(api.send).not.toHaveBeenCalled();act(()=>result.current.setDraft(""));act(()=>result.current.setDraft("新旅行的信"));await act(async()=>{await result.current.send();});expect(api.send).toHaveBeenCalledWith(context,{travelId:"11",content:"新旅行的信",replyToId:null});});
+it("离开出行状态后取消未读提示，不自动寄信",async()=>{const{result,rerender}=renderHook(({away})=>usePetMail(context,away),{initialProps:{away:true}});await waitFor(()=>expect(result.current.hasUnread).toBe(true));rerender({away:false});expect(result.current.hasUnread).toBe(false);expect(api.send).not.toHaveBeenCalled();});

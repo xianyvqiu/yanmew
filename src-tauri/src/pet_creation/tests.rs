@@ -124,14 +124,14 @@ fn transparent_input_keeps_frame_and_rejects_opaque() {
 #[test]
 fn upgrade_v11_keeps_old_mode_and_default_accessory_position() {
     let mut c = crate::db::test_database();
-    c.execute_batch("DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale; PRAGMA user_version=11;").unwrap();
+    c.execute_batch("ALTER TABLE accessories DROP COLUMN render_layer;ALTER TABLE accessories DROP COLUMN layer_order;DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale; PRAGMA user_version=11;").unwrap();
     crate::db::initialize(&mut c).unwrap();
     assert!(!library(&c, 1).unwrap().enabled);
     assert_eq!(library(&c, 1).unwrap().items.len(), 0);
     assert_eq!(
         c.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        14
+        19
     );
     crate::db::initialize(&mut c).unwrap();
 }

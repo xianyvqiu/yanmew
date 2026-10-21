@@ -39,7 +39,7 @@ export function useAccessories(context: CurrentContext | null, wornOnly = false)
           // 接口必须按 ID 倒序推进；异常分页不能形成无限查询。
           if (next === beforeId) break;
           beforeId = next;
-        } while (wornOnly ? !collected.length && rows.length === 200 : !append && page < pageDepth && rows.length === 30);
+        } while (wornOnly ? rows.length === 200 : !append && page < pageDepth && rows.length === 30);
         if (append && !wornOnly) pageDepth++;
         const combined = append ? [...items, ...collected] : collected;
         items = combined.filter((item, index) => combined.findIndex(row => row.id === item.id) === index);

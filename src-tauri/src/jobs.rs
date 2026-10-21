@@ -20,9 +20,16 @@ pub async fn run(
     let mut state_bubbles = crate::pet::state_bubbles::Tracker::default();
     let mut calendar_date = None;
     let mut calendar_error = None;
+    let mut real_money = crate::real_money::cycles::Worker::default();
     loop {
         if runtime.jobs_cancel.check().is_err() {
             break;
+        }
+        let money_runtime=runtime.clone();
+        match tauri::async_runtime::spawn_blocking(move||money_runtime.read(|s,_|real_money.tick(&mut s.connection,money_runtime.clock.sample()?.utc)).map(|changed|(real_money,changed))).await {
+            Ok(Ok((worker,changed)))=>{real_money=worker;if changed{proactive_events.real_money_changed();}},
+            Ok(Err(error))=>{real_money=Default::default();proactive_events.real_money_failed(&error);},
+            Err(_)=>{real_money=Default::default();proactive_events.real_money_failed(&crate::error::AppError::storage());},
         }
         // 沿用唯一循环；日期变化（含跨年、时区切换和日期回拨）时才提交日历写事务。
         if let Ok(sample) = runtime.clock.sample() {

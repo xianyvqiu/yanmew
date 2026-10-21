@@ -10,6 +10,8 @@ vi.mock("../../api",()=>({configurationApi:api,festivalsApi:{month:api.month,lis
 vi.mock("./EmbeddingProvidersPanel",()=>({default:()=>null}));
 vi.mock("./WebSearchProvidersPanel",()=>({default:()=>null}));
 vi.mock("../ChatBackgroundSettings",()=>({default:()=>null}));
+vi.mock("./PetCreationPanel",()=>({default:()=>null}));
+vi.mock("./PersonaCompanionSettings",()=>({default:()=>null}));
 vi.mock("../../hooks/useGamePlugins",()=>({useGamePlugins:()=>({plugins:[{pluginId:"built",name:"自带游戏",description:"小游戏",author:"作者",installedVersion:"1.0.0",installedAt:"2026-10-14T00:00:00Z",packageStatus:"available",isBundled:true,isEnabled:true},{pluginId:"community",name:"社区游戏",description:"小游戏",author:"作者",installedVersion:"1.0.0",installedAt:"2026-10-14T01:00:00Z",packageStatus:"available",isBundled:false,isEnabled:true}],loading:false,error:"",refresh:vi.fn()})}));
 const provider={id:"1",name:"共享连接",baseUrl:"https://example.invalid/v1",model:"chat-model",hasApiKey:true,isActive:true,memoryIsActive:false,maxOutputTokens:32768,contextWindowOverride:null,capacity:{contextWindow:null,maxOutputTokens:null,source:"unknown",estimated:true},purposes:["chat"]};
 const persona={id:"1",name:"电子小猫",prompt:"当前设定正文",initialPrompt:"初始设定正文",selfEvolveEnabled:true,lastEvolvedAt:null,color:"#ffb6c1",chatBgFile:null,chatBgOpacity:85,chatBgBlur:0,isActive:true,isBuiltin:true,expressions:null};

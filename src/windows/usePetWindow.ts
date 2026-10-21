@@ -12,6 +12,7 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
   const [pending, setPending] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
   const operationPending = useRef(false);
+  const imageMode = useRef(false);
   const mounted = useRef(false);
   const accept = useCallback((incoming: PetSnapshot) => {
     if (mounted.current) setState((current) => newestSnapshot(current, incoming));
@@ -123,6 +124,14 @@ export function usePetWindow(root: RefObject<HTMLDivElement>) {
       try { accept(await invoke<PetSnapshot>("get_pet_window_state")); } catch (refreshError) { fail(refreshError); }
     } finally { operationPending.current = false; if (mounted.current) setPending(false); }
   };
+  const setImageMode = useCallback((enabled: boolean) => {
+    if (imageMode.current === enabled) return;
+    imageMode.current = enabled;
+    void invoke<PetSnapshot>("set_pet_artwork_layout", { imageMode: enabled }).then(accept).catch(cause => {
+      if (imageMode.current === enabled) imageMode.current = !enabled;
+      fail(cause);
+    });
+  }, [accept, fail]);
   const retry = () => { setError(""); setConnectionAttempt((value) => value + 1); };
-  return { state, error, pending, toggleHidden, setChatOpen, retry, fail };
+  return { state, error, pending, toggleHidden, setChatOpen, setImageMode, retry, fail };
 }

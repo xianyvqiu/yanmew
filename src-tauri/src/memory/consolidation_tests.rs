@@ -3,6 +3,16 @@ use crate::ai::tests::{Response, Server};
 use serde_json::json;
 
 const SHORT: &str = "用户询问猫的生活习惯，助手说明猫喜欢安静环境并需要规律喂食。";
+#[test]
+fn interleaved_sessions_and_interrupted_round_never_enter_another_sessions_merge(){
+ let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");set_k(&runtime,2);
+ let other=runtime.read(|s,_|{let session=crate::sessions::create(&mut s.connection,1)?;crate::error::parse_id(&session.id)}).unwrap();
+ let first=complete(&runtime,1);complete(&runtime,other);
+ runtime.read(|s,_|{s.connection.execute("INSERT INTO chat_rounds(session_id,status,stop_reason,created_at) VALUES(1,'interrupted','unknown','a')",[])?;Ok(())}).unwrap();
+ let second=complete(&runtime,1);complete(&runtime,other);let trigger=complete(&runtime,1);
+ let (snapshot,lease)=capture(&runtime,trigger).unwrap().unwrap();assert_eq!(snapshot.window.iter().map(|s|s.round_id).collect::<Vec<_>>(),vec![first.round_id,second.round_id,trigger.round_id]);
+ assert_eq!(commit(&runtime,&snapshot,&lease,&value()).unwrap(),Outcome::Saved);assert_eq!(pending(&runtime,1),vec![trigger.round_id]);assert!(memories(&runtime,other).is_empty());
+}
 struct Sink;
 impl crate::events::MemoryEventSink for Sink {
     fn memory_changed(&self) {}

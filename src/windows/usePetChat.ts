@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "../hooks/useChat";
-import type { ChatRequestSnapshot, PetActivity } from "../types";
+import type { ChatRequestSnapshot, PetActivity, ChatImageInput } from "../types";
 
 /** 只追踪宠窗实际提交成功的回合；消息、流式事件和保存均复用现有聊天服务。 */
 export function usePetChat(view: PetActivity | null) {
@@ -9,9 +9,11 @@ export function usePetChat(view: PetActivity | null) {
   const currentKey = useRef(key);
   currentKey.current = key;
   const [draft, setDraft] = useState("");
+  const [images,setImages]=useState<ChatImageInput[]>([]);
+  const [uploading,setUploading]=useState(false);
   const [target, setTarget] = useState<ChatRequestSnapshot | null>(null);
   const chat = useChat(context, { onSubmitted: receipt => setTarget(receipt) });
-  useEffect(() => { setDraft(""); setTarget(null); }, [key]);
+  useEffect(() => { setDraft(""); setImages([]); setUploading(false); setTarget(null); }, [key]);
   useEffect(() => {
     // 另一个入口开始新一轮后，不让上一轮的气泡继续占据头顶。
     if (target && chat.active && target.requestId !== chat.active.requestId) setTarget(null);
@@ -23,10 +25,10 @@ export function usePetChat(view: PetActivity | null) {
   const send = async () => {
     if (!context.sessionId || view?.activity === "away") return;
     const submittedKey = key;
-    if (await chat.send(draft)) { if (currentKey.current === submittedKey) setDraft(""); }
+    if (await (images.length?chat.send(draft,images):chat.send(draft))) { if (currentKey.current === submittedKey) { setDraft(""); setImages([]); } }
   };
   return {
-    ...chat, draft, setDraft, send,
+    ...chat, draft, setDraft, images, setImages, uploading,setUploading,attachmentOwnerKey:key, send,
     dismissReply: () => setTarget(null),
     reply: owned ? {
       text: active?.partialContent || message?.content || (chat.busy ? "正在想怎么回答你…" : "这次回复暂未完成，请查看聊天详情。"),

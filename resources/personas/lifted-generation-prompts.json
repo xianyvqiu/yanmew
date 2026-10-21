@@ -1,0 +1,45 @@
+[
+  {
+    "role": "gpt",
+    "file": "gpt/lifted.png",
+    "prompt": "Create a clean transparent-background anime chibi STICKER ASSET. Image 1 defines the exact character identity, clothes, face, hair and species. Image 2 is ONLY a reference for being picked up at the back of the neck by a visible anime hand: do not copy its blue character. Draw the character from Image 1 being held up by the nape/scruff of the neck, with one anime hand reaching in from the upper-right. The fingers must be BEHIND AND BELOW THE EAR at the back of the neck, clearly holding the nape/collar at neck height, NOT gripping the top of the head, hair, ears, horns or a tall stretched cloth handle. A slight three-quarter side view with the head tilting forward makes the neck grip visible. Entire body dangles suspended, feet off ground. White-haired purple-eyed dragon girl. Sulky, blushing, indignant, small fists at chest, curled dragon tail. Keep all limbs, hair, tail and wings fully inside frame, matching the original detailed chibi rendering. The only visible pixels are the crisp outlined character and the hand. Flat fully transparent alpha outside the silhouette. No shadow, glow, gradient, light bloom, fog, colored backdrop or scenery. No text. PNG sprite.",
+    "references": [
+      "gpt/base.png",
+      "deepseek/lifted.png"
+    ],
+    "transparent_background": true,
+    "tool": "imagegen"
+  },
+  {
+    "role": "claude",
+    "file": "claude/lifted.png",
+    "prompt": "Create a clean transparent-background anime chibi STICKER ASSET. Image 1 defines the exact character identity, clothes, face, hair and species. Image 2 is ONLY a reference for being picked up at the back of the neck by a visible anime hand: do not copy its blue character. Draw the character from Image 1 being held up by the nape/scruff of the neck, with one anime hand reaching in from the upper-right. The fingers must be BEHIND AND BELOW THE EAR at the back of the neck, clearly holding the nape/collar at neck height, NOT gripping the top of the head, hair, ears, horns or a tall stretched cloth handle. A slight three-quarter side view with the head tilting forward makes the neck grip visible. Entire body dangles suspended, feet off ground. Orange-haired orange-eyed elegant scholar girl. Startled but trying to remain composed, hands gently lowered, knees together. Keep all limbs, hair, tail and wings fully inside frame, matching the original detailed chibi rendering. The only visible pixels are the crisp outlined character and the hand. Flat fully transparent alpha outside the silhouette. No shadow, glow, gradient, light bloom, fog, colored backdrop or scenery. No text. PNG sprite.",
+    "references": [
+      "claude/base.png",
+      "deepseek/lifted.png"
+    ],
+    "transparent_background": true,
+    "tool": "imagegen"
+  },
+  {
+    "role": "gemini",
+    "file": "gemini/lifted.png",
+    "prompt": "Create a clean transparent-background anime chibi STICKER ASSET. Image 1 defines the exact character identity, clothes, face, hair and species. Image 2 is ONLY a reference for being picked up at the back of the neck by a visible anime hand: do not copy its blue character. Draw the character from Image 1 being held up by the nape/scruff of the neck, with one anime hand reaching in from the upper-right. The fingers must be BEHIND AND BELOW THE EAR at the back of the neck, clearly holding the nape/collar at neck height, NOT gripping the top of the head, hair, ears, horns or a tall stretched cloth handle. A slight three-quarter side view with the head tilting forward makes the neck grip visible. Entire body dangles suspended, feet off ground. Purple-haired red-and-gold heterochromia catgirl. Startled cat ears, little curled paws at chest, fluffy bent tail. Keep all limbs, hair, tail and wings fully inside frame, matching the original detailed chibi rendering. The only visible pixels are the crisp outlined character and the hand. Flat fully transparent alpha outside the silhouette. No shadow, glow, gradient, light bloom, fog, colored backdrop or scenery. No text. PNG sprite.",
+    "references": [
+      "gemini/base.png",
+      "deepseek/lifted.png"
+    ],
+    "transparent_background": true,
+    "tool": "imagegen"
+  },
+  {
+    "role": "deepseek",
+    "file": "deepseek/lifted.png",
+    "prompt": "以参考原图为严格角色设定，绘制一张完整全身Q版桌宠的【被拎后脖子】差分。画面必须有一只从画面上方伸来的二次元手，手指抓住角色后颈正后方的衣领布料，把整个小角色像拎小猫一样轻轻提起来。抓的是后颈衣领而不是头发、角、耳朵、肩膀或角色双手。角色背后衣领有清楚的向上提拉褶皱；身体悬空下垂，双脚离地，手臂并非举过头顶。手的手腕延伸到画面上缘即可，不画手的主人。全身及尾巴翅膀脚都完整，角色依照原图精致二次元Q版画风、同一发色服装身份。DeepSeek蓝发蓝眼鲸鱼少女，保留鳍耳蓝白女仆裙鲸鱼尾，迷糊无辜地望向用户，双手软软垂着，尾巴轻弯。 真正透明背景，只有手和角色，四周透明留白；不要任何背景色、渐变、光晕、地面、投影、棋盘格、文字、食物或新道具。",
+    "references": [
+      "deepseek/base.png"
+    ],
+    "transparent_background": true,
+    "tool": "imagegen"
+  }
+]

@@ -264,7 +264,9 @@ impl AiClient {
                             stalled()
                         })?;
                     let Some(chunk) = chunk else {
-                        return accumulator.finish();
+                        let result=accumulator.finish();
+                        if result.as_ref().is_ok_and(|choices|choices.iter().any(|c|c.reasoning_content.as_ref().is_some_and(|s|!s.is_empty()))){crate::native_tools::observed_reasoning(&config.base_url,&config.model);}
+                        return result;
                     };
                     bytes += chunk.len();
                     if bytes > wire_limit {
@@ -284,7 +286,9 @@ impl AiClient {
                         }
                         if accumulator.is_done() {
                             cancel.check()?;
-                            return accumulator.finish();
+                            let result=accumulator.finish();
+                        if result.as_ref().is_ok_and(|choices|choices.iter().any(|c|c.reasoning_content.as_ref().is_some_and(|s|!s.is_empty()))){crate::native_tools::observed_reasoning(&config.base_url,&config.model);}
+                        return result;
                         }
                     }
                 }

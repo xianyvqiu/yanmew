@@ -317,10 +317,10 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
       <div className="ym-memory-list" aria-label={`${label}列表`}>
         {items.map(record => <button className="ym-memory-item" type="button" key={record.id}
           aria-pressed={detail?.record.id === record.id} disabled={blocked} onClick={() => select(record.id)}>
-          <strong>{kind === "long" ? record.title : `回合 ${record.roundId}`}</strong>
+          <strong>{kind === "long" ? record.title : `回合 ${record.roundNumber ?? "未知"}`}</strong>
           {kind === "short" && <span className="ym-memory-state">{record.integrationState === "integrated" ? "已经整合" : "尚未整合"}</span>}
           <span className="ym-memory-summary">{record.content}</span>
-          {kind === "long" && <span className="ym-page-note">{record.sourceCount} 条来源 · 覆盖至回合 {record.coveredThroughRoundId}</span>}
+          {kind === "long" && <span className="ym-page-note">{record.sourceCount} 条来源 · 本会话回合 {record.sourceStartRoundNumber ?? "未知"}–{record.sourceEndRoundNumber ?? "未知"}</span>}
         </button>)}
         {listLoading && <p role="status">正在读取{label}…</p>}
         {!items.length && !listLoading && !listError && <div className="ym-notebook-empty" role="status">
@@ -336,7 +336,7 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
           <button className="ym-button" type="button" onClick={() => selectedId.current && void loadDetailRef.current?.(selectedId.current)}>重试详情</button></div>}
         {!detail && !detailLoading && !readError && <p className="ym-page-note">选择一条{label}查看正文和来源。</p>}
         {detail && <>
-          <div className="ym-memory-detail-heading"><h3>{kind === "short" ? `回合 ${detail.record.roundId}` : detail.record.title}</h3>
+          <div className="ym-memory-detail-heading"><h3>{kind === "short" ? `回合 ${detail.record.roundNumber ?? "未知"}` : detail.record.title}</h3>
             <span className="ym-notebook-updated">最近保存：{new Date(detail.record.updatedAt).toLocaleString()}</span></div>
           {kind === "short" && <p className="ym-memory-state">{detail.record.integrationState === "integrated" ? "已经整合" : "尚未整合"}</p>}
           {kind === "short" && detail.record.integrationState === "integrated" && <div className="ym-notebook-over-limit" role="status">
@@ -345,10 +345,10 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
               onClick={() => onLocateLong(memory.id)}>查看长期记忆：{memory.title}</button>)}</div>
           </div>}
           {kind === "long" && <>
-            <p className="ym-page-note">来源 {detail.record.sourceCount} 条 · 覆盖至回合 {detail.record.coveredThroughRoundId} · 覆盖至 AI 消息 {detail.record.coveredThroughMessageId} · 触发回合 {detail.record.activatedByRoundId}</p>
+            <p className="ym-page-note">来源 {detail.record.sourceCount} 条 · 本会话回合 {detail.record.sourceStartRoundNumber ?? "未知"}–{detail.record.sourceEndRoundNumber ?? "未知"} · 触发于本会话回合 {detail.record.activatedByRoundNumber ?? "未知"}</p>
             <details className="ym-memory-sources"><summary>来源短期记忆（{detail.sources.length} 条）</summary>
               <ol>{[...detail.sources].sort((left, right) => left.sourceOrder - right.sourceOrder).map(source => <li key={source.shortMemoryId}>
-                <strong>回合 {source.roundId} · 短期记忆 {source.shortMemoryId}</strong><p>{source.content}</p>
+                <strong>本会话回合 {source.roundNumber ?? "未知"}</strong><p>{source.content}</p>
               </li>)}</ol>
             </details>
           </>}

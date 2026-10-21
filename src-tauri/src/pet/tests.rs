@@ -199,7 +199,7 @@ fn feeding_clicking_and_stroking_reward_the_same_session_atomically() {
         (Interaction::Feed, 3),
     ] {
         let write_scope = scope(&connection);
-        let result = interact(&mut connection, 0, write_scope, interaction, now()).unwrap();
+        let result = interact(&mut connection, 0, write_scope, interaction, now(), &mut Random::new(&[0])).unwrap();
         assert_eq!(result.intimacy, expected);
         assert_eq!(result.snapshot.idle_elapsed_ms, 0);
         assert_eq!(
@@ -239,7 +239,7 @@ fn legitimate_interactions_wake_sleep_but_plain_wake_does_not_reward() {
         let mut connection = database();
         run(&mut connection, tick(45), &mut Random::new(&[1, 0])).unwrap();
         let write_scope = scope(&connection);
-        let result = interact(&mut connection, 0, write_scope, interaction, now()).unwrap();
+        let result = interact(&mut connection, 0, write_scope, interaction, now(), &mut Random::new(&[0])).unwrap();
         assert_eq!(result.snapshot.idle_branch, IdleBranch::None);
         assert_eq!(result.snapshot.sleep_until, None);
         assert_eq!(result.snapshot.idle_elapsed_ms, 0);
@@ -258,9 +258,9 @@ fn legitimate_interactions_wake_sleep_but_plain_wake_does_not_reward() {
 fn stale_interaction_cannot_duplicate_intimacy_reward() {
     let mut connection = database();
     let original = scope(&connection);
-    let first = interact(&mut connection, 0, original, Interaction::Feed, now()).unwrap();
+    let first = interact(&mut connection, 0, original, Interaction::Feed, now(), &mut Random::new(&[0])).unwrap();
     assert_eq!(
-        interact(&mut connection, 0, original, Interaction::Feed, now())
+        interact(&mut connection, 0, original, Interaction::Feed, now(), &mut Random::new(&[0]))
             .unwrap_err()
             .code,
         "CONTEXT_CHANGED"
@@ -292,7 +292,7 @@ fn failed_reward_rolls_back_state_and_invalid_stored_values_are_rejected() {
         }
         let before = pet_store::read(&connection, 1).unwrap();
         let write_scope = scope(&connection);
-        assert!(interact(&mut connection, 0, write_scope, Interaction::Feed, now()).is_err());
+        assert!(interact(&mut connection, 0, write_scope, Interaction::Feed, now(), &mut Random::new(&[0])).is_err());
         assert_eq!(pet_store::read(&connection, 1).unwrap(), before);
     }
 }
@@ -306,7 +306,7 @@ fn intimacy_saturates_and_feeding_still_works_at_limit() {
     for interaction in [Interaction::Click, Interaction::Stroke, Interaction::Feed] {
         run(&mut connection, tick(1), &mut Random::new(&[])).unwrap();
         let write_scope = scope(&connection);
-        let result = interact(&mut connection, 0, write_scope, interaction, now()).unwrap();
+        let result = interact(&mut connection, 0, write_scope, interaction, now(), &mut Random::new(&[0])).unwrap();
         assert_eq!(result.intimacy, 999);
         assert_eq!(result.snapshot.idle_elapsed_ms, 0);
         if matches!(interaction, Interaction::Feed) {
@@ -373,7 +373,7 @@ fn away_and_changed_context_reject_ticks_and_rewards() {
             expected
         );
         assert_eq!(
-            interact(&mut connection, 0, write_scope, Interaction::Feed, now())
+            interact(&mut connection, 0, write_scope, Interaction::Feed, now(), &mut Random::new(&[0]))
                 .unwrap_err()
                 .code,
             expected
@@ -395,4 +395,18 @@ fn invalid_timing_and_invalid_settings_leave_database_unchanged() {
     setting(&connection, "sleep_min_minutes", "121");
     assert!(run(&mut connection, tick(45), &mut Random::new(&[])).is_err());
     assert_eq!(pet_store::read(&connection, 1).unwrap(), before);
+}
+
+#[test]
+fn click_reward_is_ten_percent_and_misses_still_reset_idle() {
+    for (draw,expected) in [(0,1),(9,1),(10,0),(99,0)] {
+        let mut c=database();
+        run(&mut c,tick(2),&mut Random::new(&[])).unwrap();
+        let target=scope(&c);
+        let mut random=Random::new(&[draw]);
+        let result=interact(&mut c,0,target,Interaction::Click,now(),&mut random).unwrap();
+        assert_eq!(result.intimacy,expected);assert_eq!(result.snapshot.idle_elapsed_ms,0);
+        assert_eq!(random.bounds,vec![100]);
+        assert_eq!(c.query_row("SELECT intimacy FROM sessions WHERE id=1",[],|r|r.get::<_,i64>(0)).unwrap(),expected);
+    }
 }

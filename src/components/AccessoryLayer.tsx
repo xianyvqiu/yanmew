@@ -6,7 +6,10 @@ import AccessoryImage from "./AccessoryVisual";
 /** 饰品不参与本体排版；默认头顶或用户保存的相对位置共用此层。 */
 export default function AccessoryLayer({ context, face, canvas }: { context: CurrentContext; face: RefObject<HTMLDivElement>; canvas: RefObject<HTMLDivElement> }) {
   const list = useAccessories(context, true);
-  const item = list.items[0];
+  const items=[...list.items].sort((a,b)=>(a.layerOrder??0)-(b.layerOrder??0)||(BigInt(a.id)<BigInt(b.id)?-1:1));
+  return <>{items.map(item=><WornAccessory key={item.id} context={context} face={face} canvas={canvas} item={item} listError={list.error}/>)}</>;
+}
+function WornAccessory({context,face,canvas,item,listError}:{context:CurrentContext;face:RefObject<HTMLDivElement>;canvas:RefObject<HTMLDivElement>;item:import("../types").Accessory;listError:string}){
   const [size, setSize] = useState<{width:number;height:number;left?:number;top?:number;canvasTop?:number}>({ width: 0, height: 0 });
   useEffect(() => {
     let frame = 0;
@@ -43,9 +46,9 @@ export default function AccessoryLayer({ context, face, canvas }: { context: Cur
     schedule();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); mutation.disconnect(); window.removeEventListener("resize", schedule); document.fonts?.removeEventListener("loadingdone", schedule); };
   }, [face, canvas, context.contextRevision,item]);
-  useEffect(()=>{const node=canvas.current;if(!node)return;if(item&&size.canvasTop!=null)node.style.setProperty("--ym-accessory-top",`${size.canvasTop}px`);else node.style.removeProperty("--ym-accessory-top");return()=>{node.style.removeProperty("--ym-accessory-top");};},[canvas,item?.positionX,size.canvasTop]);
+  useEffect(()=>{const node=canvas.current;if(!node)return;const property=`--ym-accessory-top-${item.id}`;const sync=()=>{const values=Array.from(node.style).filter(p=>p.startsWith("--ym-accessory-top-")).map(p=>parseFloat(node.style.getPropertyValue(p))).filter(Number.isFinite);const value=values.length?`${Math.min(...values)}px`:"";if(node.style.getPropertyValue("--ym-accessory-top")!==value){if(value)node.style.setProperty("--ym-accessory-top",value);else node.style.removeProperty("--ym-accessory-top");}};if(size.canvasTop!=null)node.style.setProperty(property,`${size.canvasTop}px`);else node.style.removeProperty(property);sync();return()=>{node.style.removeProperty(property);sync();};},[canvas,item.id,size.canvasTop]);
   if (!item || !size.width || !size.height) return null;
-  return <div className="pet-accessory-layer" data-positioned={item.positionX!=null} data-pet-interactive style={{ width: size.width, height: size.height, ...(size.left!=null?{left:size.left,top:size.top,bottom:"auto",transform:"translate(-50%,-50%)"}:{}) }} title={`${item.name}${list.error ? ` · ${list.error}` : ""}`}>
+  return <div className="pet-accessory-layer" data-positioned={item.positionX!=null} data-pet-interactive data-render-layer={item.renderLayer??"front"} style={{ zIndex:item.renderLayer==="back"?0:2,width: size.width, height: size.height, ...(size.left!=null?{left:size.left,top:size.top,bottom:"auto",transform:"translate(-50%,-50%)"}:{}) }} title={`${item.name}${listError ? ` · ${listError}` : ""}`}>
     <AccessoryImage key={item.id} context={context} accessory={item} compact />
   </div>;
 }

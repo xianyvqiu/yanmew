@@ -3,7 +3,7 @@
   "name": "接星星",
   "description": "每局20秒，使用喵币时开局8币，每接住一颗星星获得1币。",
   "author": "颜喵",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "api_version": "1.0.0",
   "entry": "ui/index.html",
   "storage_version": 1,

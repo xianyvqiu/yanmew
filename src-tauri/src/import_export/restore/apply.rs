@@ -152,7 +152,7 @@ fn allocate(
 ) -> AppResult<()> {
     source.execute_batch("CREATE TABLE IF NOT EXISTS import_id_map(table_name TEXT,source_id INTEGER,target_id INTEGER,PRIMARY KEY(table_name,source_id)); DELETE FROM import_id_map; CREATE TABLE IF NOT EXISTS import_published(path TEXT,role TEXT,filename TEXT,PRIMARY KEY(path,role)); DELETE FROM import_published;")?;
     for (table, columns) in super::super::protocol::COLUMNS {
-        if !columns.split(',').any(|k| k == "id") || *table == "user_state" {
+        if table.starts_with("real_") || !columns.split(',').any(|k| k == "id") || *table == "user_state" {
             continue;
         }
         let last:i64=target.query_row(&format!("SELECT MAX(COALESCE((SELECT seq FROM sqlite_sequence WHERE name=?1),0),COALESCE((SELECT MAX(id) FROM {table}),0))"),[table],|r|r.get(0))?;
@@ -267,6 +267,8 @@ fn resource(source: &Connection, r: &mut Record, key: &str, role: &str) -> AppRe
 }
 fn foreign(source: &Connection, r: &mut Record) -> AppResult<()> {
     for (key, table) in [
+        ("skill_id", "skills"),
+        ("ledger_id", "currency_ledger"),
         ("provider_id", "providers"),
         ("message_id", "messages"),
         ("persona_id", "personas"),
@@ -551,10 +553,16 @@ pub(super) fn commit(
         .transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch("PRAGMA defer_foreign_keys=ON;")?;
     if full {
+        for table in ["real_operations","real_occurrences","real_entries","real_schedules","real_budgets","real_categories","real_assets"]{tx.execute(&format!("DELETE FROM {table}"),[])?;}
         tx.execute("DELETE FROM custom_festivals", [])?;
         crate::travel::cancel_current(&tx, &date)?;
         // 保留本机程序登记供兼容存档关联；不沿用其旧使用数据。
         for table in [
+            "food_actions",
+            "food_inventory",
+            "persona_food_settings",
+            "persona_skills",
+            "skills",
             "reminder_email_deliveries",
             "currency_ledger",
             "game_runs",
@@ -571,7 +579,7 @@ pub(super) fn commit(
         ] {
             if table == "settings" {
                 // 本机的一次性安装标记不随备份替换，避免删除过的角色重新出现。
-                tx.execute("DELETE FROM settings WHERE key<>?1", [crate::preset_personas::SEED_KEY])?;
+                tx.execute("DELETE FROM settings WHERE key NOT IN (?1,?2,?3,?4,?5,?6)", [crate::preset_personas::SEED_KEY,crate::preset_personas::DOCK_SEED_KEY,crate::preset_personas::WALK_SEED_KEY,crate::preset_personas::EMOTION_SEED_KEY,crate::preset_personas::LIFT_SEED_KEY,"pet_desktop_preferences"])?;
             } else {
                 tx.execute(&format!("DELETE FROM {table}"), [])?;
             }
@@ -594,6 +602,16 @@ pub(super) fn commit(
         resource(source, &mut r, "chat_bg_file", "background")?;
         put(&tx, "personas", &r, false)
     })?;
+
+    rows(source,"skills",|mut r|{
+        let old=id(&r,"id")?;
+        let same:Option<i64>=tx.query_row("SELECT id FROM skills WHERE title=?1 AND summary=?2 AND body=?3 ORDER BY id LIMIT 1",params![value(&r,"title")?,value(&r,"summary")?,value(&r,"body")?],|r|r.get(0)).optional()?;
+        if let Some(target)=same{source.execute("UPDATE import_id_map SET target_id=?1 WHERE table_name='skills' AND source_id=?2",params![target,old])?;}
+        else{map_field(source,&mut r,"id","skills")?;put(&tx,"skills",&r,false)?;}Ok(())
+    })?;
+    for table in ["persona_food_settings","persona_skills"] {
+        rows(source,table,|mut r|{let old=id(&r,"persona_id")?;if persona.get(&old).is_some_and(Option::is_some){return Ok(())}foreign(source,&mut r)?;if table=="persona_skills"&&tx.query_row("SELECT EXISTS(SELECT 1 FROM persona_skills WHERE persona_id=?1 AND skill_id=?2)",params![value(&r,"persona_id")?,value(&r,"skill_id")?],|r|r.get::<_,bool>(0))?{return Ok(())}put(&tx,table,&r,false)})?;
+    }
     rows(source,"pet_artworks",|mut r|{let old_persona=id(&r,"persona_id")?;if persona.get(&old_persona).is_some_and(Option::is_some){return Ok(());}map_field(source,&mut r,"id","pet_artworks")?;foreign(source,&mut r)?;resource(source,&mut r,"image_file","accessory")?;resource(source,&mut r,"preview_file","accessory")?;put(&tx,"pet_artworks",&r,false)})?;
     rows(source, "user_profiles", |mut r| {
         let old = id(&r, "id")?;
@@ -712,6 +730,10 @@ pub(super) fn commit(
                 put(&tx, table, &r, false)
             })?;
         }
+        for (table,_) in crate::real_money::TABLES{rows(source,table,|r|put(&tx,table,&r,false))?;}
+        tx.execute("UPDATE real_schedules SET review_required=1",[])?;
+        rows(source,"food_inventory",|r|put(&tx,"food_inventory",&r,false))?;
+        rows(source,"food_actions",|mut r|{foreign(source,&mut r)?;r.insert("action_id".into(),Value::String(format!("import-{}-{}",date,value(&r,"action_id")?)));put(&tx,"food_actions",&r,false)})?;
         crate::db::ensure_builtin_embedding(&tx)?;
         rows(source, "settings", |mut r| {
             let key = value(&r, "key")?.to_owned();

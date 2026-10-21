@@ -1,10 +1,14 @@
-import {useEffect,useRef,useState,useId,type FormEvent,type KeyboardEvent} from "react";
+import {useEffect,useRef,useState,useId,type FormEvent,type KeyboardEvent,type ReactNode} from "react";
 import type {ChatImageInput} from "../types";
 import "./ChatComposer.css";
 
 type ChatComposerProps = {
   compact?: boolean;
+  extraActions?:ReactNode;
+  sendDisabled?:boolean;
+  placeholder?:string;inputLabel?:string;submitLabel?:string;
   images?:ChatImageInput[];
+  onReadingChange?:(reading:boolean)=>void;
   onImagesChange?:(images:ChatImageInput[])=>void;
   attachmentOwnerKey?:string;
   value: string;
@@ -18,8 +22,8 @@ type ChatComposerProps = {
 
 export default function ChatComposer({
   value,
-  compact=false,
-  images=[],onImagesChange,attachmentOwnerKey="",
+  compact=false,placeholder="想和我聊些什么？",inputLabel="聊天消息",submitLabel="发送",
+  images=[],onImagesChange,onReadingChange,attachmentOwnerKey="",extraActions,sendDisabled=false,
   onChange,
   onSend,
   onCancel,
@@ -31,6 +35,7 @@ export default function ChatComposer({
   const inputElement=useRef<HTMLTextAreaElement>(null);
   useEffect(()=>{if(compact&&!disabled)inputElement.current?.focus();},[compact,disabled]);
   const [reading,setReading]=useState(false);const [imageError,setImageError]=useState("");
+  useEffect(()=>{onReadingChange?.(reading);return()=>onReadingChange?.(false);},[reading,onReadingChange]);
   const picker=useRef<HTMLInputElement>(null);const alive=useRef(true);const owner=useRef(attachmentOwnerKey);owner.current=attachmentOwnerKey;
   const currentImages=useRef(images);currentImages.current=images;
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
@@ -42,7 +47,7 @@ export default function ChatComposer({
     catch(cause){if(alive.current&&owner.current===key)setImageError(cause instanceof Error?cause.message:"图片读取失败");}
     finally{if(alive.current&&owner.current===key)setReading(false);}
   };
-  const canSend = !disabled && !busy && !reading && Boolean(value.trim()||images.length);
+  const canSend = !disabled && !sendDisabled && !busy && !reading && Boolean(value.trim()||images.length);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -66,8 +71,8 @@ export default function ChatComposer({
         ref={inputElement}
         id={inputId}
         className="chat-composer__input"
-        aria-label="聊天消息"
-        placeholder="想和我聊些什么？"
+        aria-label={inputLabel}
+        placeholder={placeholder}
         value={value}
         onChange={event => onChange(event.currentTarget.value)}
         onKeyDown={handleKeyDown}
@@ -94,9 +99,10 @@ export default function ChatComposer({
             type="submit"
             disabled={!canSend}
           >
-            发送
+            {submitLabel}
           </button>
         )}
+        {extraActions}
       </div>
     </form>
   );

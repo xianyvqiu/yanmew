@@ -50,3 +50,11 @@ it("出行不出现发送输入，未选会话提供聊天详情入口",async()=
   page.rerender(<Harness view={{...pet,sessionId:null,contextRevision:4}}/>);
   expect(screen.queryByRole("textbox")).toBeNull();expect(screen.getByRole("button",{name:"聊天详情"})).toBeTruthy();expect(api.submit).not.toHaveBeenCalled();
 });
+it("快捷聊天可以只发图片，发送成功后清空当前会话图片草稿",async()=>{
+ const page=render(<Harness/>);await waitFor(()=>expect((screen.getByRole("textbox")as HTMLTextAreaElement).disabled).toBe(false));
+ const picker=page.container.querySelector('input[type="file"]')!;
+ fireEvent.change(picker,{target:{files:[new File(["sample"],"cat.png",{type:"image/png"})]}});
+ await screen.findByAltText("cat.png");fireEvent.click(screen.getByRole("button",{name:"发送"}));
+ await waitFor(()=>expect(api.submit).toHaveBeenCalledWith({personaId:"1",sessionId:"2",contextRevision:3},"",[expect.objectContaining({filename:"cat.png",dataUrl:expect.stringContaining("data:image/png;base64,")})]));
+ await waitFor(()=>expect(screen.queryByAltText("cat.png")).toBeNull());
+});

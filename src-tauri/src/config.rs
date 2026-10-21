@@ -93,6 +93,7 @@ pub fn save_weather(
 pub const DEFAULTS: &[(&str, i64)] = &[
     ("hungry_minutes", 120),
     ("standby_minutes", 10),
+    ("pet_chat_autocollapse_minutes", 3),
     ("idle_event_minutes", 45),
     ("sleep_min_minutes", 60),
     ("sleep_max_minutes", 120),
@@ -167,7 +168,7 @@ pub fn validate(values: &Settings) -> AppResult<()> {
             .map_err(|_| AppError::validation(key, "请输入有效整数"))?;
         let zero_allowed = key.starts_with("accessory_cost_")
             || key.starts_with("sign_in_")
-            || key == "travel_accessory_chance_percent";
+            || key == "travel_accessory_chance_percent" || key == "pet_chat_autocollapse_minutes";
         if number < if zero_allowed { 0 } else { 1 } || number.to_string() != *value {
             return Err(AppError::validation(key, "数值范围或格式无效"));
         }

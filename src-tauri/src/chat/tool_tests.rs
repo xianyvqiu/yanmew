@@ -19,6 +19,17 @@ fn calls(items: &[(&str, &str, Value)]) -> String {
 fn append() -> Value { json!({"operation":"append","section_index":null,"content":"中文🙂内容"}) }
 
 #[test]
+fn normal_chat_skill_function_call_creates_in_library_and_binds_only_current_persona(){
+ tauri::async_runtime::block_on(async{
+  let server=Server::new(vec![Response::json(json!({"expression":"(^_^)"})),Response::sse(&calls(&[("new-skill","create_skill",json!({"title":"简明表达","summary":"先结论","body":"回答问题时先说结论，再说明必要细节。"}))])),Response::sse(&(text_event("已经保存并绑定。")+&finish_event("stop")))]);
+  let runtime=crate::runtime::test_runtime(&server.url);let (prepared,_)=submit(&runtime,1,1,0,"请为自己新增一份简明表达Skill并绑定。".into()).unwrap();
+  let saved=run_persisted(&client(),prepared,|_|{}).await.unwrap();assert_eq!(saved.round.status,crate::models::ChatRoundStatus::Completed);
+  runtime.read(|s,_|{let records=crate::skills::list(&s.connection)?;assert_eq!(records.len(),1);assert_eq!(records[0].personas.len(),1);assert_eq!(records[0].personas[0].id,"1");Ok(())}).unwrap();
+  let requests=server.requests.lock().unwrap();assert!(requests[1]["tools"].as_array().unwrap().iter().any(|d|d["function"]["name"]=="create_skill"));
+ });
+}
+
+#[test]
 fn chat_user_link_reaches_tavily_extract_without_an_extra_search() {
     tauri::async_runtime::block_on(async {
         let url = "https://example.com/article";

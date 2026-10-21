@@ -46,6 +46,14 @@ pub struct Record {
     pub covered_through_message_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub round_number: Option<i64>,
+    #[serde(default)]
+    pub source_start_round_number: Option<i64>,
+    #[serde(default)]
+    pub source_end_round_number: Option<i64>,
+    #[serde(default)]
+    pub activated_by_round_number: Option<i64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -55,6 +63,8 @@ pub struct SourceView {
     pub source_order: i64,
     pub content: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub round_number: Option<i64>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -121,6 +131,11 @@ fn order(kind: Kind) -> &'static str {
     }
 }
 
+/// 回合ID仍用于关联；用户看到的序号只统计当前会话中的现存回合，包括中断轮。
+fn round_number(connection: &Connection, session: i64, round: Option<&str>) -> AppResult<Option<i64>> {
+    let Some(round) = round else { return Ok(None); };
+    Ok(connection.query_row("SELECT (SELECT COUNT(*) FROM chat_rounds n WHERE n.session_id=r.session_id AND n.id<=r.id) FROM chat_rounds r WHERE r.session_id=?1 AND r.id=?2", params![session,parse_id(round)?], |r| r.get(0)).optional()?)
+}
 fn record(connection: &Connection, session: i64, kind: Kind, id: i64) -> AppResult<Record> {
     let value = match kind {
         Kind::Short => connection.query_row("SELECT id,session_id,round_id,content,integration_state,created_at,updated_at FROM short_memories WHERE id=?1 AND session_id=?2", params![id,session], |r| {
@@ -128,7 +143,7 @@ fn record(connection: &Connection, session: i64, kind: Kind, id: i64) -> AppResu
                 round_id:Some(r.get::<_,i64>(2)?.to_string()),content:r.get(3)?,
                 integration_state:Some(MemoryIntegrationState::parse(&r.get::<_,String>(4)?).ok_or(rusqlite::Error::InvalidQuery)?),
                 title:None,source_count:None,activated_by_round_id:None,covered_through_round_id:None,covered_through_message_id:None,
-                created_at:r.get(5)?,updated_at:r.get(6)? })
+                created_at:r.get(5)?,updated_at:r.get(6)?,round_number:None,source_start_round_number:None,source_end_round_number:None,activated_by_round_number:None })
         }).optional()?,
         Kind::Long => connection.query_row("SELECT l.id,l.session_id,l.title,l.content,l.source_count,l.activated_by_round_id,l.created_at,l.updated_at,
             (SELECT m.round_id FROM long_memory_sources s JOIN short_memories m ON m.id=s.short_memory_id
@@ -141,10 +156,18 @@ fn record(connection: &Connection, session: i64, kind: Kind, id: i64) -> AppResu
                 round_id:None,integration_state:None,title:Some(r.get(2)?),content:r.get(3)?,source_count:Some(r.get(4)?),
                 activated_by_round_id:Some(r.get::<_,i64>(5)?.to_string()),created_at:r.get(6)?,updated_at:r.get(7)?,
                 covered_through_round_id:r.get::<_,Option<i64>>(8)?.map(|id| id.to_string()),
-                covered_through_message_id:r.get::<_,Option<i64>>(9)?.map(|id|id.to_string()) })
+                covered_through_message_id:r.get::<_,Option<i64>>(9)?.map(|id|id.to_string()),round_number:None,source_start_round_number:None,source_end_round_number:None,activated_by_round_number:None })
         }).optional()?,
     };
-    value.ok_or_else(missing)
+    let mut value=value.ok_or_else(missing)?;
+    value.round_number=round_number(connection,session,value.round_id.as_deref())?;
+    value.activated_by_round_number=round_number(connection,session,value.activated_by_round_id.as_deref())?;
+    value.source_end_round_number=round_number(connection,session,value.covered_through_round_id.as_deref())?;
+    if kind==Kind::Long {
+        let first:Option<String>=connection.query_row("SELECT m.round_id FROM long_memory_sources s JOIN short_memories m ON m.id=s.short_memory_id WHERE s.long_memory_id=?1 AND m.session_id=?2 ORDER BY s.source_order LIMIT 1",params![id,session],|r|Ok(r.get::<_,i64>(0)?.to_string())).optional()?;
+        value.source_start_round_number=round_number(connection,session,first.as_deref())?;
+    }
+    Ok(value)
 }
 fn detail(connection: &Connection, session: i64, kind: Kind, id: i64) -> AppResult<Detail> {
     let record = record(connection, session, kind, id)?;
@@ -177,9 +200,13 @@ fn detail(connection: &Connection, session: i64, kind: Kind, id: i64) -> AppResu
                         source_order: r.get(2)?,
                         content: r.get(3)?,
                         updated_at: r.get(4)?,
+                        round_number: None,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
+            for source in &mut sources {
+                source.round_number=round_number(connection,session,Some(&source.round_id))?;
+            }
         }
     }
     Ok(Detail {

@@ -1,3 +1,4 @@
+mod native_tools;
 use std::io;
 pub mod ai;
 pub mod chat;
@@ -8,6 +9,7 @@ mod desktop_windows;
 mod config;
 mod crypto;
 pub mod currency;
+mod real_money;
 mod accessories;
 mod souvenirs;
 mod image_generation;
@@ -20,6 +22,10 @@ mod events;
 mod expressions;
 mod pet_creation;
 mod preset_personas;
+mod foods;
+mod skills;
+mod companion_commands;
+mod food_cursor;
 pub mod embedding;
 mod embedding_providers;
 pub mod memory_index;
@@ -43,6 +49,7 @@ mod persona;
 pub mod pet;
 mod pet_region;
 mod pet_position;
+mod pet_desktop;
 pub mod pet_store;
 mod platform;
 mod providers;
@@ -82,17 +89,35 @@ pub(crate) fn show_pet_window(app: &AppHandle) -> Result<(), Box<dyn std::error:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let paths = platform::windows::paths::application_paths();
+    // 先取得 data 使用权，再打开 SQLite 或启动任何后台任务。
+    let instance = match paths.as_ref() {
+        Ok(paths) => match platform::windows::instance::acquire(&paths.data_root) {
+            Ok(Some(owner)) => Some(owner),
+            Ok(None) => return,
+            Err(error) => {
+                use windows::{core::PCWSTR, Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK}};
+                let message: Vec<u16> = format!("无法打开颜喵：{error}\0").encode_utf16().collect();
+                let title: Vec<u16> = "颜喵 YanMew\0".encode_utf16().collect();
+                unsafe { MessageBoxW(None, PCWSTR(message.as_ptr()), PCWSTR(title.as_ptr()), MB_OK | MB_ICONERROR); }
+                return;
+            }
+        },
+        Err(_) => None, // 原有初始化错误界面处理无效路径，不尝试访问数据库。
+    };
     let runtime = runtime::Runtime::initialize(
-        platform::windows::paths::application_paths(),
+        paths,
         std::sync::Arc::new(platform::windows::secrets::Dpapi),
         std::sync::Arc::new(platform::windows::time::WindowsClock),
         Box::new(platform::windows::time::WindowsRandom),
     );
     tauri::Builder::default()
+        .manage(instance)
         .manage(runtime)
+        .manage(food_cursor::Cursor::default())
         .manage(game_host::Host::default())
         .manage(pet_position::WindowPosition::default())
-        .manage(std::sync::Mutex::new(pet::wander::Controller::default()))
+        .manage(pet_desktop::Desktop::default())
         .manage(desktop_windows::SettingsNavigation::default())
         .manage(desktop_windows::TravelNavigation::default())
         .manage(desktop_windows::LetterNavigation::default())
@@ -104,6 +129,13 @@ pub fn run() {
             tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Content-Security-Policy",game_host::csp(label)).header("X-Content-Type-Options","nosniff").header("Cache-Control","no-store").body(body).unwrap_or_default()
         })
         .invoke_handler(game_host::command_gate(tauri::generate_handler![
+            food_cursor::set_food_cursor,
+            pet_desktop::get_pet_desktop_state,
+            pet_desktop::set_pet_fullscreen_wander,
+            pet_desktop::get_pet_dock_expression,
+            pet_desktop::get_pet_walk_expression,
+            pet_desktop::get_pet_lift_expression,
+            companion_commands::get_food_expression, companion_commands::list_foods, companion_commands::get_food_preferences, companion_commands::save_food_preferences, companion_commands::buy_food, companion_commands::get_food_action, companion_commands::feed_food, companion_commands::list_skills, companion_commands::save_skill, companion_commands::delete_skill, companion_commands::bind_skill, companion_commands::get_skill_previews, companion_commands::resolve_skill_preview,
             commands::get_backup_export_options,
             commands::prepare_backup_import,
             commands::refresh_backup_import,
@@ -123,6 +155,9 @@ pub fn run() {
             commands::list_accessories,
             commands::get_accessory_image,
             commands::save_accessory_placement,
+            commands::move_accessory_layer,
+            commands::upload_accessory_craft,
+            commands::get_pet_mail_status,
             commands::get_pet_creation,
             commands::save_pet_artwork,
             commands::set_pet_creation_enabled,
@@ -245,10 +280,19 @@ pub fn run() {
             commands::refresh_pet_provider,
             commands::set_pet_hidden,
             commands::set_pet_chat_open,
+            commands::set_pet_artwork_layout,
             commands::update_pet_regions,
             commands::get_configuration_status,
             commands::get_current_context,
             commands::get_wallet,
+            companion_commands::query_currency_ledger,
+            real_money::commands::get_real_money_overview,
+            real_money::commands::query_real_money,
+            real_money::commands::mutate_real_money,
+            real_money::commands::list_real_money_tasks,
+            real_money::commands::get_real_money_calendar,
+            real_money::commands::get_real_money_pending,
+            real_money::commands::get_real_money_operation,
             commands::get_sign_in_status,
             commands::daily_sign_in,
             commands::get_session_intimacy,
@@ -289,6 +333,7 @@ pub fn run() {
             commands::save_chat_background,
             commands::create_persona,
             commands::generate_expressions,
+            commands::save_persona_expressions,
             commands::cancel_expression_generation,
             commands::update_persona,
             commands::delete_persona,
@@ -302,6 +347,9 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "找不到 main 宠窗"))?;
             pet_region::enforce_frameless(&window).map_err(io::Error::other)?;
+            if let Some(instance) = app.state::<Option<platform::windows::instance::Instance>>().inner() {
+                instance.publish(&window)?;
+            }
             let runtime = app.state::<runtime::Runtime>().inner().clone();
             let plugin_app=app.handle().clone();let plugin_runtime=runtime.clone();
             tauri::async_runtime::spawn(async move { if let Err(error)=game_host::install::initialize(plugin_app.clone(),plugin_runtime).await {use tauri::Emitter;let _=plugin_app.emit("game_plugin_error",error);} plugin_app.state::<game_host::Host>().ready.store(true,std::sync::atomic::Ordering::Release); });
@@ -309,6 +357,7 @@ pub fn run() {
             if let Err(error) = app.state::<pet_position::WindowPosition>().restore(&window, &runtime) {
                 pet_position::report(app.handle(), &error);
             }
+            if let Err(error) = app.state::<pet_desktop::Desktop>().initialize(&window, &runtime) { pet_position::report(app.handle(), &error); }
             tauri::async_runtime::spawn(jobs::run(
                 runtime,
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),

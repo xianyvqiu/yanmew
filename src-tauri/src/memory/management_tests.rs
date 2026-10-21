@@ -6,6 +6,25 @@ const GENERATED_SHORT: &str = "用户询问猫的生活习惯，助手说明猫�
 const OLD_TITLE: &str = "原始长期标题 alphatitle";
 const OLD_CONTENT: &str = "原始长期事实 alphabody";
 
+#[test]
+fn session_round_numbers_start_at_one_and_long_range_uses_real_sources(){
+ let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");
+ for n in 0..12{completed_round(&runtime,1,n);}
+ let session=runtime.read(|s,_|{let created=crate::sessions::create(&mut s.connection,1)?;let id=parse_id(&created.id)?;s.connection.execute("UPDATE settings SET value=?1 WHERE key='current_session_id'",[id.to_string()])?;Ok(id)}).unwrap();
+ let first=completed_round(&runtime,session,1);
+  runtime.read(|s,_|{s.connection.execute("INSERT INTO chat_rounds(session_id,status,stop_reason,created_at) VALUES(?1,'interrupted','unknown','a')",[session])?;Ok(())}).unwrap();
+ let third=completed_round(&runtime,session,3);let trigger=completed_round(&runtime,session,4);
+ let ids=runtime.read(|s,_|{
+  let mut ids=vec![];for round in [first,third,trigger]{s.connection.execute("INSERT INTO short_memories(session_id,round_id,content,created_at,updated_at) VALUES(?1,?2,'事实','a','a')",params![session,round])?;ids.push(s.connection.last_insert_rowid());}
+  s.connection.execute("INSERT INTO long_memories(session_id,title,content,source_count,activated_by_round_id,created_at,updated_at) VALUES(?1,'整合','事实',2,?2,'a','a')",params![session,trigger])?;
+  let long=s.connection.last_insert_rowid();for (n,id) in ids.iter().take(2).enumerate(){s.connection.execute("INSERT INTO long_memory_sources(long_memory_id,short_memory_id,source_order) VALUES(?1,?2,?3)",params![long,id,n+1])?;}
+  Ok((ids,long))
+ }).unwrap();
+ let cx=Context{persona_id:"1".into(),session_id:session.to_string(),context_revision:0};
+ let short=get(&runtime,cx.clone(),Kind::Short,ids.0[0].to_string()).unwrap();assert!(first>12);assert_eq!(short.record.round_number,Some(1));
+ let long=get(&runtime,cx,Kind::Long,ids.1.to_string()).unwrap();assert_eq!(long.record.source_start_round_number,Some(1));assert_eq!(long.record.source_end_round_number,Some(3));assert_eq!(long.record.activated_by_round_number,Some(4));assert_eq!(long.sources.iter().map(|s|s.round_number).collect::<Vec<_>>(),vec![Some(1),Some(3)]);
+}
+
 struct Fixture {
     runtime: Runtime,
     rounds: [i64; 3],

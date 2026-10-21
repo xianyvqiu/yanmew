@@ -53,6 +53,7 @@ pub struct Persona {
     pub is_active: bool,
     pub is_builtin: bool,
     pub expressions: Option<serde_json::Value>,
+    pub effective_expressions: serde_json::Value,
     pub created_at:Option<String>,
     pub updated_at:Option<String>,
 }
@@ -99,6 +100,7 @@ pub fn list(c: &Connection) -> AppResult<Vec<Persona>> {
             chat_appearance: background::Appearance { bubble_style: r.get(15)?, user_text_color: r.get(16)?, assistant_text_color: r.get(17)? },
             is_active: r.get(10)?,
             is_builtin: r.get(11)?,
+            effective_expressions: crate::expressions::effective_library(expressions.as_ref()),
             expressions,
             created_at:r.get(13)?,updated_at:r.get(14)?,
         })
@@ -133,10 +135,11 @@ pub fn save(c: &mut Connection, id: Option<i64>, input: PersonaInput) -> AppResu
         }
         id
     } else {
-        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,self_evolve_enabled,color,chat_bg_opacity,chat_bg_blur) VALUES(?1,?2,?7,?3,?4,?5,?6)",params![input.name.trim(),input.prompt,input.self_evolve_enabled,input.color,input.chat_bg_opacity,input.chat_bg_blur,input.initial_prompt.unwrap_or_else(||input.prompt.clone())])?;
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,self_evolve_enabled,color,chat_bg_opacity,chat_bg_blur,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?7,?3,?4,?5,?6,?4,?4)",params![input.name.trim(),input.prompt,input.self_evolve_enabled,input.color,input.chat_bg_opacity,input.chat_bg_blur,input.initial_prompt.unwrap_or_else(||input.prompt.clone())])?;
         tx.last_insert_rowid()
     };
     tx.execute("UPDATE personas SET created_at=CASE WHEN ?2 THEN ?3 ELSE created_at END,updated_at=?3 WHERE id=?1",params![id,creating,chrono::Utc::now().to_rfc3339()])?;
+    if creating { crate::sessions::create_default_in_transaction(&tx,id)?; }
     let result = list(&tx)?
         .into_iter()
         .find(|p| p.id == id.to_string())
@@ -227,6 +230,48 @@ pub fn delete(c: &mut Connection, id: i64) -> AppResult<()> {
 mod tests {
     use super::*;
     #[test]
+    fn chat_colors_copy_on_creation_and_preserve_independent_edits() {
+        let mut c = crate::db::test_database();
+        let input = |color: &str| PersonaInput {
+            name: "新朋友".into(), prompt: "温柔".into(), self_evolve_enabled: false,
+            color: color.into(), chat_bg_opacity: 85, chat_bg_blur: 0,
+            save_as_initial: false, initial_prompt: None,
+        };
+        let p = save(&mut c, None, input("#aabbcc")).unwrap();
+        let id = p.id.parse().unwrap();
+        assert_eq!(p.chat_appearance.user_text_color.as_deref(), Some("#aabbcc"));
+        assert_eq!(p.chat_appearance.assistant_text_color.as_deref(), Some("#aabbcc"));
+        let updated = save(&mut c, Some(id), input("#112233")).unwrap();
+        assert_eq!(updated.chat_appearance, p.chat_appearance);
+        c.execute("UPDATE personas SET chat_user_text_color='#abcdef',chat_assistant_text_color=NULL WHERE id=?1", [id]).unwrap();
+        let updated = save(&mut c, Some(id), input("#445566")).unwrap();
+        assert_eq!(updated.chat_appearance.user_text_color.as_deref(), Some("#abcdef"));
+        assert_eq!(updated.chat_appearance.assistant_text_color, None);
+        assert_eq!(updated.color, "#445566");
+    }
+
+    #[test]
+    fn new_persona_gets_one_default_session_without_switching_or_repeating_guide() {
+        let mut c=crate::db::test_database();
+        crate::sessions::create(&mut c,1).unwrap();
+        let previous=context(&c,0).unwrap();
+        let input=||PersonaInput{name:"新朋友".into(),prompt:"温柔".into(),self_evolve_enabled:false,color:"#aabbcc".into(),chat_bg_opacity:85,chat_bg_blur:0,save_as_initial:false,initial_prompt:None};
+        let p=save(&mut c,None,input()).unwrap();let id=p.id.parse().unwrap();
+        assert_eq!(context(&c,0).unwrap().session_id,previous.session_id);
+        assert_eq!(context(&c,0).unwrap().persona_id,previous.persona_id);
+        let sessions=crate::sessions::list(&c,id).unwrap();assert_eq!(sessions.len(),1);
+        assert_eq!(c.query_row("SELECT count(*) FROM messages",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert!(p.expressions.is_none());
+        assert_eq!(p.effective_expressions["normal"][0],crate::expressions::builtin("normal"));
+        assert_eq!(p.effective_expressions["standby"][0],crate::expressions::builtin("standby"));
+        save(&mut c,Some(id),input()).unwrap();assert_eq!(crate::sessions::list(&c,id).unwrap().len(),1);
+        select(&mut c,id).unwrap();assert_eq!(context(&c,0).unwrap().session_id,Some(sessions[0].id.clone()));
+        c.execute("DELETE FROM sessions WHERE persona_id=?1",[id]).unwrap();
+        save(&mut c,Some(id),input()).unwrap();assert!(crate::sessions::list(&c,id).unwrap().is_empty());
+        c.execute_batch("CREATE TRIGGER reject_default BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+        let count=list(&c).unwrap().len();assert!(save(&mut c,None,input()).is_err());assert_eq!(list(&c).unwrap().len(),count);
+    }
+    #[test]
     fn deleting_persona_cleans_memory_sources_and_preserves_wallet() {
         let mut c = crate::db::test_database();
         c.execute_batch("INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(2,'测试','设定','设定');
@@ -262,6 +307,16 @@ mod tests {
     fn switch_cancel_and_delete_current_persona() {
         let mut c = crate::db::test_database();
         assert!(delete(&mut c, 1).is_err());
+
+        c.execute(
+            "INSERT INTO sessions(persona_id,title,created_at,updated_at) VALUES(1,'会话','a','a')",
+            [],
+        )
+        .unwrap();
+        c.execute("INSERT INTO settings VALUES('current_session_id','1')", [])
+            .unwrap();
+        c.execute("INSERT INTO travels(session_id,status,started_at,planned_return_at,midway_letter_at,created_at) VALUES(1,'away','a','b','c','a')",[]).unwrap();
+
         let p = save(
             &mut c,
             None,
@@ -277,14 +332,6 @@ mod tests {
             },
         )
         .unwrap();
-        c.execute(
-            "INSERT INTO sessions(persona_id,title,created_at,updated_at) VALUES(1,'会话','a','a')",
-            [],
-        )
-        .unwrap();
-        c.execute("INSERT INTO settings VALUES('current_session_id','1')", [])
-            .unwrap();
-        c.execute("INSERT INTO travels(session_id,status,started_at,planned_return_at,midway_letter_at,created_at) VALUES(1,'away','a','b','c','a')",[]).unwrap();
         assert!(select(&mut c, 999).is_err());
         assert_eq!(context(&c, 0).unwrap().persona_id, "1");
         select(&mut c, p.id.parse().unwrap()).unwrap();
@@ -293,7 +340,7 @@ mod tests {
                 .unwrap(),
             "cancelled"
         );
-        assert_eq!(context(&c, 0).unwrap().session_id, None);
+        assert_eq!(context(&c, 0).unwrap().session_id, Some("2".into()));
         delete(&mut c, p.id.parse().unwrap()).unwrap();
         assert_eq!(context(&c, 0).unwrap().persona_id, "1");
         assert_eq!(context(&c, 0).unwrap().session_id, Some("1".into()));

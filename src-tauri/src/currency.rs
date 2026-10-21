@@ -7,6 +7,7 @@ use chrono::{DateTime, Days, Duration, SecondsFormat, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 mod sign_in;
+pub mod ledger;
 pub use sign_in::{daily_sign_in, get_sign_in_status};
 
 /// 宿主校验身份、权限、游戏局状态和幂等请求后传入的历史快照。
@@ -75,6 +76,7 @@ fn validate(change: &CoinChange) -> AppResult<()> {
         AccessorySell => {
             change.delta >= 0 && change.ref_id.is_some_and(|id| id > 0) && change.plugin.is_none()
         }
+        FoodPurchase => change.delta < 0 && change.ref_id.is_none() && change.plugin.is_none(),
         PluginGame => {
             change.ref_id.is_none()
                 && change.plugin.as_ref().is_some_and(|plugin| {

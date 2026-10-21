@@ -5,7 +5,7 @@ import "./PetTimingPanel.css";
 
 const MAX_INTEGER = 2_147_483_647;
 const timingKeys = [
-  "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
+  "pet_chat_autocollapse_minutes", "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
   "travel_min_online_hours", "travel_max_online_hours",
   "intimacy_threshold_1", "intimacy_threshold_2", "intimacy_threshold_3", "intimacy_threshold_4",
   "accessory_cost_1", "accessory_cost_2", "accessory_cost_3", "accessory_cost_4",
@@ -15,6 +15,7 @@ type Draft = Record<PetTimingKey, string>;
 type FieldErrors = Partial<Record<PetTimingKey, string>>;
 
 const definitions: Record<PetTimingKey, { label: string; unit: string; group: string }> = {
+  pet_chat_autocollapse_minutes: {label:"宠窗聊天自动收起（0关闭）",unit:"分钟",group:"timing"},
   hungry_minutes: { label: "饥饿触发", unit: "分钟", group: "timing" },
   standby_minutes: { label: "待机等待时间", unit: "分钟", group: "timing" },
   idle_event_minutes: { label: "无聊／睡觉触发时间", unit: "分钟", group: "timing" },
@@ -49,7 +50,7 @@ function validate(draft: Draft): FieldErrors {
     parsed[key] = number;
     if (key.startsWith("intimacy_threshold_")) {
       if (number < 1 || number > 999) errors[key] = "亲密度档位须为 1–999 的整数。";
-    } else if (key.startsWith("accessory_cost_")) {
+    } else if (key.startsWith("accessory_cost_") || key === "pet_chat_autocollapse_minutes") {
       if (number > MAX_INTEGER) errors[key] = `价格不能超过 ${MAX_INTEGER} 喵币。`;
     } else if (number < 1 || number > MAX_INTEGER) {
       errors[key] = `请输入 1–${MAX_INTEGER} 之间的正整数。`;
@@ -211,7 +212,7 @@ export default function PetTimingPanel() {
       <button className="ym-button" type="button" onClick={() => void readSettings()}>重试读取</button>
     </div> : loading ? <p role="status">正在读取设置…</p> : draft && <form onSubmit={save}>
       <fieldset className="ym-pet-timing-group" disabled={saving}>
-        <legend>计时</legend>
+        <legend>计时</legend><p className="ym-page-note">聊天自动收起从鼠标离开且无操作后计算，0表示关闭；生成回复、读取图片或有未发送草稿时保留输入和气泡，不删除聊天记录。</p>
         <div className="ym-pet-timing-grid">{timingKeys.filter(key => definitions[key].group === "timing").map(field)}</div>
         <p className="ym-page-note">默认连续没有互动10分钟进入待机；达到共同触发时间（默认45分钟）后，各50%随机进入无聊或睡觉，每个周期只选择一次。点击、摸摸、喂食或发送消息后重新计时。只累计当前会话有效运行时间，隐藏、拖动、聊天、睡眠、出行及故障期间不累计无互动时间；关闭期间不补算。睡眠时长决定睡多久，修改设置不会重算已开始的睡眠结束时间。</p>
       </fieldset>

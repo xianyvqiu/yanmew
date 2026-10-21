@@ -1,6 +1,25 @@
 use super::*;
 use std::{io::Cursor, path::PathBuf};
 
+#[test]
+fn docking_upgrade_preserves_existing_images_and_does_not_reseed_deleted_actions() {
+    let f=Fixture::new();let mut c=crate::db::test_database();install_from(&mut c,&f.paths,&f.resources).unwrap();
+    let gpt:i64=c.query_row("SELECT id FROM personas WHERE name='GPT'",[],|r|r.get(0)).unwrap();
+    let base:String=c.query_row("SELECT image_file FROM pet_artworks WHERE persona_id=?1 AND kind='base'",[gpt],|r|r.get(0)).unwrap();
+    c.execute("DELETE FROM personas WHERE name='Gemini'",[]).unwrap();
+    c.execute("DELETE FROM settings WHERE key=?1",[DOCK_SEED_KEY]).unwrap();
+    c.execute("UPDATE pet_artworks SET description='用户的使用说明',enabled=0 WHERE persona_id=?1 AND category='peek_left'",[gpt]).unwrap();
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND category IN('peek_right','rest_sit','rest_lie')",[gpt]).unwrap();
+    install_docking_from(&mut c,&f.paths,&f.resources).unwrap();
+    assert_eq!(c.query_row("SELECT image_file FROM pet_artworks WHERE persona_id=?1 AND kind='base'",[gpt],|r|r.get::<_,String>(0)).unwrap(),base);
+    assert_eq!(c.query_row("SELECT description,enabled FROM pet_artworks WHERE persona_id=?1 AND category='peek_left'",[gpt],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).unwrap(),("用户的使用说明".into(),0));
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1",[gpt],|r|r.get::<_,i64>(0)).unwrap(),25);
+    assert_eq!(c.query_row("SELECT count(*) FROM personas WHERE name='Gemini'",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND category='rest_lie'",[gpt]).unwrap();
+    install_docking_from(&mut c,&f.paths,&f.resources).unwrap();
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1 AND category='rest_lie'",[gpt],|r|r.get::<_,i64>(0)).unwrap(),0);
+}
+
 struct Fixture {
     root: PathBuf,
     paths: AppPaths,
@@ -21,7 +40,7 @@ impl Fixture {
         image::DynamicImage::ImageRgba8(image).write_to(&mut png, image::ImageFormat::Png).unwrap();
         for preset in PRESETS {
             fs::create_dir_all(resources.join(preset.key)).unwrap();
-            for (category, _, _) in ARTWORKS {
+            for (category, _, _) in ARTWORKS.iter().chain(CHAT_EMOTIONS.iter()).chain(LIFT_ARTWORKS.iter()) {
                 fs::write(resources.join(preset.key).join(format!("{category}.png")), png.get_ref()).unwrap();
             }
         }
@@ -43,7 +62,7 @@ impl Drop for Fixture {
 }
 
 #[test]
-fn installs_four_editable_image_personas_without_changing_current_or_sessions() {
+fn installs_four_editable_image_personas_with_default_sessions_preserving_current() {
     let f = Fixture::new();
     let mut c = crate::db::test_database();
     let sessions: i64 = c.query_row("SELECT count(*) FROM sessions", [], |r| r.get(0)).unwrap();
@@ -52,14 +71,22 @@ fn installs_four_editable_image_personas_without_changing_current_or_sessions() 
     assert_eq!(c.query_row("SELECT count(*) FROM personas", [], |r| r.get::<_,i64>(0)).unwrap(), 5);
     assert_eq!(c.query_row("SELECT name FROM personas WHERE is_active=1", [], |r| r.get::<_,String>(0)).unwrap(), "电子小猫");
     assert_eq!(c.query_row("SELECT count(*) FROM personas WHERE is_builtin=1", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
-    assert_eq!(c.query_row("SELECT count(*) FROM sessions", [], |r| r.get::<_,i64>(0)).unwrap(), sessions);
-    assert_eq!(f.files(), 36);
+    assert_eq!(c.query_row("SELECT count(*) FROM sessions", [], |r| r.get::<_,i64>(0)).unwrap(), sessions+4);
+    assert_eq!(f.files(), 100);
     for preset in PRESETS {
         let (id, current, initial): (i64, String, String) = c.query_row("SELECT id,prompt,initial_prompt FROM personas WHERE name=?1 AND is_builtin=0 AND pet_image_enabled=1", [preset.name], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
         assert_eq!(current, initial);
+        assert_eq!(current,preset.food_prompt());
+        assert!(preset.matches_prompt(preset.prompt));
+        assert!(preset.matches_prompt(&current));
+        let colors: (String, String, String) = c.query_row("SELECT color,chat_user_text_color,chat_assistant_text_color FROM personas WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(colors, (preset.color.into(), preset.color.into(), preset.color.into()));
         let library = crate::pet_creation::library(&c, id).unwrap();
         assert!(library.enabled);
-        assert_eq!(library.items.len(), 9);
+        assert_eq!(library.items.len(), 25);
+        let chat_choices=crate::pet_creation::chat_choices(&c,id).unwrap().unwrap();
+        assert_eq!(chat_choices.len(),18);
+        assert!(!chat_choices.iter().any(|a|matches!(a.category.as_str(),"peek_left"|"peek_right"|"rest_sit"|"rest_lie")));
         assert!(library.items.iter().any(|a| a.kind == "base"));
         assert!(library.items.iter().any(|a| a.category == "standby" && a.enabled));
         for artwork in library.items {
@@ -101,7 +128,7 @@ fn write_failure_rolls_back_all_rows_marker_and_new_files_then_allows_retry() {
     assert_eq!(f.files(), 0);
     c.execute_batch("DROP TRIGGER reject_preset;").unwrap();
     assert!(install_from(&mut c, &f.paths, &f.resources).unwrap());
-    assert_eq!(f.files(), 36);
+    assert_eq!(f.files(), 100);
 }
 
 #[test]
@@ -123,7 +150,7 @@ fn bundled_images_install_and_survive_database_reopen() {
     assert!(created);
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/personas");
     assert!(install_from(&mut c, &f.paths, &source).unwrap());
-    assert_eq!(f.files(), 36);
+    assert_eq!(f.files(), 100);
     drop(c);
     let (mut reopened, created) = crate::db::open(&f.paths).unwrap();
     assert!(!created);
@@ -132,10 +159,42 @@ fn bundled_images_install_and_survive_database_reopen() {
         let id: i64 = reopened.query_row("SELECT id FROM personas WHERE name=?1", [preset.name], |r| r.get(0)).unwrap();
         let library = crate::pet_creation::library(&reopened, id).unwrap();
         assert!(library.enabled);
-        assert_eq!(library.items.len(), 9);
+        assert_eq!(library.items.len(), 25);
         for artwork in library.items {
             let file = crate::accessories::images::managed_file(&f.paths, artwork.image_file.as_deref().unwrap()).unwrap();
             crate::accessories::images::validate_png(&fs::read(file).unwrap()).unwrap();
         }
     }
+}
+
+#[test]
+fn walking_upgrade_preserves_disabled_custom_action_and_does_not_reseed() {
+    let f=Fixture::new();let mut c=crate::db::test_database();install_from(&mut c,&f.paths,&f.resources).unwrap();
+    let id:i64=c.query_row("SELECT id FROM personas WHERE name='GPT'",[],|r|r.get(0)).unwrap();
+    c.execute("DELETE FROM settings WHERE key=?1",[WALK_SEED_KEY]).unwrap();
+    c.execute("UPDATE pet_artworks SET description='用户保留',enabled=0 WHERE persona_id=?1 AND category='walk_left'",[id]).unwrap();
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND category='walk_right'",[id]).unwrap();
+    install_categories_from(&mut c,&f.paths,&f.resources,WALK_SEED_KEY,&ARTWORKS[16..]).unwrap();
+    assert_eq!(c.query_row("SELECT description,enabled FROM pet_artworks WHERE persona_id=?1 AND category='walk_left'",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).unwrap(),("用户保留".into(),0));
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1 AND category='walk_right'",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND category='walk_right'",[id]).unwrap();
+    install_categories_from(&mut c,&f.paths,&f.resources,WALK_SEED_KEY,&ARTWORKS[16..]).unwrap();
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1 AND category='walk_right'",[id],|r|r.get::<_,i64>(0)).unwrap(),0);
+}
+
+#[test]
+fn emotions_upgrade_preserves_user_edits_and_deleted_roles_and_never_reseeds() {
+    let f=Fixture::new();let mut c=crate::db::test_database();install_from(&mut c,&f.paths,&f.resources).unwrap();
+    let id:i64=c.query_row("SELECT id FROM personas WHERE name='GPT'",[],|r|r.get(0)).unwrap();
+    c.execute("DELETE FROM settings WHERE key=?1",[EMOTION_SEED_KEY]).unwrap();
+    c.execute("UPDATE pet_artworks SET description='用户保留',enabled=0 WHERE persona_id=?1 AND name='开心'",[id]).unwrap();
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND name='生气'",[id]).unwrap();
+    c.execute("DELETE FROM personas WHERE name='Gemini'",[]).unwrap();
+    install_categories_from(&mut c,&f.paths,&f.resources,EMOTION_SEED_KEY,CHAT_EMOTIONS).unwrap();
+    assert_eq!(c.query_row("SELECT description,enabled FROM pet_artworks WHERE persona_id=?1 AND name='开心'",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,i64>(1)?))).unwrap(),("用户保留".into(),0));
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1 AND name='生气'",[id],|r|r.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(c.query_row("SELECT count(*) FROM personas WHERE name='Gemini'",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+    c.execute("DELETE FROM pet_artworks WHERE persona_id=?1 AND name='生气'",[id]).unwrap();
+    install_categories_from(&mut c,&f.paths,&f.resources,EMOTION_SEED_KEY,CHAT_EMOTIONS).unwrap();
+    assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks WHERE persona_id=?1 AND name='生气'",[id],|r|r.get::<_,i64>(0)).unwrap(),0);
 }

@@ -48,7 +48,7 @@ async function show(value = snapshot()) {
 it("展示完整大整数余额、当前亲密度和下一档位，上限不隐藏状态", async () => {
   api.status.mockResolvedValue(status("9223372036854775807"));
   const view = await show();
-  expect(screen.getByLabelText("喵币余额").textContent).toContain("9223372036854775807");
+  expect(coinText()).toContain("9223372036854775807");
   expect(screen.getByLabelText("当前亲密度").textContent).toBe("42 / 999");
   expect(screen.getByText(/第 2 档 · 50 亲密度（还差 8）/)).toBeTruthy();
   api.intimacy.mockResolvedValue(intimacy(999, "3", 2));
@@ -65,7 +65,7 @@ it("无会话仍能签到，等待后台提交才更新余额，连点不重复�
   const button = screen.getByRole("button", { name: "今日签到" });
   fireEvent.click(button); fireEvent.click(button);
   expect(api.signIn).toHaveBeenCalledTimes(1);
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("0 喵币");
+  expect(coinText()).toBe("0 喵币");
   await act(async () => { request.resolve({ status: status("0", true), grantedCoins: "0" }); });
   expect(screen.getByText("签到成功，获得 0 喵币。")).toBeTruthy();
   expect((screen.getByRole("button", { name: "今天已签到" }) as HTMLButtonElement).disabled).toBe(true);
@@ -76,7 +76,7 @@ it("另一窗口已领取时只显示后端现状，不再显示领取奖励", a
   await show();
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "今日签到" })); });
   expect(screen.getByText("今天已经签到过了。")).toBeTruthy();
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("7 喵币");
+  expect(coinText()).toBe("7 喵币");
 });
 
 it("签到失败保留原余额并允许再次点击", async () => {
@@ -84,7 +84,7 @@ it("签到失败保留原余额并允许再次点击", async () => {
   await show();
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "今日签到" })); });
   expect(screen.getByRole("alert").textContent).toBe("写入失败");
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("0 喵币");
+  expect(coinText()).toBe("0 喵币");
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "今日签到" })); });
   expect(screen.getByText("签到成功，获得 3 喵币。")).toBeTruthy();
   expect(api.signIn).toHaveBeenCalledTimes(2);
@@ -96,7 +96,7 @@ it("提交前的迟到余额查询不覆盖提交后的新余额", async () => {
   await act(async () => { window.dispatchEvent(new Event("focus")); });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "今日签到" })); });
   await act(async () => { stale.resolve(status("0")); });
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("3 喵币");
+  expect(coinText()).toBe("3 喵币");
   expect(screen.getByRole("button", { name: "今天已签到" })).toBeTruthy();
 });
 
@@ -120,7 +120,7 @@ it("钱包、配置、互动和聊天通知重新读取，卸载释放监听", a
     api.chatListen.mock.calls[0][0]({ sessionId: "2", type: "finished" });
     api.messagesListen.mock.calls[0][0]({ sessionId: "2" });
   });
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("20 喵币");
+  expect(coinText()).toBe("20 喵币");
   expect(screen.getByLabelText("当前亲密度").textContent).toBe("43 / 999");
   view.unmount(); stops.forEach(stop => expect(stop).toHaveBeenCalledTimes(1));
 });
@@ -179,6 +179,8 @@ it("签到等待期间切换会话，旧会话祝福不能覆盖目标会话", a
     { id: "9", scope: "custom", name: "旧会话生日", blessing: "旧会话祝福", isMemorial: false },
   ] }, grantedCoins: "10" }); });
   expect(screen.queryByText(/旧会话生日/)).toBeNull();
-  expect(screen.getByLabelText("喵币余额").textContent).toBe("10 喵币");
+  expect(coinText()).toBe("10 喵币");
   expect(screen.getByRole("button", { name: "今天已签到" })).toBeTruthy();
 });
+
+function coinText(){const node=screen.getByLabelText("喵币余额").cloneNode(true) as HTMLElement;node.querySelectorAll(".ym-value-change").forEach(e=>e.remove());return node.textContent;}

@@ -1,0 +1,6 @@
+.ym-skill-confirmation{display:flex;flex-direction:column;min-height:0;max-height:min(360px,45vh);margin:8px 0;border:1px solid var(--ym-border-strong);border-radius:var(--ym-radius-lg);background:var(--ym-surface);color:var(--ym-text);overflow:hidden}
+.ym-skill-confirmation__body{min-height:0;overflow:auto;padding:10px 12px;user-select:text;overflow-wrap:anywhere}
+.ym-skill-confirmation h3,.ym-skill-confirmation h4{font-size:14px;margin:0 0 6px}.ym-skill-confirmation p{font-size:12px;margin:5px 0}
+.ym-skill-confirmation pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:13px;margin:6px 0}
+.ym-skill-confirmation__actions{display:flex;flex-wrap:wrap;gap:6px;padding:7px 10px;border-top:1px solid var(--ym-border);flex-shrink:0}
+.pet-window .ym-skill-confirmation{margin:0;max-height:100%;background:transparent}.pet-window .ym-skill-confirmation__actions .ym-button{font-size:11px;min-height:24px;padding:3px 6px}

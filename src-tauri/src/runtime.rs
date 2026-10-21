@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 mod tests;
 
 pub struct Store {
+    pub(crate) skill_previews: std::collections::HashMap<String, crate::skills::tools::SharedPreview>,
     pub(crate) accessory_crafts: crate::accessories::craft::State,
     pub chat_requests: std::collections::HashMap<i64, crate::chat::RequestSnapshot>,
     pub weather: crate::weather::Cache,
@@ -54,6 +55,7 @@ impl Runtime {
         });
         let initial_session_created = opened.as_ref().is_ok_and(|(_, created)| *created);
         let store = opened.map(|(connection, _)| Store {
+            skill_previews: Default::default(),
             accessory_crafts: Default::default(),
             weather: Default::default(),
             chat_requests: Default::default(),
@@ -240,6 +242,7 @@ pub(crate) fn test_runtime(url: &str) -> Runtime {
         reminder_polish: Default::default(),
             reminder_email: Default::default(),
         store: Arc::new(Mutex::new(Ok(Store {
+            skill_previews: Default::default(),
             accessory_crafts: Default::default(),
             weather: Default::default(),
                 chat_requests: Default::default(),

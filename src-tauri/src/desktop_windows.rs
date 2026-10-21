@@ -8,7 +8,7 @@ pub struct SettingsNavigation(pub std::sync::Mutex<Option<SettingsTarget>>);
 
 #[derive(Clone, serde::Serialize, Deserialize)]
 #[serde(tag = "page", rename_all = "camelCase", deny_unknown_fields)]
-pub enum SettingsTarget { Reminders, Accessories, Persona { id: String }, UserProfile { id: String } }
+pub enum SettingsTarget { Travel {mailbox:bool}, Reminders, Accessories, Persona { id: String }, UserProfile { id: String }, RealMoney {date:Option<String>} }
 
 /// 只接受已实现的主程序页面，不允许前端传 URL、权限或任意窗口标签。
 #[derive(Clone, Copy, Deserialize)]
@@ -18,6 +18,7 @@ pub enum Page {
     Settings,
     Reminders,
     Accessories,
+    RealMoney,
     Memory,
     Travel,
     Mailbox,
@@ -30,7 +31,7 @@ impl Page {
             Self::Letter => ("letter", "写信 · 颜喵 YanMew", 720.0, 600.0),
             Self::Chat => ("chat", "聊天详情 · 颜喵 YanMew", 800.0, 640.0),
             Self::Memory => ("memory", "会话记事本 · 颜喵 YanMew", 720.0, 600.0),
-            Self::Settings | Self::Reminders | Self::Accessories => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
+            Self::Settings | Self::Reminders | Self::Accessories | Self::RealMoney => ("settings", "设置 · 颜喵 YanMew", 960.0, 700.0),
         }
     }
 }
@@ -54,6 +55,7 @@ pub async fn open_settings_detail(app: AppHandle, target: SettingsTarget) -> App
 }
 
 async fn open_with_target(app: AppHandle, page: Page, target: Option<SettingsTarget>) -> AppResult<()> {
+    let (page,target)=match page {Page::Travel=>(Page::Settings,Some(SettingsTarget::Travel{mailbox:false})),Page::Mailbox=>(Page::Settings,Some(SettingsTarget::Travel{mailbox:true})),_ =>(page,target)};
     let (sender, receiver) = tokio::sync::oneshot::channel();
     let owner = app.clone();
     app.run_on_main_thread(move || {
@@ -105,6 +107,7 @@ async fn open_with_target(app: AppHandle, page: Page, target: Option<SettingsTar
             let target = match page {
                 Page::Reminders => Some(SettingsTarget::Reminders),
                 Page::Accessories => Some(SettingsTarget::Accessories),
+                Page::RealMoney => Some(SettingsTarget::RealMoney{date:None}),
                 _ => target,
             };
             if let Some(target) = target {
@@ -132,7 +135,7 @@ mod tests {
     use super::*;
     #[test]
     fn settings_detail_contract_keeps_page_and_record_without_arbitrary_urls() {
-        for json in [r#"{"page":"persona","id":"1"}"#,r#"{"page":"userProfile","id":"7"}"#,r#"{"page":"reminders"}"#] {
+        for json in [r#"{"page":"persona","id":"1"}"#,r#"{"page":"userProfile","id":"7"}"#,r#"{"page":"reminders"}"#,r#"{"page":"travel","mailbox":true}"#] {
             let target:SettingsTarget=serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_value(target).unwrap(),serde_json::from_str::<serde_json::Value>(json).unwrap());
         }

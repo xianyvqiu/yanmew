@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { AppError, Persona, PersonaInput } from "../../types";
 
 type PersonaFormProps = {
@@ -13,6 +13,11 @@ const colorPattern = /^#[\da-f]{6}$/i;
 
 export default function PersonaForm({ persona, busy, error, onSave, onCancel }: PersonaFormProps) {
   const id = useId();
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    form.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+    form.current?.querySelector("input")?.focus({ preventScroll: true });
+  }, []);
   const [name, setName] = useState(persona?.name ?? "");
   const [prompt, setPrompt] = useState(persona?.prompt ?? "");
   const [initialPrompt, setInitialPrompt] = useState(persona?.initialPrompt ?? "");
@@ -51,7 +56,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
     });
   };
 
-  return <form className="ym-persona-form" onSubmit={submit}>
+  return <form ref={form} className="ym-persona-form" onSubmit={submit}>
     <fieldset disabled={busy}>
       <legend>{persona ? "编辑人设" : "新增人设"}</legend>
 

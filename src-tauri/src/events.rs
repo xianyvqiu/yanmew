@@ -42,6 +42,9 @@ pub trait MemoryEventSink: Send + Sync {
     fn embedding_changed(&self) {}
 }
 pub trait ChatToolEventSink: ReminderEventSink {
+    fn real_money_changed(&self) {}
+    fn real_money_failed(&self, _error: &crate::error::AppError) {}
+    fn skills_changed(&self) {}
     fn festivals_changed(&self) {}
     fn accessory_preview_changed(&self, _session: &str, _preview: &str) {}
     fn notebook_changed(&self);

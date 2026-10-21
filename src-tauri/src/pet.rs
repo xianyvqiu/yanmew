@@ -224,7 +224,7 @@ fn advance_impl(
     })
 }
 
-/// 一次合法点击/摸摸/喂食同时保存状态与 +1 亲密度；纯唤醒不发放奖励。
+/// 互动状态与奖励原子保存：点击10%概率+1，摸摸/喂食+1，纯唤醒不奖励。
 /// 非当前、旧版本和出门中的请求均由仓储拒绝，失败不会留下部分互动结果。
 pub fn interact(
     connection: &mut Connection,
@@ -232,6 +232,7 @@ pub fn interact(
     scope: PetWriteScope,
     interaction: Interaction,
     now: DateTime<Utc>,
+    random: &mut dyn RandomSource,
 ) -> AppResult<InteractionResult> {
     let transaction = connection.transaction()?;
     let snapshot = pet_store::interact_in_transaction(
@@ -246,7 +247,11 @@ pub fn interact(
         [scope.session_id],
         |row| row.get(0),
     )?;
-    let rewarded = !matches!(interaction, Interaction::Wake);
+    let rewarded = match interaction {
+        Interaction::Wake => false,
+        Interaction::Click => intimacy < MAX_INTIMACY && random.below(100)? < 10,
+        _ => true,
+    };
     let intimacy = if rewarded {
         rewarded_intimacy(intimacy)?
     } else {

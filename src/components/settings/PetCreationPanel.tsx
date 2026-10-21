@@ -7,7 +7,7 @@ import "./PetCreationPanel.css";
 const categories: [
     PetArtCategory,
     string
-][] = [["normal", "日常"], ["standby", "待机"], ["click", "点击 / 摸摸"], ["hungry", "饥饿"], ["eating", "吃东西"], ["sleepy", "睡觉"], ["bored", "无聊"], ["thinking", "思考"], ["chat", "聊天"]];
+][] = [["normal", "日常"], ["standby", "待机"], ["click", "点击 / 摸摸"], ["hungry", "饥饿"], ["eating", "吃东西"], ["craving", "等待投喂"], ["craving_favorite", "期待最爱"], ["eating_favorite", "喜欢地品尝"], ["peek_left", "左侧探头"], ["peek_right", "右侧探头"], ["rest_sit", "底部坐下"], ["rest_lie", "底部趴下"], ["walk_left", "向左行走"], ["walk_right", "向右行走"], ["lifted", "被拎后颈"], ["sleepy", "睡觉"], ["bored", "无聊"], ["thinking", "思考"], ["chat", "聊天"]];
 export function PetArtworkImage({ personaId, item, preview = false }: {
     personaId: string;
     item: PetArtwork;

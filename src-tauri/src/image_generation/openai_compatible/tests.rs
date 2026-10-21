@@ -44,3 +44,18 @@ async fn reference_edit_sends_source_image_to_edits_without_text_only_fallback()
  let server=std::thread::spawn(move||{let (mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();let mut raw=vec![];let mut buf=[0u8;4096];let end=loop{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);if let Some(i)=raw.windows(4).position(|s|s==b"\r\n\r\n"){break i+4;}};let header=String::from_utf8_lossy(&raw[..end]).to_lowercase();assert!(header.starts_with("post /v1/images/edits "));assert!(header.contains("multipart/form-data; boundary=yanmew-"));let len:usize=header.lines().find_map(|s|s.strip_prefix("content-length:")).unwrap().trim().parse().unwrap();while raw.len()<end+len{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);}let payload=String::from_utf8_lossy(&raw[end..]);assert!(payload.contains("name=\"image\"; filename=\"reference.png\""));assert!(payload.contains("reference-image-content"));assert!(payload.contains("挥手"));assert!(payload.contains("name=\"background\"\r\n\r\ntransparent"));assert!(payload.contains("configured-image-model"));let body=r#"{"data":[{"b64_json":"AQID"}]}"#;write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();});
  let bytes=edit(&client(),&snapshot(url),b"reference-image-content","开心挥手",&Cancellation::default()).await.unwrap();assert_eq!(bytes,vec![1,2,3]);server.join().unwrap();
 }
+
+#[test]
+fn endpoint_and_siliconflow_body_are_compatible_without_changing_connection() {
+ for base in ["https://api.siliconflow.cn/v1","https://api.siliconflow.cn/v1/images/generations","https://api.siliconflow.cn/v1/images/generations/","https://api.siliconflow.cn"] {assert_eq!(endpoint(base,"generations"),"https://api.siliconflow.cn/v1/images/generations");}
+ let mut cfg=snapshot("https://api.siliconflow.cn/v1/images/generations".into());cfg.provider.model="Tongyi-MAI/Z-Image-Turbo".into();
+ let body=generation_body(&cfg,"画一只猫",false);assert_eq!(body,json!({"model":"Tongyi-MAI/Z-Image-Turbo","prompt":"画一只猫","image_size":"1024x1024"}));
+ assert!(body.get("background").is_none());assert!(body.get("size").is_none());
+}
+#[tokio::test]
+async fn generic_picture_uses_full_endpoint_and_accepts_images_envelope() {
+ let server=Server::new_at(vec![response(200,json!({"images":[{"b64_json":"AQID"}]}))],"/v1/images/generations");
+ let cfg=snapshot(format!("{}/images/generations",server.url));
+ let bytes=generate_picture(&client(),&cfg,"一只猫在花园里",&Cancellation::default()).await.unwrap();assert_eq!(bytes,vec![1,2,3]);
+ let requests=server.requests.lock().unwrap();assert_eq!(requests.len(),1);assert_eq!(requests[0]["prompt"],"一只猫在花园里");assert!(requests[0].get("background").is_none());drop(requests);server.finish();
+}

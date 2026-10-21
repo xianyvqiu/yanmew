@@ -1,0 +1,56 @@
+[
+  {
+    "role": "claude",
+    "emotion": "happy",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_happy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion HAPPY: quiet intellectual delight: warm closed-eye smile, hugs closed academic book against chest, dignified relaxed upright posture. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "claude",
+    "emotion": "angry",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_angry.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion ANGRY: cool disapproving noble scholar: stern narrowed eyes, one hand on hip, other closes book firmly, composed straight posture, subtle anger. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "claude",
+    "emotion": "sad",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_sad.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion SAD: restrained tender sorrow: lowered amber eyes, book held loosely with both hands at waist, slightly inward shoulders, small tear, elegant composure. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "claude",
+    "emotion": "shy",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_shy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion SHY: graceful embarrassed young lady: blush, open book partially hides lower face while eyes peek aside, fingertips shyly meet on book spine. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "claude",
+    "emotion": "afraid",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_afraid.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion AFRAID: startled rational scholar: eyes widened, clutches book protectively to chest, one small backward step, raised shoulders, controlled anxious mouth. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "claude",
+    "emotion": "speechless",
+    "reference": "claude/base.png",
+    "file": "claude/emotion_speechless.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve elegant orange long-haired young lady with orange amber eyes, orange flower hairclip with black bow, black-white-orange detailed floral dress, boots, small academic book. Emotion SPEECHLESS: scholarly disbelief: half-lidded tired eyes, one hand lightly pinches bridge of nose, other holds closed book at side, elegant resigned sigh. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  }
+]

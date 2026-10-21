@@ -77,16 +77,16 @@ fn chat_appearance_backup_roundtrip_and_v9_defaults() {
 }
 #[test]
 fn settings_redesign_chat_image_backup_remaps_messages_and_preserves_files() {
-    for kind in [PackageKind::Full,PackageKind::Session] {
+    for role in ["user","assistant"] { let message_id=if role=="user"{10}else{11}; for kind in [PackageKind::Full,PackageKind::Session] {
         let source_dir=Directory::new();let target_dir=Directory::new();let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
         let mut png=std::io::Cursor::new(vec![]);image::DynamicImage::new_rgb8(2,2).write_to(&mut png,image::ImageFormat::Png).unwrap();
         let image=crate::chat_images::publish(source.paths.as_ref().unwrap(),png.get_ref(),"相片.png").unwrap();
-        source.read(|s,_|{s.connection.execute("INSERT INTO message_images(message_id,filename,image_file,media_type,caption,created_at) VALUES(10,'相片.png',?1,'image/png','图片理解',?2)",rusqlite::params![image,NOW])?;Ok(())}).unwrap();
+        source.read(|s,_|{s.connection.execute("INSERT INTO message_images(message_id,filename,image_file,media_type,caption,created_at) VALUES(?3,'相片.png',?1,'image/png','图片理解',?2)",rusqlite::params![image,NOW,message_id])?;Ok(())}).unwrap();
         let ids:&[&str]=if kind==PackageKind::Full{&[]}else{&["2"]};
         let transfer=make(&source,&source_dir.0,kind,ids,false);let preview=prepare(&target,&transfer).unwrap().unwrap();let confirmed=input(&preview);confirm(&target,confirmed).unwrap();
-        let attachment=target.read(|s,_|{let message:i64=s.connection.query_row("SELECT message_id FROM message_images WHERE filename='相片.png'",[],|r|r.get(0))?;assert_ne!(message,10);Ok(crate::chat_images::list(&s.connection,message)?.remove(0))}).unwrap();
+        let attachment=target.read(|s,_|{let message:i64=s.connection.query_row("SELECT message_id FROM message_images WHERE filename='相片.png'",[],|r|r.get(0))?;assert_ne!(message,message_id);assert_eq!(s.connection.query_row("SELECT role FROM messages WHERE id=?1",[message],|r|r.get::<_,String>(0))?,role);Ok(crate::chat_images::list(&s.connection,message)?.remove(0))}).unwrap();
         let restored=std::fs::read(crate::chat_images::managed_file(target.paths.as_ref().unwrap(),&attachment.image_file).unwrap()).unwrap();assert_eq!(restored,png.into_inner());assert_eq!(attachment.caption.as_deref(),Some("图片理解"));
-    }
+    }}
 }
 #[path = "festival_tests.rs"]
 mod festival_tests;
@@ -384,6 +384,8 @@ fn rewrite(path: &Path, change: impl FnOnce(&mut Manifest, &mut Value)) {
     }
     drop(zip);
     change(&mut manifest, &mut data);
+    if manifest.schema_version<18{for (table,_) in crate::real_money::TABLES{data.as_object_mut().unwrap().remove(*table);}}
+    if manifest.schema_version<15{for table in ["food_inventory","persona_food_settings","food_actions","skills","persona_skills"]{data.as_object_mut().unwrap().remove(table);}}
     if manifest.schema_version < 13 {
         let tables=data.as_object_mut().unwrap();
         if let Some(mut records)=tables.remove("custom_festivals") {
@@ -491,8 +493,11 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
     let target = fixture(&target_dir.0);
     // 本机种子安装状态不属于备份内容，全量恢复也不得重新安装已删除的人设。
     assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::SEED_KEY));
+    assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::EMOTION_SEED_KEY));
+    assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::LIFT_SEED_KEY));
     target.read(|s, _| {
         s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::SEED_KEY])?;
+        s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::EMOTION_SEED_KEY])?;
         Ok(())
     }).unwrap();
     source
@@ -523,6 +528,7 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
         .read(|s, _| {
             let c = &s.connection;
             assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::SEED_KEY], |r| r.get::<_, String>(0))?, "1");
+            assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::EMOTION_SEED_KEY], |r| r.get::<_, String>(0))?, "1");
             assert_eq!(
                 c.query_row("SELECT coins FROM user_state", [], |r| r.get::<_, i64>(0))?,
                 77
@@ -950,3 +956,32 @@ fn pet_creation_backup_keeps_formal_preview_and_accessory_placement(){
 
 #[test]
 fn pet_creation_missing_image_backup_continues_without_changing_source(){let source_dir=Directory::new();let source=fixture(&source_dir.0);let target_dir=Directory::new();let target=fixture(&target_dir.0);source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,image_file,created_at,updated_at) VALUES(2,'base','初始猫','保留要求','assets/accessories/accessory-1-1-1.png',?1,?1)",[NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;Ok(())}).unwrap();let backup=make(&source,&source_dir.0,PackageKind::PersonaProfile,&["2"],false);let preview=prepare(&target,&backup).unwrap().unwrap();assert!(!preview.warnings.is_empty());let mut choice=input(&preview);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let l=crate::pet_creation::library(&s.connection,id)?;assert!(!l.enabled);assert_eq!(l.items[0].prompt,"保留要求");assert!(l.items[0].image_file.is_none());Ok(())}).unwrap();source.read(|s,_|{assert!(crate::pet_creation::library(&s.connection,2)?.enabled);assert!(crate::pet_creation::library(&s.connection,2)?.items[0].image_file.is_some());Ok(())}).unwrap();}
+
+#[test]
+fn food_and_skill_full_and_persona_backup_roundtrip(){
+ for kind in [PackageKind::Full,PackageKind::PersonaProfile]{
+ let a=Directory::new();let b=Directory::new();let source=fixture(&a.0);let target=fixture(&b.0);
+ let persona_id=source.read(|s,_|{s.connection.execute("INSERT INTO personas(name,prompt,initial_prompt,created_at,updated_at) VALUES('食品Skill测试角色','正文','正文',?1,?1)",[NOW])?;let pid=s.connection.last_insert_rowid();s.connection.execute("UPDATE user_state SET coins=50",[])?;crate::foods::buy(&mut s.connection,"roundtrip-purchase","rice",3,0)?;crate::skills::save(&mut s.connection,crate::skills::Input{id:None,revision:None,title:"旅行口吻".into(),summary:"温柔".into(),body:"叙述具体细节".into()})?;crate::skills::bind(&s.connection,1,pid,true)?;crate::foods::set_preferences(&s.connection,pid,crate::foods::Preferences{default_food_id:"rice".into(),favorite_food_id:Some("rice".into())})?;Ok(pid.to_string())}).unwrap();
+ source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(?1,'expression','停靠趴下','rest_lie',?2,?2)",rusqlite::params![persona_id,NOW])?;Ok(())}).unwrap();
+ target.read(|s,_|{s.connection.execute("INSERT OR REPLACE INTO settings VALUES('pet_desktop_preferences',?1)",[r#"{"fullscreenWander":true,"dock":"rest_sit"}"#])?;s.connection.execute("INSERT OR REPLACE INTO settings VALUES(?1,'1')",[crate::preset_personas::DOCK_SEED_KEY])?;Ok(())}).unwrap();
+ let selected_ids=[persona_id.as_str()];let transfer=make(&source,&a.0,kind,if kind==PackageKind::Full{&[]}else{&selected_ids},false);let p=prepare(&target,&transfer).unwrap().unwrap();let confirm_input=input(&p);confirm(&target,confirm_input).unwrap();
+ target.read(|s,_|{assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key='pet_desktop_preferences'",[],|r|r.get::<_,String>(0))?,r#"{"fullscreenWander":true,"dock":"rest_sit"}"#);assert_eq!(s.connection.query_row("SELECT count(*) FROM pet_artworks WHERE category='rest_lie'",[],|r|r.get::<_,i64>(0))?,1);Ok(())}).unwrap();
+ target.read(|s,_|{assert!(crate::skills::list(&s.connection)?.iter().any(|x|x.body=="叙述具体细节"&&!x.personas.is_empty()));if kind==PackageKind::Full{assert_eq!(crate::currency::get_balance(&s.connection)?,35);assert_eq!(crate::foods::list(&s.connection)?.into_iter().find(|f|f.id=="rice").unwrap().quantity,3);assert_eq!(s.connection.query_row("SELECT count(*) FROM food_actions",[],|r|r.get::<_,i64>(0))?,1);}assert_eq!(s.connection.query_row("SELECT count(*) FROM pragma_foreign_key_check",[],|r|r.get::<_,i64>(0))?,0);Ok(())}).unwrap();
+ }
+}
+
+#[path = "real_money_tests.rs"]
+mod real_money_tests;
+
+#[test]
+fn multiple_accessory_layers_roundtrip_and_v18_defaults(){
+ for legacy in [false,true]{
+ let sd=Directory::new();let td=Directory::new();let source=fixture(&sd.0);let target=fixture(&td.0);
+ source.read(|s,_|{s.connection.execute("UPDATE accessories SET is_worn=1,render_layer='back',layer_order=7,position_x=125,position_y=-500,scale=1500 WHERE session_id=2",[])?;s.connection.execute("INSERT INTO accessories(session_id,name,display_text,cost,description,source,is_worn,render_layer,layer_order,created_at) VALUES(2,'第二件','✦',20,'前层','crafted',1,'front',3,?1)",[NOW])?;Ok(())}).unwrap();
+ target.read(|s,_|{s.connection.execute("INSERT OR REPLACE INTO settings VALUES(?1,'1')",[crate::preset_personas::LIFT_SEED_KEY])?;Ok(())}).unwrap();
+ let archive=make(&source,&sd.0,PackageKind::Full,&[],false);
+ if legacy{rewrite(&archive.0,|manifest,data|{manifest.schema_version=18;for row in data["accessories"].as_array_mut().unwrap(){let obj=row.as_object_mut().unwrap();obj.remove("render_layer");obj.remove("layer_order");}});}
+ let preview=prepare(&target,&archive).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();
+ target.read(|s,_|{assert!(s.connection.query_row("SELECT count(*) FROM accessories WHERE session_id=(SELECT session_id FROM accessories WHERE name='第二件') AND is_worn=1",[],|r|r.get::<_,i64>(0))? >=2);let original:(i64,i64,i64)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories WHERE name='小帽子' AND session_id=(SELECT session_id FROM accessories WHERE name='第二件')",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!(original,(125,-500,1500));let row:(String,i64)=s.connection.query_row("SELECT render_layer,layer_order FROM accessories WHERE name='第二件'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;assert_eq!(row,if legacy{("front".into(),0)}else{("front".into(),3)});assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key=?1",[crate::preset_personas::LIFT_SEED_KEY],|r|r.get::<_,String>(0))?,"1");Ok(())}).unwrap();
+ }
+}

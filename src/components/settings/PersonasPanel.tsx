@@ -1,3 +1,6 @@
+import PetCreationPanel from "./PetCreationPanel";
+import PersonaExpressionsEditor from "./PersonaExpressionsEditor";
+import PersonaCompanionSettings from "./PersonaCompanionSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Persona, PersonaInput } from "../../types";
@@ -13,14 +16,6 @@ type Confirmation = { persona: Persona; action: "delete" | "baseline" | "restore
 const inputFor = (persona: Persona): PersonaInput => ({ name: persona.name, prompt: persona.prompt,
   color: persona.color, selfEvolveEnabled: persona.selfEvolveEnabled, chatBgOpacity: persona.chatBgOpacity,
   chatBgBlur: persona.chatBgBlur, saveAsInitial: false });
-
-function expressionGroups(persona: Persona): { label: string; values: string[] }[] {
-  const library = persona.expressions;
-  const click = library?.click && typeof library.click === "object" ? library.click as Record<string, unknown> : {};
-  const groups: [string, unknown][] = [["点击 · 开心", click.happy], ["点击 · 惊讶", click.surprised], ["点击 · 害羞", click.shy],
-    ["待机", library?.standby], ["饥饿", library?.hungry], ["进食", library?.eating], ["困倦", library?.sleepy], ["无聊", library?.bored], ["思考", library?.thinking]];
-  return groups.map(([label, value]) => ({ label, values: Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [] }));
-}
 
 export default function PersonasPanel({ detailRequest }: { detailRequest?: SettingsDetailRequest }) {
   const [selected,setSelected]=useState<string|null>(null);
@@ -102,7 +97,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
   const save = async (input: PersonaInput) => {
     const target = editing;
     if (await run(() => target ? configurationApi.updatePersona(target.id, input) : configurationApi.createPersona(input),
-      target ? "人设已保存" : "人设已创建。有当前聊天提供商时，表情库会在后台自动生成。")) {
+      target ? "人设已保存" : "人设与默认会话已创建。有当前聊天提供商时，颜文字表情库会在后台自动生成。")) {
       if (mounted.current) setEditing(undefined);
     }
   };
@@ -147,7 +142,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
         <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(persona.id)}>{persona.name}</button></h3><button className={`ym-button ${persona.isActive?"ym-current-button":""}`} disabled={disabled||persona.isActive||editing!==undefined} onClick={()=>void run(()=>configurationApi.setPersona(persona.id),"当前人设已切换")}>{persona.isActive?"使用中":"切换"}</button></div>
         <p className="ym-page-note">{persona.isBuiltin?"系统默认人设":"自建人设"}{persona.isActive&&" · 当前使用"}</p>
         {!selected&&<p className="ym-card-summary">{persona.prompt}</p>}
-        <p className="ym-persona-color"><span style={{ backgroundColor: persona.color }} aria-hidden="true" />本体颜色 {persona.color}</p>
+        <p className="ym-persona-color"><span style={{ backgroundColor: persona.color }} aria-hidden="true" />人设标记颜色 {persona.color}</p>
         {!selected&&<p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}</p>}
         {selected===persona.id&&<>
         <p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}。仅在确有必要时小幅调整，完整回复成功后保存。</p>
@@ -156,7 +151,8 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
         <details><summary>初始设定</summary><p className="ym-persona-prompt">{persona.initialPrompt}</p></details>
         <PersonaPromptDiff initialPrompt={persona.initialPrompt} currentPrompt={persona.prompt} />
         <ChatBackgroundSettings persona={persona} disabled={disabled || editing !== undefined || Boolean(confirmation)} onSaved={() => { void refresh().catch(showError); }} />
-        <details><summary>表情库</summary>{persona.expressions ? <dl className="ym-expression-list">{expressionGroups(persona).map(group => <div key={group.label}><dt>{group.label}</dt><dd>{group.values.join("　") || "暂无"}</dd></div>)}</dl> : <p className="ym-page-note">尚无已保存的表情库。可以使用当前聊天提供商生成。</p>}</details>
+        <PersonaCompanionSettings key={persona.id} personaId={persona.id}/>
+        <details><summary>表情库</summary><PersonaExpressionsEditor key={persona.id} persona={persona} disabled={disabled || editing !== undefined || Boolean(generating)} onSaved={() => { void refresh().catch(showError); }} /><PetCreationPanel personaId={persona.id} personaName={persona.name}/></details>
         {failures[persona.id] && <p role="alert" className="ym-page-error">表情库生成未完成：{failures[persona.id]}。已有表情库保留。</p>}
         <div className="ym-inline-form">
           <button className="ym-button" disabled={disabled || persona.isActive || editing !== undefined} onClick={() => { void run(() => configurationApi.setPersona(persona.id), "当前人设已切换"); }}>切换为 {persona.name}</button>

@@ -15,6 +15,8 @@ GROUPS = [
     ('出行与旅行内容', '#0d9488', ['travels', 'travel_journals', 'letters', 'accessories', 'souvenirs']),
     ('小游戏插件与钱包', '#d97706', ['game_plugins', 'game_permissions', 'game_plugin_settings', 'game_plugin_data', 'game_runs', 'currency_ledger', 'user_state']),
     ('提醒与节日', '#db2777', ['reminders', 'reminder_occurrences', 'reminder_email_deliveries', 'reminder_email_items', 'festival_catalog', 'custom_festivals']),
+    ('食品与 Skill', '#a85585', ['food_catalog', 'food_inventory', 'persona_food_settings', 'food_actions', 'skills', 'persona_skills']),
+    ('现实记账', '#8b5c76', ['real_assets', 'real_categories', 'real_schedules', 'real_entries', 'real_occurrences', 'real_budgets', 'real_operations']),
 ]
 NAMES = dict(zip(
     'personas sessions user_profiles providers embedding_providers settings chat_rounds messages short_memories long_memories long_memory_sources long_memory_embeddings long_memories_fts notebooks travels travel_journals letters accessories souvenirs game_plugins game_permissions game_plugin_settings game_plugin_data game_runs currency_ledger user_state reminders reminder_occurrences festival_catalog custom_festivals'.split(),
@@ -27,6 +29,8 @@ NAMES['provider_models'] = '连接的各用途模型配置'
 NAMES['message_images'] = '聊天图片附件'
 NAMES['reminder_email_deliveries'] = '邮件发送任务'
 NAMES['reminder_email_items'] = '邮件提醒关联与快照'
+NAMES.update(food_catalog='食品目录', food_inventory='全局食品库存', persona_food_settings='人设食物偏好', food_actions='购买与投喂回执', skills='Skill资料', persona_skills='人设Skill绑定')
+NAMES.update(real_assets='现实资产资金池', real_categories='现实账单分类', real_schedules='周期记账计划', real_entries='现实收支与校准', real_occurrences='周期期次与漏期确认', real_budgets='日月年预算', real_operations='记账操作回执')
 
 
 def extract():
@@ -131,7 +135,7 @@ def make_svg(data):
          '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#64748b"/></marker></defs>',
          '<rect width="100%" height="100%" fill="#f5f7fb"/>',
          '<text x="60" y="65" font-size="34" fill="#172554" font-weight="700">颜喵 · 数据库完整类图</text>',
-         '<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 30 张业务表 + 1 张 FTS5 虚拟表 · V1 设计蓝图 · 来源 db/schema.sql</text>']
+         f'<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · {sum(not t["virtual"] for t in data["tables"].values())} 张业务表 + 1 张 FTS5 虚拟表 · 来源 db/schema.sql</text>']
     for y, g in bands:
         s.append(f'<text x="60" y="{y+24}" fill="{g["color"]}" font-size="25" font-weight="700">{esc(g["name"])}</text>')
     s.append('<g id="edges">')

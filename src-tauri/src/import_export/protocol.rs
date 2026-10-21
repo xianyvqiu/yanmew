@@ -2,6 +2,20 @@
 use super::*;
 use rusqlite::{types::ValueRef, Row};
 pub(super) const COLUMNS: &[(&str, &str)] = &[
+ ("real_assets","id,name,note,is_default,archived,revision,created_at,updated_at"),
+ ("real_categories","id,name,icon,direction,archived,revision,created_at,updated_at"),
+ ("real_schedules","id,title,kind,category_id,asset_id,description,amount_cents,anchor_local,unit,interval,generation,next_sequence,status,review_required,recorder,revision,created_at,updated_at"),
+ ("real_entries","id,title,kind,category_id,asset_id,description,amount_cents,occurred_local,source,recorder,schedule_id,revision,created_at,updated_at"),
+ ("real_occurrences","id,schedule_id,sequence,generation,scheduled_local,snapshot_json,status,entry_id,created_at,resolved_at"),
+ ("real_budgets","period,amount_cents,updated_at"),
+ ("real_operations","request_id,fingerprint,result_json,created_at"),
+
+    ("food_inventory", "food_id,quantity,updated_at"),
+    ("persona_food_settings", "persona_id,default_food_id,favorite_food_id,updated_at"),
+    ("food_actions", "action_id,kind,food_id,quantity,persona_id,session_id,food_name,target_name,unit_price,ledger_id,favorite_bonus,intimacy_delta,created_at"),
+    ("skills", "id,title,summary,body,revision,created_at,updated_at"),
+    ("persona_skills", "persona_id,skill_id,created_at"),
+
     ("providers", "id,name,base_url,created_at,updated_at"),
     ("provider_roles", "purpose,provider_id,enabled"),
     ("provider_models", "provider_id,purpose,model,max_output_tokens,context_window_override"),
@@ -30,7 +44,7 @@ pub(super) const COLUMNS: &[(&str, &str)] = &[
     ("currency_ledger", "id,delta,reason,ref_id,game_run_id,plugin_id,plugin_version,plugin_display_reason,wallet_request_id,created_at"),
     ("travels", "id,session_id,status,started_at,planned_return_at,actual_return_at,cancelled_at,midway_letter_at,midway_letter_state,return_letter_state,gift_state,journal_state,gift_kind,facts_state,destination,activities_json,facts_version,facts_ready_at,gift_snapshot_json,created_at"),
     ("travel_journals", "id,session_id,travel_id,title,content,created_at,updated_at"),
-    ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file,position_x,position_y,scale"),
+    ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file,position_x,position_y,scale,render_layer,layer_order"),
     ("letters", "id,session_id,travel_id,sender,content,reply_to_id,has_been_replied,reply_due_at,reply_state,letter_kind,is_favorite,is_read,created_at"),
     ("souvenirs", "id,session_id,travel_id,content,note,is_favorite,created_at"),
     ("custom_festivals", "id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at"),

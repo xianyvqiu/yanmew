@@ -1,89 +1,56 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { useRef } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { usePetWander } from "./usePetWander";
-import type { PetActivity, PetWanderLayout, PetWanderTarget } from "../types";
-
-const update = vi.fn(); const stop = vi.fn();
-let receive: (target: PetWanderTarget) => void;
-vi.mock("../api", () => ({ petApi: {
-  updateWanderLayout: (layout: PetWanderLayout) => update(layout),
-  listenWander: async (callback: typeof receive) => { receive = callback; return stop; },
-} }));
-const view: PetActivity = { personaId: "1", sessionId: "1", contextRevision: 0, revision: 1, activity: "normal",
-  expression: "(・ω・)", intimacy: 0, sleepUntil: null, error: null, canInteract: true, canWander: true };
-function Harness({ current = view, enabled = true, bubble = false }: {current?: PetActivity; enabled?: boolean; bubble?: boolean}) {
-  const root = useRef<HTMLDivElement>(null); const face = useRef<HTMLDivElement>(null);
+import type { PetActivity, PetWanderLayout } from "../types";
+const update = vi.hoisted(() => vi.fn());
+vi.mock("../api", () => ({ petApi: { updateWanderLayout: update } }));
+const view: PetActivity = { personaId: "1", sessionId: "1", contextRevision: 0, revision: 1, activity: "normal", expression: "(・ω・)", intimacy: 0, sleepUntil: null, error: null, canInteract: true, canWander: true };
+function Harness({ current = view, enabled = true, bubble = false, dock = "none" }) {
+  const root = useRef<HTMLDivElement>(null), face = useRef<HTMLDivElement>(null);
   const style = usePetWander(root, face, current, enabled);
-  return <div ref={root} data-testid="canvas" style={style}>
-    <div ref={face} data-testid="face" />
-    {bubble && <div className="pet-reminder-slot"><span>气泡</span></div>}
-  </div>;
+  return <div ref={root} data-testid="canvas" data-dock={dock} style={style}><div ref={face} data-testid="face" />{bubble && <div className="pet-reminder-slot"><span>气泡</span></div>}</div>;
 }
-const flush = async (ms = 20) => { await act(async () => { await Promise.resolve(); vi.advanceTimersByTime(ms); }); };
+const flush = async () => { await act(async () => { vi.advanceTimersByTime(50); await Promise.resolve(); }); };
 const latest = () => update.mock.calls[update.mock.calls.length - 1][0] as PetWanderLayout;
-const target = (offset = { x: 12, y: 0 }): PetWanderTarget => ({ ...latest(), offset });
 beforeEach(() => {
-  vi.useFakeTimers(); update.mockReset().mockResolvedValue(undefined); stop.mockReset();
+  vi.useFakeTimers(); update.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => setTimeout(() => fn(0), 16));
   vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    const canvas = this.closest<HTMLElement>("[data-testid=canvas]")!;
-    const dx = parseFloat(canvas.style.getPropertyValue("--ym-wander-x")) || 0;
-    const dy = parseFloat(canvas.style.getPropertyValue("--ym-wander-y")) || 0;
-    const face = this.dataset.testid === "face"; const bubble = this.className === "pet-reminder-slot";
-    const x = face ? 100 + dx : bubble ? 12 + dx : 0;
-    const y = face ? 120 + dy : bubble ? 44 + dy : 0;
-    const width = face ? 120 : bubble ? 296 : 320;
-    const height = face ? 80 : bubble ? 104 : 240;
+    const face = this.dataset.testid === "face", bubble = this.className === "pet-reminder-slot";
+    const x = face ? 100 : bubble ? 12 : 0, y = face ? 120 : bubble ? 44 : 0, width = face ? 120 : bubble ? 296 : 320, height = face ? 80 : bubble ? 104 : 280;
     return { x, y, left: x, top: y, right: x + width, bottom: y + height, width, height, toJSON: () => ({}) } as DOMRect;
   });
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("向原生层分别报告身体与气泡边界，不再在画布内平移", async () => {
+  render(<Harness bubble />); await flush();
+  expect(latest().anchor).toEqual({ x: 100, y: 120, width: 120, height: 80 });
+  expect(latest().body.width).toBe(296); expect(latest().offset).toEqual({ x: 0, y: 0 });
+  expect(latest().paused).toBe(true);
+  expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe("0px");
+});
+it("关闭或上下文变化会报告最新暂停资格，旧会话不会继续使用", async () => {
+  const r = render(<Harness />); await flush(); expect(latest().paused).toBe(false);
+  r.rerender(<Harness enabled={false} current={{ ...view, sessionId: "2", contextRevision: 3 }} />); await flush();
+  expect(latest()).toMatchObject({ paused: true, sessionId: "2", contextRevision: 3 });
+});
+it("底部布局按身体高度放操作区，稳定布局不产生持续上报循环", async () => {
+  const r = render(<Harness dock="rest_lie" />); await flush(); await flush();
+  expect(screen.getByTestId("canvas").style.getPropertyValue("--dock-measured-body-height")).toBe("80px");
+  const calls = update.mock.calls.length; await flush(); expect(update.mock.calls.length).toBe(calls);
+  r.unmount(); expect(vi.getTimerCount()).toBe(0);
+});
+it("系统减少动态效果时暂停", async () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  render(<Harness />); await flush(); expect(latest().paused).toBe(true);
+});
 
-describe("临时画布游走", () => {
-  it("只改变本地偏移并在动作结束后报告最终位置", async () => {
-    render(<Harness />); await flush();
-    const initial = latest(); expect(initial.body.x).toBe(100);
-    act(() => receive(target())); await flush(600);
-    expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe("12px");
-    await flush(); expect(latest().offset.x).toBe(12); expect(latest().body.x).toBe(100);
-    expect(update.mock.calls.length).toBeLessThanOrEqual(3);
-  });
-  it("拒绝旧会话、旧布局、非法或越界目标", async () => {
-    render(<Harness />); await flush();
-    const t = target();
-    act(() => {
-      receive({ ...t, sessionId: "2" }); receive({ ...t, contextRevision: 1 });
-      receive({ ...t, layoutRevision: t.layoutRevision - 1 }); receive({ ...t, offset: { x: 500, y: 0 } });
-      receive({ ...t, offset: { x: NaN, y: 0 } });
-    });
-    await flush(600); expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe("0px");
-  });
-  it("按住或隐藏时立即停止未完成动画", async () => {
-    const r = render(<Harness />); await flush();act(() => receive(target()));await flush(200);
-    const held = screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x");
-    r.rerender(<Harness enabled={false} />);await flush(600);
-    expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe(held);
-    expect(latest().paused).toBe(true);
-  });
-  it("气泡出现时合并边界并修正超出的偏移", async () => {
-    const r = render(<Harness />);await flush();act(() => receive(target()));await flush(620);
-    r.rerender(<Harness bubble />);await flush();
-    expect(latest().body.width).toBe(296);expect(latest().offset.x).toBe(8);
-    expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe("8px");
-  });
-  it("系统减少动态效果时不执行游走", async () => {
-    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
-    render(<Harness />);await flush();expect(latest().paused).toBe(true);
-    act(() => receive(target()));await flush(600);
-    expect(screen.getByTestId("canvas").style.getPropertyValue("--ym-wander-x")).toBe("0px");
-  });
-  it("卸载释放监听且迟到事件不会开始动画", async () => {
-    const r = render(<Harness />);await flush();const t = target();r.unmount();
-    expect(stop).toHaveBeenCalledOnce();act(() => receive(t));await flush(600);
-    expect(vi.getTimerCount()).toBe(0);
-  });
+it("无会话的人设也更新停靠按钮避让尺寸，但不提交游走请求",async()=>{
+  render(<Harness dock="rest_lie" current={{...view,sessionId:null}}/>);await flush();
+  expect(screen.getByTestId("canvas").style.getPropertyValue("--dock-measured-body-height")).toBe("80px");
+  expect(update).not.toHaveBeenCalled();
 });

@@ -34,7 +34,7 @@ export function PetChatInput({ chat, hasSession, away, pending, onDetails, onLet
       : away ? <div className="pet-chat-empty"><span>出行期间只能写信。</span><button className="ym-button" onClick={onLetter}>写信</button></div>
         : <>
           {chat.error && <p className="pet-chat-message-error" role="alert">{chat.error}<button className="ym-button" onClick={() => { void chat.reload(); }}>重试连接</button></p>}
-          <ChatComposer compact value={chat.draft} onChange={chat.setDraft} onSend={() => { void chat.send(); }} onCancel={() => { void chat.cancel(); }}
+          <ChatComposer compact value={chat.draft} onChange={chat.setDraft} images={chat.images} onImagesChange={chat.setImages} onReadingChange={chat.setUploading} attachmentOwnerKey={chat.attachmentOwnerKey} onSend={() => { void chat.send(); }} onCancel={() => { void chat.cancel(); }}
             disabled={!chat.ready || pending} busy={chat.busy} cancelling={chat.cancelling} />
         </>}
   </section>;

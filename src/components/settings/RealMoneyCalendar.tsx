@@ -1,0 +1,20 @@
+import { useCallback,useEffect,useState } from "react";
+import { errorMessage } from "../../api";
+import { navigation } from "../../platform/navigation";
+import { emptyRealQuery,moneyText,realMoneyApi,type RealCalendarDay,type RealReport } from "../../realMoneyApi";
+import CalendarView from "./CalendarView";
+function DayDetails({date,onDetails}:{date:string;onDetails:(date:string)=>void}){
+    const[value,setValue]=useState<{date:string;report:RealReport}>();const[error,setError]=useState("");
+    useEffect(()=>{let disposed=false;setError("");void realMoneyApi.query({...emptyRealQuery(),start:date,end:date}).then(report=>{if(!disposed)setValue({date,report});}).catch(e=>{if(!disposed)setError(errorMessage(e));});return()=>{disposed=true;};},[date]);
+    const report=value?.date===date?value.report:undefined;
+    return <section className="real-calendar-day-detail" aria-label="当天现实账单"><div className="ym-page-heading"><h3>现实收支</h3><button className="ym-button" onClick={()=>onDetails(date)}>查看当天账单</button></div>{error&&<p role="alert" className="ym-page-error">{error}</p>}{!report&&!error&&<p role="status">正在读取当天账单…</p>}{report&&<><p>收入 ¥{moneyText(report.summary.income)} · 支出 ¥{moneyText(report.summary.expense)}</p>{report.entries.map(e=><div className="ym-ledger-summary-row" key={e.id}><strong>{e.title}</strong><span>{e.kind==="expense"?"−":e.kind==="income"?"+":"校准 "}¥{moneyText(e.amountCents)}</span><small>{e.assetName} · {e.recorder}</small></div>)}{!report.entries.length&&<p className="ym-page-note">这一天没有实际账单。</p>}{report.summary.count>12&&<p className="ym-page-note">这里只显示前12条，可查看当天全部账单。</p>}</>}</section>;
+}
+export default function RealMoneyCalendar({revision,onAdd,onEdit,canAdd=true,showInitially=false,onDateDetails}:{revision:string;onAdd?:(date:string)=>void;onEdit?:(id:string)=>void;canAdd?:boolean;showInitially?:boolean;onDateDetails?:(date:string)=>void}){
+    const[show,setShow]=useState(showInitially);const[month,setMonth]=useState({year:new Date().getFullYear(),month:new Date().getMonth()+1});const[data,setData]=useState<RealCalendarDay[]>([]);const[error,setError]=useState("");const[refresh,setRefresh]=useState(0);
+    const monthChange=useCallback((year:number,month:number)=>setMonth(old=>old.year===year&&old.month===month?old:{year,month}),[]);
+    useEffect(()=>{if(!show)return;let disposed=false;setError("");void realMoneyApi.calendar(month.year,month.month).then(v=>{if(!disposed)setData(v.days);}).catch(e=>{if(!disposed)setError(errorMessage(e));});return()=>{disposed=true;};},[show,month,revision,refresh]);
+    useEffect(()=>{if(!show)return;let disposed=false;let stop:(()=>void)|undefined;void realMoneyApi.listen(()=>{if(!disposed)setRefresh(v=>v+1);}).then(fn=>{if(disposed)fn();else stop=fn;}).catch(()=>{});return()=>{disposed=true;stop?.();};},[show]);
+    const details=(date:string)=>{if(onDateDetails)onDateDetails(date);else void navigation.openRealMoney(date).catch(e=>setError(errorMessage(e)));};
+    const map=new Map(data.map(d=>[d.date,d]));
+    return <div className="real-money-calendar" data-show-money={show}><label className="real-check"><input type="checkbox" checked={show} onChange={e=>setShow(e.target.checked)}/>显示现实收支与周期计划</label>{error&&<p role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={()=>setRefresh(v=>v+1)}>重试</button></p>}<CalendarView revision={`${revision}:${refresh}`} onAdd={onAdd??(()=>{})} onEdit={onEdit??(()=>{})} canAdd={canAdd&&!!onAdd} showManagement={!!onAdd||!!onEdit} onMonthChange={monthChange} dayExtra={show?date=>{const d=map.get(date);if(!d)return null;return <span className="real-calendar-money">{BigInt(d.income)>0n&&<span data-kind="income">+{moneyText(d.income)}</span>}{BigInt(d.expense)>0n&&<span data-kind="expense">−{moneyText(d.expense)}</span>}{d.planned>0&&<small>预计 {d.planned} 项</small>}{d.pending>0&&<small>待确认 {d.pending} 项</small>}</span>;}:undefined} selectionExtra={show?date=><DayDetails key={`${date}:${revision}:${refresh}`} date={date} onDetails={details}/>:undefined}/></div>;
+}

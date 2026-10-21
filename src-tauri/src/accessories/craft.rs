@@ -56,6 +56,7 @@ struct Candidate {
     image_file: Option<String>,
     notice: Option<String>,
     image_revision: Option<u64>,
+    uploaded:bool,
     requires_reconfirm: bool,
     cancel: Cancellation,
     events: Arc<dyn ChatToolEventSink>,
@@ -94,6 +95,7 @@ pub struct Preview {
     pub description: String,
     pub status: Status,
     pub appearance: Appearance,
+    pub uploaded:bool,
     pub image_data_url: Option<String>,
     pub notice: Option<String>,
 }
@@ -199,6 +201,7 @@ fn notify(candidate: &Candidate) {
 fn preview(candidate: &Candidate, image: Option<String>) -> Preview {
     Preview {
         preview_id: candidate.id.clone(),
+        uploaded:candidate.uploaded,
         context: candidate.context.clone(),
         tier: candidate.quote.tier,
         cost: candidate.quote.cost.to_string(),
@@ -349,7 +352,7 @@ pub(crate) fn request(
             status,
             image_file: None,
             notice,
-            image_revision: revision,
+            image_revision: revision,uploaded:false,
             requires_reconfirm: false,
             cancel,
             events,
@@ -490,6 +493,7 @@ pub(crate) fn get(runtime: &Runtime, context: &Context, id: &str) -> AppResult<P
     let data = match image {
         Some(Ok(image)) => Some(image),
         Some(Err(_)) => {
+            if candidate.uploaded{return Err(AppError::new("ACCESSORY_IMAGE_UNAVAILABLE","上传图片已丢失或损坏，请取消后重新上传；未扣币"));}
             runtime.read(|store, _| {
                 require_candidate(store, context, id)?;
                 let active = store.accessory_crafts.candidate.as_mut().unwrap();
@@ -583,6 +587,7 @@ pub(crate) fn confirm(runtime: &Runtime, context: &Context, id: &str) -> AppResu
             .is_ok_and(|paths| super::images::read(paths, file).is_ok())
     });
     if !image_ok {
+        if before.uploaded{return Err(AppError::new("ACCESSORY_IMAGE_UNAVAILABLE","上传图片已丢失或损坏，未扣币；请重新上传"));}
         runtime.read(|store, _| {
             require_candidate(store, context, id)?;
             let candidate = store.accessory_crafts.candidate.as_mut().unwrap();
@@ -641,4 +646,21 @@ pub(crate) fn cancel(runtime: &Runtime, context: &Context, id: &str) -> AppResul
     notify(&candidate);
     super::images::cleanup_unused(runtime, &[]);
     Ok(())
+}
+
+/// 用户主动上传，只准备候选；复用确认事务扣币，不启动任何生图请求。
+pub(crate) fn upload(runtime:&Runtime,context:Context,name:String,description:String,bytes:Vec<u8>,events:Arc<dyn ChatToolEventSink>)->AppResult<Preview>{
+    let png=super::images::normalize(&bytes)?;
+    let text=Text{name,description,display_text:"✦".into()};validate_text(&text)?;
+    let candidate=runtime.read(|s,_|{
+        let persona=parse_id(&context.persona_id)?;let session=parse_id(&context.session_id)?;
+        super::require_current(s,persona,session,context.context_revision)?;
+        if s.accessory_crafts.candidate.is_some(){return Err(AppError::new("REQUEST_BUSY","请先确认或取消当前挂件候选"));}
+        if s.connection.query_row("SELECT EXISTS(SELECT 1 FROM travels WHERE session_id=?1 AND status='away')",[session],|r|r.get::<_,bool>(0))?{return Err(AppError::new("ACCESSORY_UNAVAILABLE","出行期间不能制作挂件"));}
+        let quote=quote(&s.connection,session)?.ok_or_else(||AppError::new("ACCESSORY_UNAVAILABLE","当前没有可用制作档位，请先提升亲密度"))?;
+        let next=s.accessory_crafts.next.checked_add(1).ok_or_else(AppError::storage)?;
+        let file=super::images::publish(runtime.paths.as_ref().map_err(Clone::clone)?,&png)?;
+        let candidate=Candidate{id:format!("accessory-upload-{next}"),context:context.clone(),quote,text:text.clone(),status:Status::Ready,image_file:Some(file),notice:Some("手动上传透明图片，不调用生图服务；确认后按当前档位扣喵币。".into()),image_revision:None,uploaded:true,requires_reconfirm:false,cancel:Cancellation::default(),events:events.clone()};
+        s.accessory_crafts.next=next;s.accessory_crafts.candidate=Some(candidate.clone());Ok(candidate)
+    })?;notify(&candidate);get(runtime,&context,&candidate.id)
 }

@@ -78,7 +78,7 @@ pub async fn confirm_backup_import(window:WebviewWindow,app:AppHandle,runtime:St
     // 已提交的数据不能因刷新通知或后台重试失败而被报告成未导入。
     if full {let _=runtime.memory_index.reset();let _=runtime.memory.retry(None);}
     runtime.memory.wake.notify_one();
-    for event in ["configuration_changed","game_plugins_changed",crate::events::WALLET_CHANGED,crate::events::REMINDERS_CHANGED,crate::events::MEMORY_GENERATION_CHANGED,crate::events::NOTEBOOK_CHANGED,crate::events::EMBEDDING_CHANGED,crate::events::IMAGE_GENERATION_CONFIG_CHANGED] {let _=app.emit(event,());}
+    for event in ["real-money-changed","configuration_changed","game_plugins_changed",crate::events::WALLET_CHANGED,crate::events::REMINDERS_CHANGED,crate::events::MEMORY_GENERATION_CHANGED,crate::events::NOTEBOOK_CHANGED,crate::events::EMBEDDING_CHANGED,crate::events::IMAGE_GENERATION_CONFIG_CHANGED] {let _=app.emit(event,());}
     if let Ok(context)=runtime.read(|store,_|crate::persona::context(&store.connection,store.context_revision)) {
         if context.context_revision!=previous {let _=app.emit("window_context_changed",&context);}
         if let Some(session)=context.session_id {
@@ -444,6 +444,9 @@ impl crate::events::ReminderEventSink for ChatToolEvents {
     fn reminder_failed(&self, error: &AppError) { let _ = self.0.emit(crate::events::REMINDER_ERROR, error); }
 }
 impl crate::events::ChatToolEventSink for ChatToolEvents {
+    fn real_money_changed(&self) {let _=self.0.emit("real-money-changed",());}
+    fn real_money_failed(&self,error:&AppError) {let _=self.0.emit("real-money-error",error);}
+    fn skills_changed(&self) { let _ = self.0.emit("skills-changed", ()); }
     fn accessory_preview_changed(&self,session:&str,preview:&str) {
         let _=self.0.emit(crate::events::ACCESSORY_CRAFT_PREVIEW_CHANGED,serde_json::json!({"sessionId":session,"previewId":preview}));
     }
@@ -781,17 +784,21 @@ pub async fn set_pet_dragging(
         return Err(AppError::new("PERMISSION_DENIED", "只有主宠窗可以更新拖动状态"));
     }
     let position = window.state::<crate::pet_position::WindowPosition>().inner().clone();
-    if dragging { position.begin_drag(&window)?; }
+    if dragging { let desktop=window.state::<crate::pet_desktop::Desktop>(); desktop.begin_drag()?; crate::pet_desktop::publish(window.app_handle(),&desktop.snapshot()?); position.begin_drag(&window)?; }
+    if !dragging { return finish_pet_drag(&window).await; }
     let worker = runtime.inner().clone();
-    let result = tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(dragging)))
-        .await
-        .unwrap_or_else(|_| Err(AppError::storage()));
-    if !dragging {
-        let saved = position.finish_drag(&window, runtime.inner().clone()).await;
-        result?;
-        return saved;
-    }
-    result
+    tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(true))).await.map_err(|_|AppError::storage())?
+}
+
+pub(crate) async fn finish_pet_drag(window: &WebviewWindow) -> AppResult<()> {
+    if !window.state::<crate::pet_desktop::Desktop>().is_dragging()? { return Ok(()); }
+    let runtime = window.state::<Runtime>().inner().clone();
+    let worker = runtime.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(false))).await.map_err(|_|AppError::storage())?;
+    let docked = crate::pet_desktop::finish_drag(window, runtime.clone()).await;
+    let ended = window.state::<crate::pet_desktop::Desktop>().end_drag();
+    let saved = window.state::<crate::pet_position::WindowPosition>().inner().clone().finish_drag(window, runtime).await;
+    result?; docked?; ended?; saved
 }
 #[tauri::command]
 pub async fn refresh_pet_provider(
@@ -1331,6 +1338,7 @@ pub async fn focus_or_create_window(window: WebviewWindow, app: AppHandle, runti
     authorize(&window)?;
     if let Some(target) = detail {
         if !matches!(page, crate::desktop_windows::Page::Settings) { return Err(AppError::validation("detail", "详情跳转只能打开设置页")); }
+        if let crate::desktop_windows::SettingsTarget::RealMoney{date}=&target { if let Some(date)=date{crate::real_money::date(date)?;} return crate::desktop_windows::open_settings_detail(app,target).await; }
         let (table, id) = match &target {
             crate::desktop_windows::SettingsTarget::Persona { id } => ("personas", parse_id(id)?),
             crate::desktop_windows::SettingsTarget::UserProfile { id } => ("user_profiles", parse_id(id)?),
@@ -1520,6 +1528,17 @@ pub async fn update_provider(
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn save_persona_expressions(window: WebviewWindow, app: AppHandle, runtime: State<'_, Runtime>, id: String, expected: Option<serde_json::Value>, library: crate::expressions::ExpressionLibrary) -> AppResult<crate::persona::Persona> {
+    authorize_backup(&window)?;
+    let id = parse_id(&id)?;
+    let value = storage(runtime.inner().clone(), move |s, _| {
+        crate::expressions::save_manual(&mut s.connection,id,expected,&library)?;
+        crate::persona::list(&s.connection)?.into_iter().find(|p|p.id==id.to_string()).ok_or_else(AppError::not_found)
+    }).await?;
+    let _ = app.emit("configuration_changed", ());
+    Ok(value)
+}
 #[tauri::command]
 pub async fn list_personas(
     window: WebviewWindow,
@@ -1770,17 +1789,25 @@ pub struct Snapshot {
 #[derive(Default)]
 pub struct PetState {
     snapshot: Snapshot,
+    image_mode: bool,
+    side_docked: bool,
     full_size: Option<LogicalSize<f64>>,
     region: Option<Vec<[i32; 4]>>,
 }
 
 impl PetState {
+    fn chat_extra_height(&self) -> f64 {
+        if self.snapshot.chat_open && !self.side_docked { PET_CHAT_EXTRA_HEIGHT } else { 0.0 }
+    }
+    fn artwork_size(&self, image_mode: bool) -> LogicalSize<f64> {
+        LogicalSize::new(self.full_size.map(|size|size.width).unwrap_or(320.0), if image_mode {400.0}else{280.0})
+    }
     fn target_size(&self, hidden: bool) -> LogicalSize<f64> {
         if hidden {
             LogicalSize::new(112.0, 44.0)
         } else {
             let base = self.full_size.unwrap_or(LogicalSize::new(320.0, 280.0));
-            LogicalSize::new(base.width, base.height + if self.snapshot.chat_open { PET_CHAT_EXTRA_HEIGHT } else { 0.0 })
+            LogicalSize::new(base.width, base.height + self.chat_extra_height())
         }
     }
 
@@ -1825,7 +1852,7 @@ pub fn change_hidden(app: &AppHandle, hidden: bool) -> Result<Snapshot, String> 
             let mut base: LogicalSize<f64> = window.inner_size()
                 .map_err(|e| format!("读取宠窗尺寸失败：{e}"))?
                 .to_logical(window.scale_factor().map_err(|e| format!("读取屏幕缩放失败：{e}"))?);
-            if state.snapshot.chat_open { base.height = (base.height - PET_CHAT_EXTRA_HEIGHT).max(1.0); }
+            base.height = (base.height - state.chat_extra_height()).max(1.0);
             Some(base)
         } else { state.full_size };
         // 先解除旧模式裁剪，确保恢复期间不会被旧区域永久遮挡。
@@ -1878,15 +1905,27 @@ pub async fn set_pet_chat_open(window: WebviewWindow, app: AppHandle, open: bool
         let managed=app.state::<Mutex<PetState>>();
         let mut state=managed.lock().map_err(|_|"宠窗状态不可用")?;
         if state.snapshot.hidden { return Err("请先显示宠窗".into()); }
-        if state.snapshot.chat_open != open {
+        let dock=app.state::<crate::pet_desktop::Desktop>().snapshot().map_err(|e|e.message)?.dock;
+        let side_docked=matches!(dock,crate::pet_desktop::Dock::PeekLeft|crate::pet_desktop::Dock::PeekRight);
+        if state.snapshot.chat_open != open || state.side_docked != side_docked {
+            let scale=window.scale_factor().map_err(|_|"读取屏幕缩放失败")?;
             let mut base:LogicalSize<f64>=window.inner_size().map_err(|_|"读取宠窗尺寸失败")?
-                .to_logical(window.scale_factor().map_err(|_|"读取屏幕缩放失败")?);
-            if state.snapshot.chat_open {base.height=(base.height-PET_CHAT_EXTRA_HEIGHT).max(1.0);}
-            let target=LogicalSize::new(base.width,base.height+if open {PET_CHAT_EXTRA_HEIGHT}else{0.0});
+                .to_logical(scale);
+            let previous_height=base.height;
+            base.height=(base.height-state.chat_extra_height()).max(1.0);
+            let target=LogicalSize::new(base.width,base.height+if open && !side_docked {PET_CHAT_EXTRA_HEIGHT}else{0.0});
+            let point=window.outer_position().map_err(|_|"读取宠窗位置失败")?;
             pet_region::apply(&window,None)?;
             state.region=None;
-            window.set_size(target).map_err(|_|"调整快捷输入区域失败")?;
+            if target.height != previous_height {
+                window.set_size(target).map_err(|_|"调整快捷输入区域失败")?;
+                // 从已展开的自由布局拖入侧边时，缩小画布仍保持身体所在底边。
+                if side_docked {
+                    window.set_position(tauri::PhysicalPosition::new(point.x,point.y+((previous_height-target.height)*scale).round() as i32)).map_err(|_|"调整侧边输入位置失败")?;
+                }
+            }
             state.full_size=Some(base);
+            state.side_docked=side_docked;
             state.snapshot.chat_open=open;
             state.snapshot.revision+=1;
         }
@@ -1895,6 +1934,36 @@ pub async fn set_pet_chat_open(window: WebviewWindow, app: AppHandle, open: bool
         let position=app.state::<crate::pet_position::WindowPosition>();
         if let Err(error)=position.ensure_visible(&window,true) {crate::pet_position::report(&app,&error);}
         window.emit(STATE_EVENT,snapshot).map_err(|_|"同步快捷输入状态失败")?;
+        Ok(snapshot)
+    }).await
+}
+
+/// 图片需要额外的透明上方空间；尺寸按模式确定，重复通知不会累计增高。
+#[tauri::command]
+pub async fn set_pet_artwork_layout(window:WebviewWindow,app:AppHandle,image_mode:bool)->Result<Snapshot,String> {
+    if window.label()!="main" {return Err("只有宠窗可以调整形象布局".into())}
+    on_main(app,move|app|{
+        let window=app.get_webview_window("main").ok_or("找不到 main 宠窗")?;
+        let managed=app.state::<Mutex<PetState>>();
+        let mut state=managed.lock().map_err(|_|"宠窗状态不可用")?;
+        if state.image_mode==image_mode {return Ok(state.snapshot)}
+        let base=state.artwork_size(image_mode);
+        if !state.snapshot.hidden {
+            let scale=window.scale_factor().map_err(|_|"读取屏幕缩放失败")?;
+            let previous=window.inner_size().map_err(|_|"读取宠窗尺寸失败")?;
+            let position=window.outer_position().map_err(|_|"读取宠窗位置失败")?;
+            let target=LogicalSize::new(base.width,base.height+state.chat_extra_height());
+            pet_region::apply(&window,None)?;
+            state.region=None;
+            window.set_size(target).map_err(|_|"调整图片形象区域失败")?;
+            window.set_position(tauri::PhysicalPosition::new(position.x,position.y+previous.height as i32-(target.height*scale).round() as i32)).map_err(|_|"调整图片形象位置失败")?;
+        }
+        state.full_size=Some(base);state.image_mode=image_mode;state.region=None;state.snapshot.revision+=1;
+        let snapshot=state.snapshot;drop(state);
+        if !snapshot.hidden {
+            if let Err(error)=app.state::<crate::pet_position::WindowPosition>().ensure_visible(&window,true) {crate::pet_position::report(&app,&error);}
+        }
+        window.emit(STATE_EVENT,snapshot).map_err(|_|"同步图片布局失败")?;
         Ok(snapshot)
     }).await
 }
@@ -1931,6 +2000,36 @@ mod recovery_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn side_chat_keeps_canvas_size_through_toggle_hide_and_restore() {
+        let mut state=PetState::default();
+        state.full_size=Some(state.artwork_size(true));
+        state.side_docked=true;
+        let closed=state.target_size(false);
+        state.snapshot.chat_open=true;
+        assert_eq!(state.chat_extra_height(),0.0);
+        assert_eq!(state.target_size(false),closed);
+        state.commit_hidden(true,state.full_size);
+        assert_eq!(state.target_size(true),LogicalSize::new(112.0,44.0));
+        state.commit_hidden(false,state.full_size);
+        assert_eq!(state.target_size(false),closed);
+        state.snapshot.chat_open=false;
+        assert_eq!(state.target_size(false),closed);
+        state.side_docked=false;
+        state.snapshot.chat_open=true;
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,520.0));
+    }
+    #[test]
+    fn image_canvas_reserves_space_without_growing_on_repeated_switches() {
+        let mut state=PetState::default();
+        state.full_size=Some(state.artwork_size(true));state.image_mode=true;
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,400.0));
+        state.full_size=Some(state.artwork_size(true));state.snapshot.chat_open=true;
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,520.0));
+        assert_eq!(state.target_size(true),LogicalSize::new(112.0,44.0));
+        state.full_size=Some(state.artwork_size(false));
+        assert_eq!(state.target_size(false),LogicalSize::new(320.0,400.0));
+    }
     #[test]
     fn repeated_hide_preserves_full_size_and_restore_revision() {
         let mut state = PetState::default();
@@ -2439,3 +2538,12 @@ pub async fn generate_pet_artwork(window:WebviewWindow,app:AppHandle,runtime:Sta
 pub async fn cancel_pet_artwork(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,id:String)->AppResult<()>{authorize_backup(&window)?;let persona=parse_id(&persona_id)?;let id=parse_id(&id)?;runtime.requests.cancel_key(&format!("pet-art:{persona}:{id}"));Ok(())}
 #[tauri::command]
 pub async fn save_accessory_placement(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String,x:Option<i32>,y:Option<i32>,scale:i32)->AppResult<crate::models::Accessory>{authorize_backup(&window)?;let (persona,session,revision)=accessory_target(&context)?;let id=parse_id(&id)?;let item=storage(runtime.inner().clone(),move|s,_|{crate::accessories::require_current(s,persona,session,revision)?;crate::accessories::placement(&s.connection,session,id,x,y,scale)}).await?;notify_accessories(&app,session);Ok(item)}
+
+#[tauri::command]
+pub async fn move_accessory_layer(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:ChatContextInput,id:String,plane:String,action:String)->AppResult<crate::models::Accessory>{authorize_backup(&window)?;let (persona,session,revision)=accessory_target(&context)?;let id=parse_id(&id)?;let item=storage(runtime.inner().clone(),move|s,_|{crate::accessories::require_current(s,persona,session,revision)?;crate::accessories::layer(&mut s.connection,session,id,&plane,&action)}).await?;notify_accessories(&app,session);Ok(item)}
+
+#[tauri::command]
+pub async fn upload_accessory_craft(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,context:crate::memory::management::Context,name:String,description:String,data:Vec<u8>)->AppResult<crate::accessories::craft::Preview>{authorize_backup(&window)?;let rt=runtime.inner().clone();tauri::async_runtime::spawn_blocking(move||crate::accessories::craft::upload(&rt,context,name,description,data,std::sync::Arc::new(ChatToolEvents(app)))).await.map_err(|_|AppError::storage())?}
+
+#[tauri::command]
+pub async fn get_pet_mail_status(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64)->AppResult<serde_json::Value>{authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;let trip=crate::travel::queries::current(&s.connection,scope.session)?;let trip_id=trip.map(|t|t.id);let unread=if let Some(id)=trip_id.as_deref(){s.connection.query_row("SELECT count(*) FROM letters WHERE session_id=?1 AND travel_id=?2 AND sender='ai' AND is_read=0",rusqlite::params![scope.session,parse_id(id)?],|r|r.get::<_,i64>(0))?}else{0};Ok(serde_json::json!({"travelId":trip_id,"unread":unread}))}).await}

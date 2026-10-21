@@ -1,0 +1,56 @@
+[
+  {
+    "role": "gpt",
+    "emotion": "happy",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_happy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant, using the supplied image as the exact character identity / costume / painting style reference. Keep this chibi white Western dragon girl recognizable: long white hair, pale lavender eyes, white curved horns, white dragon wings and scaled tail, same ornate white rose dress and boots. Expression HAPPY: confident proud tsundere delight, self-satisfied little smirk softening into genuine smile, chin slightly raised, one hand proudly on hip and the other giving a small graceful approving gesture, tail gently curling upward. Distinct personality, not generic big open mouth grin. Same detailed polished anime shading and same body proportions as reference, entire body all feet horns wings tail contained with safe margin, centered isolated cutout, clean readable silhouette at 172px, true alpha transparent background, NO ground, NO opaque or checkerboard background, NO words, NO extra people or food. Output a single character, not a sheet. Keep outfit and species identical to reference."
+  },
+  {
+    "role": "gpt",
+    "emotion": "angry",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_angry.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve white Western dragon girl: long white hair, lavender eyes, white horns, wings, scaled tail, ornate white rose dress and boots. Emotion ANGRY: proud tsundere anger: both arms crossed, narrowed eyes and puffed cheeks, wings slightly raised and tail tense; indignant but cute, not violent. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gpt",
+    "emotion": "sad",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_sad.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve white Western dragon girl: long white hair, lavender eyes, white horns, wings, scaled tail, ornate white rose dress and boots. Emotion SAD: tries to hide wounded pride: downcast eyes, small trembling closed mouth, one hand gripping her opposite sleeve, drooping wings and tail, subtle tears. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gpt",
+    "emotion": "shy",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_shy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve white Western dragon girl: long white hair, lavender eyes, white horns, wings, scaled tail, ornate white rose dress and boots. Emotion SHY: tsundere caught off guard: vivid blush, looking sideways avoiding eye contact, one hand hiding mouth, other behind back, shy inward toes and curling tail. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gpt",
+    "emotion": "afraid",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_afraid.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve white Western dragon girl: long white hair, lavender eyes, white horns, wings, scaled tail, ornate white rose dress and boots. Emotion AFRAID: proud dragon surprised by fear: wide lavender eyes, hands defensively raised near chest, wings instinctively sheltering body, tail curling around legs. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "gpt",
+    "emotion": "speechless",
+    "reference": "gpt/base.png",
+    "file": "gpt/emotion_speechless.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve white Western dragon girl: long white hair, lavender eyes, white horns, wings, scaled tail, ornate white rose dress and boots. Emotion SPEECHLESS: regal deadpan disbelief: half-lidded eyes, flat tiny mouth, palm turned up in restrained exasperation, one hip tilted, wings relaxed. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  }
+]

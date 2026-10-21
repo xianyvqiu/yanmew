@@ -1,3 +1,4 @@
+import AccessoryUpload from "./AccessoryUpload";
 import AccessoryPlacementEditor from "./AccessoryPlacementEditor";
 import CardBrowserControls from "../CardBrowserControls";
 import {useRemoteCardBrowser} from "../../hooks/useRemoteCardBrowser";
@@ -16,6 +17,8 @@ export default function AccessoryPanel({ context }: { context: CurrentContext })
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState<{ item: Accessory; sell: boolean } | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const placementPanel = useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(placement){const frame=requestAnimationFrame(()=>placementPanel.current?.scrollIntoView?.({block:"start",behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"}));return()=>cancelAnimationFrame(frame);}},[placement]);
   const locked = useRef(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
@@ -35,9 +38,10 @@ export default function AccessoryPanel({ context }: { context: CurrentContext })
   if (!context.sessionId) return <section className="ym-page-card"><h2>饰品</h2><p>当前没有会话，请先在聊天窗口创建会话。</p></section>;
   return <div className="ym-accessory-panel">
     <AccessoryCraftCard context={context} />
+    <AccessoryUpload context={context}/>
     <section className="ym-page-card" aria-label="当前会话饰品">
       <div className="ym-page-heading"><h2>饰品</h2><button className="ym-button" disabled={busy || browser.loading} onClick={() => { browser.refresh(); }}>刷新饰品</button></div>
-      <p className="ym-page-note">饰品随当前会话保存，同时只能佩戴一件。卖出未佩戴饰品固定获得 10 喵币；制作资格不会恢复。</p>
+      <p className="ym-page-note">饰品随当前会话保存，可同时佩戴多件，前后位置与层级在佩戴编辑器调整。卖出未佩戴饰品固定获得 10 喵币；制作资格不会恢复。</p>
       {browser.loading && <p role="status">正在读取饰品…</p>}
       {(error || browser.error) && <p role="alert" className="ym-page-error">{error || browser.error}</p>}
       {notice && <p role="status">{notice}</p>}
@@ -61,7 +65,7 @@ export default function AccessoryPanel({ context }: { context: CurrentContext })
         </div></li>)}</ul>
 
     </section>
-    {placement&&<AccessoryPlacementEditor context={context} item={placement} onClose={()=>setPlacement(null)} onSaved={()=>{setPlacement(null);browser.refresh();}}/>}
+    {placement&&<div ref={placementPanel}><AccessoryPlacementEditor context={context} item={placement} onClose={()=>setPlacement(null)} onSaved={()=>{setPlacement(null);browser.refresh();}}/></div>}
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="accessory-remove-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       <h2 id="accessory-remove-title">{confirmation?.sell ? "卖出这件饰品？" : "删除这件饰品？"}</h2>
       <div className="ym-session-dialog-body"><p>{confirmation?.item.name}：{confirmation?.sell ? "卖出后获得固定 10 喵币" : "删除不返还喵币"}，操作不可恢复。制作档位资格不会恢复，其他饰品不受影响。</p>{error && <p role="alert" className="ym-page-error">{error}</p>}</div>

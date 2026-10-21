@@ -76,7 +76,7 @@ export default function BackupImportPanel() {
       {preview.profiles.length > 0 && <fieldset><legend>用户设定</legend>{choices(preview.profiles, profiles, setProfiles, true)}</fieldset>}
       {preview.plugins.length > 0 && <><h3>插件使用数据</h3><ul>{preview.plugins.map(id => <li key={id}>{id}</li>)}</ul><p className="ym-page-note">插件程序不在备份中。可兼容本机程序时恢复存档；需要升级时调用开发者迁移程序，否则保留数据并提示重新安装。</p></>}
       {preview.warnings.length > 0 && <ul>{[...new Set(preview.warnings)].map(warning => <li key={warning}>{warning}</li>)}</ul>}
-      {preview.kind === "full" && <label className="ym-backup-option"><input type="checkbox" disabled={busy} checked={consent} onChange={event => setConsent(event.target.checked)} /><span>确认用备份恢复全局喵币、账单、设置、提醒、提供商和插件使用数据。现有会话保留；密钥重新填写，搜索和生图默认关闭。</span></label>}
+      {preview.kind === "full" && <label className="ym-backup-option"><input type="checkbox" disabled={busy} checked={consent} onChange={event => setConsent(event.target.checked)} /><span>确认用备份恢复全局喵币与喵币账单、现实记账（账单、资产、预算、周期）、设置、提醒、提供商和插件使用数据。现有会话保留；密钥重新填写，搜索和生图默认关闭。</span></label>}
       <div className="ym-backup-actions"><button className="ym-button" disabled={busy || !!missing} onClick={() => void confirm()}>确认导入</button><button className="ym-button" disabled={busy} onClick={() => void read(true)}>刷新预览</button><button className="ym-button" disabled={busy} onClick={() => void cancel()}>取消导入</button></div>
     </div>}
     {error && <p className="ym-page-error" role="alert">{error}</p>}

@@ -6,7 +6,12 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 14;
+const VERSION: i64 = 19;
+const PET_LAYERS_MIGRATION: &str = include_str!("../../db/migrations/019_pet_layers.sql");
+const REAL_MONEY_MIGRATION: &str = include_str!("../../db/migrations/018_real_money.sql");
+const WALKING_MIGRATION: &str = include_str!("../../db/migrations/017_pet_walking.sql");
+const DOCKING_MIGRATION: &str = include_str!("../../db/migrations/016_pet_docking.sql");
+const FOOD_SKILL_MIGRATION: &str = include_str!("../../db/migrations/015_foods_and_skills.sql");
 const STANDBY_MIGRATION: &str = include_str!("../../db/migrations/014_pet_standby.sql");
 const CUSTOM_FESTIVALS_MIGRATION: &str = include_str!("../../db/migrations/013_global_custom_festivals.sql");
 const PET_CREATION_MIGRATION: &str = include_str!("../../db/migrations/012_pet_creation.sql");
@@ -102,7 +107,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 => {}
+        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -152,6 +157,13 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
         if !sql.contains("'standby'") { tx.execute_batch(STANDBY_MIGRATION)?; }
         tx.pragma_update(None,"user_version",VERSION)?;
     }
+    if (1..15).contains(&version) { tx.execute_batch(FOOD_SKILL_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..16).contains(&version) { tx.execute_batch(DOCKING_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..17).contains(&version) { tx.execute_batch(WALKING_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..18).contains(&version) { tx.execute_batch(REAL_MONEY_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..19).contains(&version) { tx.execute_batch(PET_LAYERS_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    crate::real_money::seed(&tx)?;
+    crate::foods::seed(&tx)?;
     config::normalize_legacy_idle_settings(&tx)?;
     crate::provider_roles::migrate_legacy(&tx)?;
     for (key, value) in config::defaults() {
@@ -165,6 +177,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
         [chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)],
     )?;
     seed_default_persona(&tx)?;
+    tx.execute("INSERT OR IGNORE INTO persona_food_settings(persona_id,default_food_id,favorite_food_id,updated_at) SELECT id,'token','dried_fish',?1 FROM personas WHERE is_builtin=1",[chrono::Utc::now().to_rfc3339()])?;
     let created_initial_session = version == 0;
     if created_initial_session {
         crate::sessions::create_initial_in_transaction(&tx)?;
@@ -219,7 +232,8 @@ fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
         return Err(AppError::new("STORAGE_ERROR", "存在多个系统默认人设，数据不一致；请保留原数据并检查备份"));
     }
     if count == 0 {
-        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin,created_at,updated_at) VALUES(?1,?2,?2,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'))", params![NAME, PROMPT])?;
+        let prompt=format!("{PROMPT}你最喜欢的食物是小鱼干。用户之后可在食物设置修改喜好，以当前保存的配置为准。");
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin,created_at,updated_at,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?2,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'#ffb6c1','#ffb6c1')", params![NAME, prompt])?;
     } else {
         // 只替换上一版种子的原值；三项独立判断，不覆盖手动编辑或人设自调。
         tx.execute("UPDATE personas SET name=CASE WHEN name='喵喵桌宠' THEN ?1 ELSE name END,
@@ -252,7 +266,7 @@ mod tests {
         let mut c = memory();
         initialize(&mut c).unwrap();
         let initial: (String, String, bool) = c.query_row("SELECT name,prompt,is_active FROM personas WHERE is_builtin=1", [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
-        assert_eq!(initial, ("电子小猫".into(), "你是电子小猫，用自然、亲切的中文与用户交流。".into(), true));
+        assert_eq!(initial, ("电子小猫".into(), "你是电子小猫，用自然、亲切的中文与用户交流。你最喜欢的食物是小鱼干。用户之后可在食物设置修改喜好，以当前保存的配置为准。".into(), true));
         assert_eq!(c.query_row("SELECT count(*) FROM personas", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
         c.execute_batch("UPDATE personas SET is_active=0; INSERT INTO personas(name,prompt,initial_prompt,is_active) VALUES('我的人设','内容','初始',1); DELETE FROM personas WHERE is_builtin=1;").unwrap();
         initialize(&mut c).unwrap();
@@ -282,7 +296,7 @@ mod tests {
         assert_eq!(c.query_row("SELECT count(*) FROM settings WHERE key='hungry_minutes'", [], |r| r.get::<_,i64>(0)).unwrap(), 0);
     }
 
-    fn remove_v12_fixture_columns(connection:&Connection){connection.execute_batch("DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale;").unwrap();}
+    fn remove_v12_fixture_columns(connection:&Connection){connection.execute_batch("ALTER TABLE accessories DROP COLUMN render_layer;ALTER TABLE accessories DROP COLUMN layer_order; DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale;").unwrap();}
     fn remove_v10_fixture_columns(connection: &Connection) {
         remove_v12_fixture_columns(connection);
         connection.execute_batch("ALTER TABLE sessions DROP COLUMN is_pinned;").unwrap();
@@ -945,7 +959,7 @@ mod reminder_email_migration_tests {
     #[test]
     fn reminder_email_upgrade_from_v8_preserves_existing_data() {
         let mut c=test_database();
-        c.execute_batch("DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale; ALTER TABLE sessions DROP COLUMN is_pinned; ALTER TABLE personas DROP COLUMN chat_bubble_style; ALTER TABLE personas DROP COLUMN chat_user_text_color; ALTER TABLE personas DROP COLUMN chat_assistant_text_color;").unwrap();
+        c.execute_batch("ALTER TABLE accessories DROP COLUMN render_layer; ALTER TABLE accessories DROP COLUMN layer_order; DROP TABLE pet_artworks; ALTER TABLE personas DROP COLUMN pet_image_enabled; ALTER TABLE personas DROP COLUMN pet_image_revision; ALTER TABLE accessories DROP COLUMN position_x; ALTER TABLE accessories DROP COLUMN position_y; ALTER TABLE accessories DROP COLUMN scale; ALTER TABLE sessions DROP COLUMN is_pinned; ALTER TABLE personas DROP COLUMN chat_bubble_style; ALTER TABLE personas DROP COLUMN chat_user_text_color; ALTER TABLE personas DROP COLUMN chat_assistant_text_color;").unwrap();
         c.execute_batch("DROP TABLE reminder_email_items; DROP TABLE reminder_email_deliveries; PRAGMA user_version=8;").unwrap();
         c.execute("INSERT INTO reminders(name,kind,content,status,fire_at,source,created_at) VALUES('旧提醒','once','保留','pending','2099-01-01T00:00:00Z','manual','2026-10-15T00:00:00Z')",[]).unwrap();
         initialize(&mut c).unwrap();
@@ -955,4 +969,16 @@ mod reminder_email_migration_tests {
         initialize(&mut c).unwrap();
         assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
     }
+}
+
+#[cfg(test)]mod pet_layers_migration_tests{
+ use super::*;
+ #[test]fn v18_upgrade_preserves_accessories_and_adds_multiple_wear_and_lifted(){
+ let mut c=test_database();
+ c.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'迁移测试','a','a')",[]).unwrap();
+ c.execute_batch("INSERT INTO accessories(id,session_id,name,display_text,cost,description,source,is_worn,created_at,position_x,position_y,scale) VALUES(101,1,'原挂件','✦',20,'保留','crafted',1,'a',125,-500,1500);ALTER TABLE accessories DROP COLUMN render_layer;ALTER TABLE accessories DROP COLUMN layer_order;CREATE UNIQUE INDEX idx_accessories_one_worn ON accessories(session_id) WHERE is_worn=1;PRAGMA user_version=18;").unwrap();
+ initialize(&mut c).unwrap();assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),19);
+ let row:(String,i64,Option<i32>,Option<i32>,i32,String,i64)=c.query_row("SELECT name,is_worn,position_x,position_y,scale,render_layer,layer_order FROM accessories WHERE id=101",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).unwrap();assert_eq!(row,("原挂件".into(),1,Some(125),Some(-500),1500,"front".into(),0));
+ c.execute_batch("INSERT INTO accessories(session_id,name,display_text,description,cost,source,is_worn,created_at) VALUES(1,'第二件','✦','多件',20,'crafted',1,'a');INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(1,'expression','拎后颈','lifted','a','a');").unwrap();assert_eq!(c.query_row("SELECT count(*) FROM accessories WHERE is_worn=1",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+ }
 }

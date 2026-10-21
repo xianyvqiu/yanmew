@@ -13,6 +13,8 @@ fn fresh_database_creates_one_real_guide_without_provider_or_rewards() {
     assert!(initialize(&mut connection).unwrap());
     let context = crate::persona::context(&connection, 0).unwrap();
     let persona_id = crate::error::parse_id(&context.persona_id).unwrap();
+    let colors: (String, String, String) = connection.query_row("SELECT color,chat_user_text_color,chat_assistant_text_color FROM personas WHERE id=?1", [persona_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!(colors, ("#ffb6c1".into(), "#ffb6c1".into(), "#ffb6c1".into()));
     let session_id = crate::error::parse_id(context.session_id.as_ref().unwrap()).unwrap();
     let session = sessions::get(&connection, persona_id, session_id).unwrap();
     assert_eq!(session.title, "初次见面");
@@ -99,7 +101,7 @@ fn ordinary_new_sessions_do_not_receive_a_guide() {
 #[test]
 fn guide_creation_uses_builtin_marker_and_rolls_back_on_message_failure() {
     let mut connection = test_database();
-    connection.execute("UPDATE personas SET id=57 WHERE is_builtin=1", []).unwrap();
+    connection.execute_batch("PRAGMA defer_foreign_keys=ON; BEGIN; UPDATE personas SET id=57 WHERE is_builtin=1; UPDATE persona_food_settings SET persona_id=57 WHERE persona_id=1; COMMIT;").unwrap();
     connection.execute_batch("CREATE TRIGGER reject_guide BEFORE INSERT ON messages
         BEGIN SELECT RAISE(ABORT,'test guide write failure'); END;").unwrap();
     {

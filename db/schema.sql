@@ -587,7 +587,7 @@ CREATE TABLE IF NOT EXISTS game_runs (
 CREATE TABLE IF NOT EXISTS currency_ledger (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT, -- 喵币流水自增主键
     delta                 INTEGER NOT NULL, -- 本次余额变化量；正数增加、负数扣除、插件平局可为 0
-    reason                TEXT    NOT NULL CHECK (reason IN ('daily_sign_in', 'sign_in_festival', 'plugin_game', 'accessory_craft', 'accessory_sell')), -- daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品
+    reason                TEXT    NOT NULL CHECK (reason IN ('daily_sign_in', 'sign_in_festival', 'plugin_game', 'accessory_craft', 'accessory_sell', 'food_purchase')), -- daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品；food_purchase=购买食品
     ref_id                INTEGER, -- 制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL
     game_run_id           INTEGER, -- 插件游戏流水所属运行记录 -> game_runs.id；非插件流水为 NULL
     plugin_id             TEXT, -- 插件游戏时保存插件 ID 快照；非插件流水为 NULL
@@ -713,6 +713,8 @@ CREATE TABLE IF NOT EXISTS accessories (
     position_x INTEGER CHECK(position_x BETWEEN -1500 AND 1500), -- 饰品中心相对桌宠中心X，宽度千分比；NULL默认头顶
     position_y INTEGER CHECK(position_y BETWEEN -1500 AND 1500), -- 饰品中心相对桌宠中心Y，高度千分比；NULL默认头顶
     scale INTEGER NOT NULL DEFAULT 1000 CHECK(scale BETWEEN 200 AND 3000), -- 饰品缩放千分比，1000默认
+    render_layer TEXT NOT NULL DEFAULT 'front' CHECK(render_layer IN ('back','front')), -- back=桌宠后方，front=桌宠前方
+    layer_order INTEGER NOT NULL DEFAULT 0 CHECK(layer_order BETWEEN 0 AND 2147483647), -- 同一平面覆盖顺序
     FOREIGN KEY (travel_id, session_id) REFERENCES travels(id, session_id) ON DELETE NO ACTION,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (travel_id)  REFERENCES travels(id)   ON DELETE SET NULL
@@ -849,7 +851,7 @@ CREATE INDEX IF NOT EXISTS idx_custom_festivals_created ON custom_festivals (cre
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_providers_one_active ON embedding_providers(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_one_active ON personas(is_active) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_personas_one_builtin ON personas(is_builtin) WHERE is_builtin = 1;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_accessories_one_worn ON accessories(session_id) WHERE is_worn = 1;
+-- 同一会话允许佩戴多件饰品，由render_layer及layer_order排序。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_travels_one_away ON travels(session_id) WHERE status = 'away';
 CREATE INDEX IF NOT EXISTS idx_reminder_occurrences_pending ON reminder_occurrences(status, delivery_state);
 CREATE INDEX IF NOT EXISTS idx_short_memories_state ON short_memories(session_id, integration_state, id);
@@ -946,7 +948,7 @@ CREATE TABLE IF NOT EXISTS pet_artworks (
  name TEXT NOT NULL CHECK(length(trim(name))>0), -- 用户可编辑名称
  prompt TEXT NOT NULL DEFAULT '', -- 用户自由填写的图像生成要求
  description TEXT NOT NULL DEFAULT '', -- 给AI参考的使用时机，不作为指令
- category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','standby','click','hungry','eating','sleepy','bored','thinking','chat')), -- normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天
+ category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','lifted')), -- normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天，craving=等待投喂，craving_favorite=期待最爱，eating_favorite=喜欢地品尝，peek_left=左侧探头，peek_right=右侧探头，rest_sit=底部坐下，rest_lie=底部趴下，walk_left=向左行走，walk_right=向右行走，lifted=被拎后颈
  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), -- 0不参与表情选择/1允许选择
  image_file TEXT, -- 已接受正式透明PNG受管相对路径，NULL尚无正式图
  preview_file TEXT, -- 尚待用户接受的透明PNG；重新生成失败保留旧预览
@@ -956,3 +958,155 @@ CREATE TABLE IF NOT EXISTS pet_artworks (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pet_artworks_base ON pet_artworks(persona_id) WHERE kind='base';
 CREATE INDEX IF NOT EXISTS idx_pet_artworks_persona ON pet_artworks(persona_id,id);
+
+-- 食物和 Skill 属于全局，偏好和绑定属于人设；亲密度继续属于会话。
+CREATE TABLE IF NOT EXISTS food_catalog (
+ id TEXT PRIMARY KEY, -- 稳定食物代码，不随显示名改变
+ name TEXT NOT NULL, -- 食物显示名称
+ asset_key TEXT NOT NULL, -- 随包图片资源键
+ is_unlimited INTEGER NOT NULL CHECK(is_unlimited IN(0,1)), -- 1免费无限token，0付费有限
+ price INTEGER NOT NULL CHECK(price>=0), -- 单份喵币，token为0，其余统一5
+ revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0), -- 报价版本
+ created_at TEXT NOT NULL, -- 上架时间UTC
+ updated_at TEXT NOT NULL, -- 最近目录更新UTC
+ CHECK((is_unlimited=1 AND id='token' AND price=0) OR (is_unlimited=0 AND price>0))
+);
+CREATE TABLE IF NOT EXISTS food_inventory (
+ food_id TEXT PRIMARY KEY REFERENCES food_catalog(id) ON DELETE RESTRICT, -- 有限食物，禁止无限token行
+ quantity INTEGER NOT NULL CHECK(quantity>=0), -- 剩余份数
+ updated_at TEXT NOT NULL -- 最近购买或投喂UTC
+);
+CREATE TABLE IF NOT EXISTS persona_food_settings (
+ persona_id INTEGER PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE, -- 删除人设只删除偏好
+ default_food_id TEXT NOT NULL DEFAULT 'token' REFERENCES food_catalog(id) ON DELETE RESTRICT, -- 用户星标默认选择
+ favorite_food_id TEXT REFERENCES food_catalog(id) ON DELETE RESTRICT, -- 喜好可修改，NULL没有喜好
+ updated_at TEXT NOT NULL -- 最近设置时间UTC
+);
+CREATE TABLE IF NOT EXISTS food_actions (
+ action_id TEXT PRIMARY KEY, -- 一次操作唯一幂等标识
+ kind TEXT NOT NULL CHECK(kind IN('purchase','feed')), -- purchase购买/feed投喂，仅成功操作
+ food_id TEXT NOT NULL REFERENCES food_catalog(id) ON DELETE RESTRICT, -- 食物代码
+ quantity INTEGER NOT NULL CHECK(quantity>0), -- 购买份数或投喂固定1
+ persona_id INTEGER REFERENCES personas(id) ON DELETE SET NULL, -- 目标人设，删除后留回执
+ session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL, -- 亲密度所属会话，删除后留回执
+ food_name TEXT NOT NULL, -- 食物名称快照
+ target_name TEXT NOT NULL DEFAULT '', -- 人设名字快照
+ unit_price INTEGER NOT NULL CHECK(unit_price>=0), -- 购买时单价，投喂为0
+ ledger_id INTEGER UNIQUE REFERENCES currency_ledger(id) ON DELETE RESTRICT, -- 购买的唯一扣款流水
+ favorite_bonus INTEGER NOT NULL DEFAULT 0 CHECK(favorite_bonus IN(0,1)), -- 0未抽中，1抽中喜好额外亲密度
+ intimacy_delta INTEGER NOT NULL DEFAULT 0 CHECK(intimacy_delta BETWEEN 0 AND 2), -- 封顶后的实际增加
+ created_at TEXT NOT NULL, -- 完成时间UTC
+ CHECK((kind='purchase' AND ledger_id IS NOT NULL AND intimacy_delta=0 AND favorite_bonus=0 AND persona_id IS NULL AND session_id IS NULL) OR (kind='feed' AND quantity=1 AND ledger_id IS NULL AND unit_price=0))
+);
+CREATE TABLE IF NOT EXISTS skills (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- Skill主键
+ title TEXT NOT NULL CHECK(length(trim(title))>0), -- 卡片标题
+ summary TEXT NOT NULL DEFAULT '', -- 卡片简介
+ body TEXT NOT NULL CHECK(length(trim(body))>0), -- 完整提示词正文
+ revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0), -- 乐观编辑版本
+ created_at TEXT NOT NULL, -- 创建UTC
+ updated_at TEXT NOT NULL -- 最近保存UTC
+);
+CREATE TABLE IF NOT EXISTS persona_skills (
+ persona_id INTEGER NOT NULL REFERENCES personas(id) ON DELETE CASCADE, -- 绑定人设
+ skill_id INTEGER NOT NULL REFERENCES skills(id) ON DELETE CASCADE, -- 绑定Skill，删除只解除关系
+ created_at TEXT NOT NULL, -- 稳定注入顺序UTC
+ PRIMARY KEY(persona_id,skill_id)
+);
+CREATE INDEX IF NOT EXISTS idx_persona_skills_skill ON persona_skills(skill_id);
+CREATE TRIGGER IF NOT EXISTS food_inventory_finite_insert BEFORE INSERT ON food_inventory WHEN (SELECT is_unlimited FROM food_catalog WHERE id=NEW.food_id)=1 BEGIN SELECT RAISE(ABORT,'无限食物不保存库存'); END;
+CREATE TRIGGER IF NOT EXISTS food_inventory_finite_update BEFORE UPDATE ON food_inventory WHEN (SELECT is_unlimited FROM food_catalog WHERE id=NEW.food_id)=1 BEGIN SELECT RAISE(ABORT,'无限食物不保存库存'); END;
+
+-- 喜好来自可购买食品；基础token仅作为免费通用食物。
+CREATE TRIGGER IF NOT EXISTS persona_food_favorite_insert BEFORE INSERT ON persona_food_settings WHEN NEW.favorite_food_id IS NOT NULL AND (SELECT is_unlimited FROM food_catalog WHERE id=NEW.favorite_food_id)=1 BEGIN SELECT RAISE(ABORT,'喜好须为商城食品'); END;
+CREATE TRIGGER IF NOT EXISTS persona_food_favorite_update BEFORE UPDATE ON persona_food_settings WHEN NEW.favorite_food_id IS NOT NULL AND (SELECT is_unlimited FROM food_catalog WHERE id=NEW.favorite_food_id)=1 BEGIN SELECT RAISE(ABORT,'喜好须为商城食品'); END;
+
+
+-- 现实记账独立于喵币；金额为人民币分，不关联聊天、人设或游戏数据。
+CREATE TABLE IF NOT EXISTS real_assets (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 记录主键
+ name TEXT NOT NULL CHECK(length(trim(name))>0), -- 显示名称
+ note TEXT NOT NULL DEFAULT '', -- 备注
+ is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)), -- 默认资金池标记：0=否，1=是
+ archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)), -- 归档标记：0=正常，1=归档
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), -- 乐观并发版本号
+ created_at TEXT NOT NULL, -- 创建时间
+ updated_at TEXT NOT NULL, -- 更新时间
+ CHECK(is_default=0 OR archived=0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_real_default_asset ON real_assets(is_default) WHERE is_default=1;
+CREATE TABLE IF NOT EXISTS real_categories (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 记录主键
+ name TEXT NOT NULL CHECK(length(trim(name))>0), -- 显示名称
+ icon TEXT NOT NULL DEFAULT '🧾', -- 分类图标
+ direction TEXT NOT NULL DEFAULT 'both' CHECK(direction IN ('income','expense','both')), -- income=收入，expense=支出，both=收支均可
+ archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)), -- 归档标记：0=正常，1=归档
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), -- 乐观并发版本号
+ created_at TEXT NOT NULL, -- 创建时间
+ updated_at TEXT NOT NULL -- 更新时间
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_real_category_name ON real_categories(name COLLATE NOCASE) WHERE archived=0;
+CREATE TABLE IF NOT EXISTS real_schedules (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 记录主键
+ title TEXT NOT NULL CHECK(length(trim(title))>0), -- 账单标题
+ kind TEXT NOT NULL CHECK(kind IN ('income','expense')), -- income=收入，expense=支出，adjustment=余额校准
+ category_id INTEGER NOT NULL REFERENCES real_categories(id) ON DELETE RESTRICT, -- 账单分类引用
+ asset_id INTEGER NOT NULL REFERENCES real_assets(id) ON DELETE RESTRICT, -- 资金池引用
+ description TEXT NOT NULL DEFAULT '', -- 事项简介
+ amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents)='integer' AND amount_cents>0), -- 人民币分，使用整数保存
+ anchor_local TEXT NOT NULL, -- 周期锚点本地时间
+ unit TEXT NOT NULL CHECK(unit IN ('day','week','month','year')), -- day=日，week=周，month=月，year=年
+ interval INTEGER NOT NULL CHECK(interval>0), -- 周期长度
+ generation INTEGER NOT NULL DEFAULT 1 CHECK(generation>0), -- 周期计划修订代次
+ next_sequence INTEGER NOT NULL DEFAULT 0 CHECK(next_sequence>=0), -- 下次应处理期次序号
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','ended')), -- active=执行中，paused=暂停，ended=结束；pending=待确认，recorded=已记账，skipped=跳过
+ review_required INTEGER NOT NULL DEFAULT 0 CHECK(review_required IN (0,1)), -- 漏期是否需确认：0=否，1=是
+ recorder TEXT NOT NULL, -- 记账者名称
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), -- 乐观并发版本号
+ created_at TEXT NOT NULL, -- 创建时间
+ updated_at TEXT NOT NULL -- 更新时间
+);
+CREATE TABLE IF NOT EXISTS real_entries (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 记录主键
+ title TEXT NOT NULL CHECK(length(trim(title))>0), -- 账单标题
+ kind TEXT NOT NULL CHECK(kind IN ('income','expense','adjustment')), -- income=收入，expense=支出，adjustment=余额校准
+ category_id INTEGER REFERENCES real_categories(id) ON DELETE RESTRICT, -- 账单分类引用
+ asset_id INTEGER NOT NULL REFERENCES real_assets(id) ON DELETE RESTRICT, -- 资金池引用
+ description TEXT NOT NULL DEFAULT '', -- 事项简介
+ amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents)='integer'), -- 人民币分，使用整数保存
+ occurred_local TEXT NOT NULL, -- 账单归属本地日期时间
+ source TEXT NOT NULL CHECK(source IN ('manual','ai','cycle','adjustment')), -- manual=手动，ai=AI代记，schedule/cycle=周期记账，adjustment=余额校准
+ recorder TEXT NOT NULL, -- 记账者名称
+ schedule_id INTEGER REFERENCES real_schedules(id) ON DELETE SET NULL, -- 周期计划引用
+ revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), -- 乐观并发版本号
+ created_at TEXT NOT NULL, -- 创建时间
+ updated_at TEXT NOT NULL, -- 更新时间
+ CHECK((kind IN ('income','expense') AND amount_cents>0 AND category_id IS NOT NULL) OR (kind='adjustment' AND category_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_real_entry_date ON real_entries(occurred_local,id);
+CREATE INDEX IF NOT EXISTS idx_real_entry_asset ON real_entries(asset_id);
+CREATE TABLE IF NOT EXISTS real_occurrences (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, -- 记录主键
+ schedule_id INTEGER NOT NULL REFERENCES real_schedules(id) ON DELETE RESTRICT, -- 周期计划引用
+ sequence INTEGER NOT NULL CHECK(sequence>=0), -- 周期期次序号
+ generation INTEGER NOT NULL DEFAULT 1 CHECK(generation>0), -- 周期计划修订代次
+ scheduled_local TEXT NOT NULL, -- 该期应记账本地时间
+ snapshot_json TEXT NOT NULL, -- 期次内容快照
+ status TEXT NOT NULL CHECK(status IN ('pending','recorded','skipped')), -- active=执行中，paused=暂停，ended=结束；pending=待确认，recorded=已记账，skipped=跳过
+ entry_id INTEGER UNIQUE REFERENCES real_entries(id) ON DELETE SET NULL, -- 实际账单引用
+ created_at TEXT NOT NULL, -- 创建时间
+ resolved_at TEXT, -- 确认处理时间
+ UNIQUE(schedule_id,generation,sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_real_occurrence_pending ON real_occurrences(status,id);
+CREATE TABLE IF NOT EXISTS real_budgets (
+ period TEXT PRIMARY KEY CHECK(period IN ('day','month','year')), -- day=每日，month=每月，year=每年
+ amount_cents INTEGER NOT NULL CHECK(typeof(amount_cents)='integer' AND amount_cents>=0), -- 人民币分，使用整数保存
+ updated_at TEXT NOT NULL -- 更新时间
+);
+CREATE TABLE IF NOT EXISTS real_operations (
+ request_id TEXT PRIMARY KEY, -- 操作幂等请求标识
+ fingerprint TEXT NOT NULL, -- 请求内容指纹
+ result_json TEXT NOT NULL, -- 已完成操作的结果快照
+ created_at TEXT NOT NULL -- 创建时间
+);

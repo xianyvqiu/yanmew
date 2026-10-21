@@ -305,6 +305,8 @@ class accessories {
   INTEGER position_x
   INTEGER position_y
   INTEGER scale
+  TEXT render_layer
+  INTEGER layer_order
 }
 class letters {
   <<table>>
@@ -431,6 +433,148 @@ class pet_artworks {
   TEXT created_at
   TEXT updated_at
 }
+class food_catalog {
+  <<table>>
+  TEXT id PK
+  TEXT name
+  TEXT asset_key
+  INTEGER is_unlimited
+  INTEGER price
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class food_inventory {
+  <<table>>
+  TEXT food_id PK FK
+  INTEGER quantity
+  TEXT updated_at
+}
+class persona_food_settings {
+  <<table>>
+  INTEGER persona_id PK FK
+  TEXT default_food_id FK
+  TEXT favorite_food_id FK
+  TEXT updated_at
+}
+class food_actions {
+  <<table>>
+  TEXT action_id PK
+  TEXT kind
+  TEXT food_id FK
+  INTEGER quantity
+  INTEGER persona_id FK
+  INTEGER session_id FK
+  TEXT food_name
+  TEXT target_name
+  INTEGER unit_price
+  INTEGER ledger_id FK
+  INTEGER favorite_bonus
+  INTEGER intimacy_delta
+  TEXT created_at
+}
+class skills {
+  <<table>>
+  INTEGER id PK
+  TEXT title
+  TEXT summary
+  TEXT body
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class persona_skills {
+  <<table>>
+  INTEGER persona_id PK FK
+  INTEGER skill_id PK FK
+  TEXT created_at
+}
+class real_assets {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT note
+  INTEGER is_default
+  INTEGER archived
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class real_categories {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  TEXT icon
+  TEXT direction
+  INTEGER archived
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class real_schedules {
+  <<table>>
+  INTEGER id PK
+  TEXT title
+  TEXT kind
+  INTEGER category_id FK
+  INTEGER asset_id FK
+  TEXT description
+  INTEGER amount_cents
+  TEXT anchor_local
+  TEXT unit
+  INTEGER interval
+  INTEGER generation
+  INTEGER next_sequence
+  TEXT status
+  INTEGER review_required
+  TEXT recorder
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class real_entries {
+  <<table>>
+  INTEGER id PK
+  TEXT title
+  TEXT kind
+  INTEGER category_id FK
+  INTEGER asset_id FK
+  TEXT description
+  INTEGER amount_cents
+  TEXT occurred_local
+  TEXT source
+  TEXT recorder
+  INTEGER schedule_id FK
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class real_occurrences {
+  <<table>>
+  INTEGER id PK
+  INTEGER schedule_id FK
+  INTEGER sequence
+  INTEGER generation
+  TEXT scheduled_local
+  TEXT snapshot_json
+  TEXT status
+  INTEGER entry_id FK
+  TEXT created_at
+  TEXT resolved_at
+}
+class real_budgets {
+  <<table>>
+  TEXT period PK
+  INTEGER amount_cents
+  TEXT updated_at
+}
+class real_operations {
+  <<table>>
+  TEXT request_id PK
+  TEXT fingerprint
+  TEXT result_json
+  TEXT created_at
+}
 sessions "0..*" --> "0..1" user_profiles : R01 user_profile_id / SET NULL
 sessions "0..*" --> "1" personas : R02 persona_id / CASCADE
 session_pet_states "0..1" --> "1" sessions : R03 session_id / CASCADE
@@ -474,6 +618,23 @@ message_images "0..*" --> "1" messages : R40 message_id / CASCADE
 reminder_email_items "0..1" --> "1" reminder_occurrences : R41 occurrence_id / CASCADE
 reminder_email_items "0..*" --> "1" reminder_email_deliveries : R42 delivery_id / CASCADE
 pet_artworks "0..*" --> "1" personas : R43 persona_id / CASCADE
+food_inventory "0..1" --> "0..1" food_catalog : R44 food_id / RESTRICT
+persona_food_settings "0..*" --> "0..1" food_catalog : R45 favorite_food_id / RESTRICT
+persona_food_settings "0..*" --> "1" food_catalog : R46 default_food_id / RESTRICT
+persona_food_settings "0..1" --> "1" personas : R47 persona_id / CASCADE
+food_actions "0..1" --> "0..1" currency_ledger : R48 ledger_id / RESTRICT
+food_actions "0..*" --> "0..1" sessions : R49 session_id / SET NULL
+food_actions "0..*" --> "0..1" personas : R50 persona_id / SET NULL
+food_actions "0..*" --> "1" food_catalog : R51 food_id / RESTRICT
+persona_skills "0..*" --> "1" skills : R52 skill_id / CASCADE
+persona_skills "0..*" --> "1" personas : R53 persona_id / CASCADE
+real_schedules "0..*" --> "1" real_assets : R54 asset_id / RESTRICT
+real_schedules "0..*" --> "1" real_categories : R55 category_id / RESTRICT
+real_entries "0..*" --> "0..1" real_schedules : R56 schedule_id / SET NULL
+real_entries "0..*" --> "1" real_assets : R57 asset_id / RESTRICT
+real_entries "0..*" --> "0..1" real_categories : R58 category_id / RESTRICT
+real_occurrences "0..1" --> "0..1" real_entries : R59 entry_id / SET NULL
+real_occurrences "0..*" --> "1" real_schedules : R60 schedule_id / RESTRICT
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

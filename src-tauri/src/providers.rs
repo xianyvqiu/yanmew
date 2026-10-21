@@ -71,6 +71,7 @@ pub struct Provider {
     pub max_output_tokens: u32,
     pub context_window_override: Option<u32>,
     pub capacity: crate::chat_capacity::Capacity,
+    pub capabilities:crate::native_tools::Capabilities,
     pub purposes: Vec<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -122,6 +123,7 @@ pub fn list(c: &Connection) -> AppResult<Vec<Provider>> {
             &model,
             context_window_override,
         );
+        let capabilities=crate::native_tools::resolve(base_url.as_deref().unwrap_or("https://api.openai.com/v1"),&model);
         Ok(Provider {
             id: r.get::<_, i64>(0)?.to_string(),
             name: r.get(1)?,
@@ -132,7 +134,7 @@ pub fn list(c: &Connection) -> AppResult<Vec<Provider>> {
             memory_is_active: r.get(6)?,
             max_output_tokens: r.get(7)?,
             context_window_override,
-            capacity,
+            capacity,capabilities,
             purposes: vec![],
             created_at: r.get(9)?,
             updated_at: r.get(10)?,

@@ -21,6 +21,7 @@ fn successful_regeneration_preserves_ids_reward_and_excludes_old_reply() {
             Response::json(json!({"content":"用户提出测试问题角色给出了新的完整回复"})),
         ]);
         let (runtime, old) = fixture(&server.url);
+        runtime.read(|s,_| {s.connection.execute("INSERT INTO message_images(message_id,filename,image_file,media_type,caption,created_at) VALUES(?1,'AI生成图片.png','assets/chat_images/img-generated.png','image/png','AI生成图片','a')",[old.assistant_message.as_ref().unwrap().id.parse::<i64>().unwrap()])?;Ok(())}).unwrap();
         let (reply, receipt, memory) =
             regenerate(&runtime, 1, 1, 0, old.round.id.parse().unwrap()).unwrap();
         assert!(receipt.regenerating);
@@ -30,6 +31,7 @@ fn successful_regeneration_preserves_ids_reward_and_excludes_old_reply() {
             .await
             .unwrap();
         assert_eq!(saved.round, old.round);
+        assert_eq!(saved.assistant_message.as_ref().unwrap().images.len(),1);
         assert_eq!(saved.user_message, old.user_message);
         assert_eq!(
             saved.assistant_message.as_ref().unwrap().id,
@@ -78,7 +80,7 @@ fn successful_regeneration_preserves_ids_reward_and_excludes_old_reply() {
         let tools = requests[1]["tools"].as_array().unwrap();
         assert!(!tools.iter().any(|t| matches!(
             t["function"]["name"].as_str(),
-            Some("update_notebook" | "create_reminder")
+            Some("update_notebook" | "create_reminder" | "generate_chat_image")
         )));
         drop(requests);
         server.finish();

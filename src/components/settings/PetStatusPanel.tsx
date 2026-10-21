@@ -1,3 +1,4 @@
+import ValueChange from "../ValueChange";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatApi, configurationApi, errorMessage, festivalsApi, petApi, walletApi } from "../../api";
 import type { WorkspaceContext } from "../../hooks/useCurrentContext";
@@ -128,7 +129,7 @@ export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContex
         : currentIntimacy ? <>
           <p className="ym-pet-status-value" aria-label="当前亲密度">{currentIntimacy.intimacy}<span> / {currentIntimacy.maximum}</span></p>
           <progress aria-label="亲密度进度" value={currentIntimacy.intimacy} max={currentIntimacy.maximum} />
-          <p className="ym-page-note">{currentIntimacy.intimacy === currentIntimacy.maximum ? "已达上限" : "在家时点击、摸摸、喂食或完成一轮聊天，亲密度增加 1。"}</p>
+          <p className="ym-page-note">{currentIntimacy.intimacy === currentIntimacy.maximum ? "已达上限" : "在家时点击有10%概率增加1点亲密度；摸摸、喂食或完成一轮聊天增加1点。"}</p>
           {status && <p className="ym-page-note">{nextTier < 0 ? "所有亲密度档位已解锁。"
             : `下一解锁档位：第 ${nextTier + 1} 档 · ${status.intimacyThresholds[nextTier]} 亲密度（还差 ${status.intimacyThresholds[nextTier] - currentIntimacy.intimacy}）。`}</p>}
         </> : !intimacyError && <p role="status">正在读取亲密度…</p>}
@@ -136,7 +137,7 @@ export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContex
     </section>
     <section className="ym-page-card" aria-labelledby="pet-wallet-heading">
       <div className="ym-page-heading"><div><h2 id="pet-wallet-heading">喵币</h2><p>全局共享，不随人设或会话切换。</p></div></div>
-      <p className="ym-pet-status-value" aria-label="喵币余额">{status?.wallet.coins ?? "—"}<span> 喵币</span></p>
+      <p className="ym-pet-status-value" aria-label="喵币余额">{status?.wallet.coins ?? "—"}<span> 喵币</span><ValueChange value={status?.wallet.coins} unit="喵币"/></p>
     </section>
     <section className="ym-page-card ym-pet-sign-in" aria-labelledby="pet-sign-in-heading">
       <div className="ym-page-heading"><div><h2 id="pet-sign-in-heading">每日签到</h2><p>每天领一次，按电脑当前时区计算。</p></div>

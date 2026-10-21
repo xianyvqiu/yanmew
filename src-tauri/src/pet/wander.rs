@@ -1,10 +1,16 @@
-//! 固定画布内的临时游走。坐标均为 CSS 像素，不读写数据库、不移动原生窗口。
-use crate::{error::{AppError, AppResult}, pet::RandomSource};
+//! 游走布局协议；现行窗口移动在pet_desktop。旧画布算法只保留为兼容测试。
+use crate::error::{AppError, AppResult};
+#[cfg(test)]
+use crate::pet::RandomSource;
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use std::time::Duration;
 
+#[cfg(test)]
 pub const INTERVAL: Duration = Duration::from_secs(5);
+#[cfg(test)]
 const STEP: f64 = 12.0;
+#[cfg(test)]
 const MOUSE_RANGE: f64 = 80.0;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -18,11 +24,14 @@ impl Rect {
         [self.x,self.y,self.width,self.height].iter().all(|n| n.is_finite() && n.abs() <= 100_000.0)
             && self.width > 0.0 && self.height > 0.0
     }
+#[cfg(test)]
     fn translated(self, p: Point) -> Self { Self {x:self.x+p.x,y:self.y+p.y,..self} }
+#[cfg(test)]
     fn contains(self, other: Self) -> bool {
         other.x >= self.x && other.y >= self.y && other.x+other.width <= self.x+self.width
             && other.y+other.height <= self.y+self.height
     }
+#[cfg(test)]
     fn overlaps(self, other: Self) -> bool {
         self.x < other.x+other.width && self.x+self.width > other.x
             && self.y < other.y+other.height && self.y+self.height > other.y
@@ -34,10 +43,11 @@ impl Rect {
 pub struct Layout {
     pub persona_id: String, pub session_id: String, pub context_revision: u64,
     pub layout_revision: u64, pub area: Rect, pub body: Rect, pub offset: Point, pub paused: bool,
+    #[serde(default)] pub anchor: Option<Rect>,
 }
 impl Layout {
     pub fn validate(&self) -> AppResult<()> {
-        if !self.area.valid() || !self.body.valid() || !self.offset.x.is_finite() || !self.offset.y.is_finite()
+        if !self.area.valid() || !self.body.valid() || self.anchor.is_some_and(|r|!r.valid()) || !self.offset.x.is_finite() || !self.offset.y.is_finite()
             || self.offset.x.abs() > 100_000.0 || self.offset.y.abs() > 100_000.0 {
             return Err(AppError::validation("layout", "游走画布坐标或尺寸无效"));
         }
@@ -47,12 +57,15 @@ impl Layout {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all="camelCase")]
+#[cfg(test)]
 pub struct Target {
     pub persona_id: String, pub session_id: String, pub context_revision: u64,
     pub layout_revision: u64, pub offset: Point,
 }
 #[derive(Default)]
+#[cfg(test)]
 pub struct Controller { layout: Option<Layout>, last_check: Option<Duration> }
+#[cfg(test)]
 impl Controller {
     pub fn update(&mut self, layout: Layout) -> AppResult<()> {
         layout.validate()?;
@@ -112,6 +125,7 @@ impl Controller {
         Ok(None)
     }
 }
+#[cfg(test)]
 fn less_overlap(before: Rect, after: Rect, obstacle: Rect) -> bool {
     let area = |r: Rect| ((r.x+r.width).min(obstacle.x+obstacle.width)-r.x.max(obstacle.x)).max(0.0)
         * ((r.y+r.height).min(obstacle.y+obstacle.height)-r.y.max(obstacle.y)).max(0.0);
@@ -125,7 +139,7 @@ mod tests {
     impl RandomSource for Fixed { fn below(&mut self, upper:u64)->AppResult<u64> { Ok(self.0%upper) } }
     fn layout() -> Layout { Layout {persona_id:"1".into(),session_id:"1".into(),context_revision:0,
         layout_revision:1,area:Rect{x:4.0,y:44.0,width:312.0,height:192.0},
-        body:Rect{x:100.0,y:120.0,width:120.0,height:80.0},offset:Point::default(),paused:false} }
+        body:Rect{x:100.0,y:120.0,width:120.0,height:80.0},offset:Point::default(),paused:false,anchor:None} }
     fn view() -> super::super::controller::View {
         super::super::controller::View {persona_id:"1".into(),session_id:Some("1".into()),context_revision:0,revision:1,
             activity:super::super::controller::Activity::Normal,expression:"(・ω・)".into(),intimacy:Some(0),

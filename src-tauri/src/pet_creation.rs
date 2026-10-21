@@ -129,7 +129,7 @@ pub fn save(
         || input.description.chars().count() > 1000
         || !["base", "expression"].contains(&input.kind.as_str())
         || ![
-            "normal", "standby", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat",
+            "normal", "standby", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat", "craving", "craving_favorite", "eating_favorite", "peek_left", "peek_right", "rest_sit", "rest_lie", "walk_left", "walk_right", "lifted",
         ]
         .contains(&input.category.as_str())
     {
@@ -453,6 +453,10 @@ pub fn choices(c: &Connection, persona: i64) -> AppResult<Option<Vec<Artwork>>> 
             .collect(),
     ))
 }
+/// 停靠专属动作由窗口状态选择，不混入普通聊天的AI表情候选。
+pub fn chat_choices(c:&Connection,persona:i64)->AppResult<Option<Vec<Artwork>>> {
+    Ok(choices(c,persona)?.map(|items|items.into_iter().filter(|a|!matches!(a.category.as_str(),"peek_left"|"peek_right"|"rest_sit"|"rest_lie"|"walk_left"|"walk_right"|"lifted")).collect()))
+}
 pub fn select(
     c: &Connection,
     persona: i64,
@@ -469,7 +473,7 @@ pub fn select(
     } else {
         let candidates = items
             .iter()
-            .filter(|a| a.kind == "expression" && a.category == category)
+            .filter(|a| a.kind == "expression" && (a.category == category || (category.ends_with("_favorite") && !items.iter().any(|x|x.kind=="expression"&&x.category==category) && a.category==category.trim_end_matches("_favorite"))))
             .collect::<Vec<_>>();
         if candidates.is_empty() {
             base

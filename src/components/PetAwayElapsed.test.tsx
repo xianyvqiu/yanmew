@@ -1,0 +1,6 @@
+import{act,cleanup,render,screen}from"@testing-library/react";import{afterEach,beforeEach,expect,it,vi}from"vitest";import PetAwayElapsed,{elapsedTravel}from"./PetAwayElapsed";import type{PetActivity}from"../types";
+const api=vi.hoisted(()=>({current:vi.fn(),listen:vi.fn()}));vi.mock("../api",()=>({travelApi:api}));
+const view={personaId:"1",sessionId:"2",contextRevision:0,activity:"away"}as PetActivity;
+beforeEach(()=>{vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-20T10:59:55Z"));api.current.mockResolvedValue({id:"1",status:"away",startedAt:"2026-10-20T09:00:00Z"});api.listen.mockResolvedValue(()=>{});});afterEach(()=>{cleanup();vi.useRealTimers();vi.resetAllMocks();});
+it("小时分钟按真实出发时间刷新，返回后隐藏",async()=>{const v=render(<PetAwayElapsed view={view}/>);await act(async()=>{});expect(screen.getByText("01:59")).toBeTruthy();await act(async()=>{vi.advanceTimersByTime(5000);});expect(screen.getByText("02:00")).toBeTruthy();v.rerender(<PetAwayElapsed view={{...view,activity:"normal"}}/>);expect(screen.queryByLabelText("已经出门时间")).toBeNull();});
+it("累计小时超过一天不归零，非法时间不展示，未来时间夹到零",()=>{expect(elapsedTravel("2026-10-18T09:00:00Z",Date.parse("2026-10-20T10:01:00Z"))).toBe("49:01");expect(elapsedTravel("bad",Date.now())).toBeNull();expect(elapsedTravel("2099-01-01",Date.now())).toBe("00:00");});

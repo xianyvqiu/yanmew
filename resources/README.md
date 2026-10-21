@@ -36,4 +36,8 @@ plugins/包含剪刀石头布、骰子、接星星、我的家的.yanmew-game与
 
 ## 预置图片人设资源
 
-personas/ 含 GPT、Claude、Gemini、DeepSeek 的初始图和独立基础互动图，详情及生成提示见 [资源说明](personas/README.md)。完整便携版/安装版必须带齐四套36张透明PNG；build-portable.ps1 校验并复制。首次运行发布到本机受管图片目录，之后以用户修改为准，不覆盖已删除角色。程序资源不需要生图 Key，用户自定义创作继续使用其配置的服务。
+personas/ 含 GPT、Claude、Gemini、DeepSeek 的初始图和独立基础互动图，详情及生成提示见 [资源说明](personas/README.md)。完整便携版/安装版必须带齐四套100张透明PNG；build-portable.ps1 校验并复制。首次运行发布到本机受管图片目录，之后以用户修改为准，不覆盖已删除角色。程序资源不需要生图 Key，用户自定义创作继续使用其配置的服务。
+
+## 食品图
+
+foods/包含免费Token小点心和五种付费食物的256×256透明PNG。由前端静态导入并随构建内嵌，不需要另外下载、不从用户备份覆盖；角色咀嚼图不画食物。来源与生成提示见foods/README.md及generation-prompts.json。

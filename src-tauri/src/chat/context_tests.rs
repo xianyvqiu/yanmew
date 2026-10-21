@@ -10,6 +10,16 @@ fn runtime(url: &str) -> Runtime {
 }
 
 #[test]
+fn favorite_food_context_follows_saved_preference_and_can_be_cleared(){
+ let runtime=runtime("http://127.0.0.1:1/v1");
+ let text=||runtime.read(|s,_|{let mut c=super::context::Context::snapshot(s,&runtime,1,1,"人设","输入",None,None)?;Ok(c.request(vec![],&[])?.0.messages.into_iter().map(|m|m.content).collect::<Vec<_>>().join("\n"))}).unwrap();
+ runtime.read(|s,_|crate::foods::set_preferences(&s.connection,1,crate::foods::Preferences{default_food_id:"token".into(),favorite_food_id:Some("rice".into())})).unwrap();
+ assert!(text().contains("当前人设保存的喜好食物：白饭"));
+ runtime.read(|s,_|crate::foods::set_preferences(&s.connection,1,crate::foods::Preferences{default_food_id:"token".into(),favorite_food_id:None})).unwrap();
+ assert!(text().contains("当前人设保存的喜好食物：尚未设置"));
+}
+
+#[test]
 fn user_profile_runtime_context_uses_complete_bound_content_and_stops_after_unbinding() {
     let runtime = runtime("http://127.0.0.1:1");
     let content = "我的完整设定\n".repeat(4_000);

@@ -36,7 +36,7 @@ pub(crate) fn require_current(
     Ok(())
 }
 
-const COLUMNS: &str = "id,session_id,name,display_text,image_file,description,cost,source,travel_id,is_worn,created_at,position_x,position_y,scale";
+const COLUMNS: &str = "id,session_id,name,display_text,image_file,description,cost,source,travel_id,is_worn,created_at,position_x,position_y,scale,render_layer,layer_order";
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Accessory> {
     Ok(Accessory {
         id: row.get::<_, i64>(0)?.to_string(),
@@ -51,7 +51,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Accessory> {
         travel_id: row.get::<_, Option<i64>>(8)?.map(|id| id.to_string()),
         is_worn: row.get(9)?,
         created_at: row.get(10)?,
-        position_x: row.get(11)?, position_y: row.get(12)?, scale: row.get(13)?,
+        position_x: row.get(11)?, position_y: row.get(12)?, scale: row.get(13)?,render_layer:row.get(14)?,layer_order:row.get(15)?,
     })
 }
 pub(crate) fn get(connection: &Connection, session: i64, id: i64) -> AppResult<Accessory> {
@@ -92,12 +92,7 @@ pub(crate) fn wear(
 ) -> AppResult<Accessory> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     get(&transaction, session, id)?;
-    if worn {
-        transaction.execute(
-            "UPDATE accessories SET is_worn=0 WHERE session_id=?1 AND is_worn=1",
-            [session],
-        )?;
-    }
+
     transaction.execute(
         "UPDATE accessories SET is_worn=?1 WHERE session_id=?2 AND id=?3",
         params![worn, session, id],
@@ -173,3 +168,18 @@ pub(crate) fn sell(
 
 /// 显式保存相对桌宠的千分比坐标，不改变佩戴、币或制作资格。
 pub(crate) fn placement(c:&Connection,session:i64,id:i64,x:Option<i32>,y:Option<i32>,scale:i32)->AppResult<Accessory>{get(c,session,id)?;if x.is_some()!=y.is_some()||x.is_some_and(|n|!(-1500..=1500).contains(&n))||y.is_some_and(|n|!(-1500..=1500).contains(&n))||!(200..=3000).contains(&scale){return Err(AppError::validation("position","位置须在相对范围内，大小为20%–300%"));}c.execute("UPDATE accessories SET position_x=?1,position_y=?2,scale=?3 WHERE id=?4 AND session_id=?5",params![x,y,scale,id,session])?;get(c,session,id)}
+
+/// 图层顺序仅作用当前会话，先验证归属，同事务重排并保持其他平面的顺序。
+pub(crate) fn layer(c:&mut Connection,session:i64,id:i64,plane:&str,action:&str)->AppResult<Accessory>{
+    if !matches!(plane,"front"|"back")||!matches!(action,"keep"|"up"|"down"|"top"|"bottom"){return Err(AppError::validation("layer","无效图层操作"));}
+    let tx=c.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let old=get(&tx,session,id)?;
+    if old.render_layer!=plane{let top:i64=tx.query_row("SELECT COALESCE(MAX(layer_order),0)+1 FROM accessories WHERE session_id=?1 AND render_layer=?2",params![session,plane],|r|r.get(0))?;tx.execute("UPDATE accessories SET render_layer=?1,layer_order=?2 WHERE id=?3",params![plane,top,id])?;}
+    if action!="keep"{
+      let mut ids={let mut q=tx.prepare("SELECT id FROM accessories WHERE session_id=?1 AND render_layer=?2 AND (is_worn=1 OR id=?3) ORDER BY layer_order,id")?;let v=q.query_map(params![session,plane,id],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?;v};
+      let i=ids.iter().position(|v|*v==id).ok_or_else(AppError::not_found)?;
+      let target=match action{"up"=>(i+1).min(ids.len()-1),"down"=>i.saturating_sub(1),"top"=>ids.len()-1,_=>0};
+      ids.remove(i);ids.insert(target,id);for (order,key) in ids.iter().enumerate(){tx.execute("UPDATE accessories SET layer_order=?1 WHERE id=?2",params![order as i64,key])?;}
+    }
+    let result=get(&tx,session,id)?;tx.commit()?;Ok(result)
+}

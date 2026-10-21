@@ -1,14 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2640" height="8067" viewBox="0 0 2640 8067">
+<svg xmlns="http://www.w3.org/2000/svg" width="2640" height="10736" viewBox="0 0 2640 10736">
 <style>text{font-family:"Microsoft YaHei",Arial,sans-serif} .mono{font-family:Consolas,monospace} .edge{opacity:.28} .edge:hover{opacity:1;stroke-width:4} .card:hover rect{stroke-width:3}</style>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#64748b"/></marker></defs>
 <rect width="100%" height="100%" fill="#f5f7fb"/>
 <text x="60" y="65" font-size="34" fill="#172554" font-weight="700">颜喵 · 数据库完整类图</text>
-<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 30 张业务表 + 1 张 FTS5 虚拟表 · V1 设计蓝图 · 来源 db/schema.sql</text>
+<text x="60" y="105" font-size="19" fill="#475569">data/yanwenzi.db · 49 张业务表 + 1 张 FTS5 虚拟表 · 来源 db/schema.sql</text>
 <text x="60" y="174" fill="#6366f1" font-size="25" font-weight="700">人设与全局配置</text>
 <text x="60" y="1728" fill="#0284c7" font-size="25" font-weight="700">聊天、记忆与检索</text>
 <text x="60" y="2882" fill="#0d9488" font-size="25" font-weight="700">出行与旅行内容</text>
 <text x="60" y="4065" fill="#d97706" font-size="25" font-weight="700">小游戏插件与钱包</text>
 <text x="60" y="5303" fill="#db2777" font-size="25" font-weight="700">提醒与节日</text>
+<text x="60" y="6491" fill="#a85585" font-size="25" font-weight="700">食品与 Skill</text>
+<text x="60" y="7479" fill="#8b5c76" font-size="25" font-weight="700">现实记账</text>
 <g id="edges">
 <path class="edge" data-child="sessions" data-parent="user_profiles" d="M1910 248 H1925 V964 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
 <path class="edge" data-child="sessions" data-parent="personas" d="M1910 248 H1930 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
@@ -53,13 +55,30 @@
 <path class="edge" data-child="reminder_email_items" data-parent="reminder_occurrences" d="M2545 5377 H2585 V5377 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R41  reminder_email_items (occurrence_id) → reminder_occurrences (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
 <path class="edge" data-child="reminder_email_items" data-parent="reminder_email_deliveries" d="M2545 5377 H2590 V5377 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R42  reminder_email_items (delivery_id) → reminder_email_deliveries (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
 <path class="edge" data-child="pet_artworks" data-parent="personas" d="M1275 248 H1290 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R43  pet_artworks (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
-<path class="edge" data-child="settings" data-parent="sessions" d="M1275 1330 H1930 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</title></path>
-<path class="edge" data-child="game_runs" data-parent="game_plugins" d="M640 4830 H665 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="game_plugins" d="M1275 4830 H1305 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="user_state" d="M1275 4830 H1945 V4830 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</title></path>
-<path class="edge" data-child="currency_ledger" data-parent="accessories" d="M1275 4830 H2585 V2956 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</title></path>
-<path class="edge" data-child="long_memories_fts" data-parent="long_memories" d="M2545 2193 H2590 V2193 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</title></path>
-<path class="edge" data-child="long_memory_embeddings" data-parent="embedding_providers" d="M1910 2193 H1925 V1330 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</title></path>
+<path class="edge" data-child="food_inventory" data-parent="food_catalog" d="M1275 6565 H1295 V6565 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R44  food_inventory (food_id) → food_catalog (id) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="persona_food_settings" data-parent="food_catalog" d="M1910 6565 H1935 V6565 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R45  persona_food_settings (favorite_food_id) → food_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="persona_food_settings" data-parent="food_catalog" d="M1910 6565 H1940 V6565 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R46  persona_food_settings (default_food_id) → food_catalog (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="persona_food_settings" data-parent="personas" d="M1910 6565 H1945 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R47  persona_food_settings (persona_id) → personas (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="food_actions" data-parent="currency_ledger" d="M2545 6565 H2585 V4830 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R48  food_actions (ledger_id) → currency_ledger (id) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="food_actions" data-parent="sessions" d="M2545 6565 H2590 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R49  food_actions (session_id) → sessions (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="food_actions" data-parent="personas" d="M2545 6565 H2560 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R50  food_actions (persona_id) → personas (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="food_actions" data-parent="food_catalog" d="M2545 6565 H2565 V6565 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R51  food_actions (food_id) → food_catalog (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="persona_skills" data-parent="skills" d="M1275 7106 H1300 V7106 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R52  persona_skills (skill_id) → skills (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="persona_skills" data-parent="personas" d="M1275 7106 H1305 V248 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R53  persona_skills (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</title></path>
+<path class="edge" data-child="real_schedules" data-parent="real_assets" d="M1910 7553 H1945 V7553 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R54  real_schedules (asset_id) → real_assets (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="real_schedules" data-parent="real_categories" d="M1910 7553 H1950 V7553 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R55  real_schedules (category_id) → real_categories (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="real_entries" data-parent="real_schedules" d="M2545 7553 H2590 V7553 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R56  real_entries (schedule_id) → real_schedules (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="real_entries" data-parent="real_assets" d="M2545 7553 H2560 V7553 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R57  real_entries (asset_id) → real_assets (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="real_entries" data-parent="real_categories" d="M2545 7553 H2565 V7553 H1275" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R58  real_entries (category_id) → real_categories (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="real_occurrences" data-parent="real_entries" d="M640 8219 H2570 V7553 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R59  real_occurrences (entry_id) → real_entries (id) ｜子 0..1 : 父 0..1 ｜DELETE SET NULL</title></path>
+<path class="edge" data-child="real_occurrences" data-parent="real_schedules" d="M640 8219 H1940 V7553 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" ><title>R60  real_occurrences (schedule_id) → real_schedules (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</title></path>
+<path class="edge" data-child="settings" data-parent="sessions" d="M1275 1330 H1945 V248 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</title></path>
+<path class="edge" data-child="game_runs" data-parent="game_plugins" d="M640 4830 H680 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="game_plugins" d="M1275 4830 H1320 V4139 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="user_state" d="M1275 4830 H1925 V4830 H1910" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</title></path>
+<path class="edge" data-child="currency_ledger" data-parent="accessories" d="M1275 4830 H2565 V2956 H2545" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</title></path>
+<path class="edge" data-child="long_memories_fts" data-parent="long_memories" d="M2545 2193 H2570 V2193 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</title></path>
+<path class="edge" data-child="long_memory_embeddings" data-parent="embedding_providers" d="M1910 2193 H1940 V1330 H640" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 5"><title>L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</title></path>
 </g>
 <g class="card" id="table-providers" data-table="providers"><rect x="695" y="922" width="580" height="266" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M695 1000 H1275" stroke="#6366f1"/>
@@ -111,7 +130,7 @@
 <text x="78" y="734" font-size="16" class="mono" fill="#334155">chat_assistant_text_color: TEXT?<title>AI正文颜色，#RRGGBB；NULL跟随主题。</title></text>
 <text x="78" y="759" font-size="16" class="mono" fill="#334155">pet_image_enabled: INTEGER = 0<title>0颜文字/1图片模式，开启前要求已接受初始图和启用的正式待机图</title></text>
 <text x="78" y="784" font-size="16" class="mono" fill="#334155">pet_image_revision: INTEGER = 0<title>创作库版本，淘汰旧请求</title></text>
-<text x="78" y="809" font-size="13" fill="#64748b">关系：R02 / R43</text>
+<text x="78" y="809" font-size="13" fill="#64748b">关系：R02 / R43 / R47 / R50 / R53</text>
 </g>
 <g class="card" id="table-user_profiles" data-table="user_profiles"><rect x="60" y="922" width="580" height="241" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M60 1000 H640" stroke="#6366f1"/>
@@ -143,7 +162,7 @@
 <text x="1348" y="609" font-size="16" class="mono" fill="#334155">travel_trigger_remaining_seconds: INTEGER?<title>下次出行剩余的有效在线秒数；出门中可空</title></text>
 <text x="1348" y="634" font-size="16" class="mono" fill="#334155">is_pinned: INTEGER = 0<title>会话列表置顶：0=普通，1=置顶；不改变更新时间或当前会话</title></text>
 <text x="1348" y="659" font-size="13" fill="#64748b">关系：R01 / R02 / R03 / R04 / R06 / R08 / R10 / R11</text>
-<text x="1348" y="679" font-size="13" fill="#64748b">　　　R15 / R22 / R24 / R27 / R31 / R34 / L01</text>
+<text x="1348" y="679" font-size="13" fill="#64748b">　　　R15 / R22 / R24 / R27 / R31 / R34 / R49 / L01</text>
 </g>
 <g class="card" id="table-session_pet_states" data-table="session_pet_states"><rect x="1965" y="206" width="580" height="391" rx="10" fill="white" stroke="#6366f1"/>
 <path d="M1965 284 H2545" stroke="#6366f1"/>
@@ -380,7 +399,7 @@
 <text x="713" y="4845" font-size="20" class="mono" fill="#0f172a">currency_ledger</text>
 <text x="713" y="4891" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>喵币流水自增主键</title></text>
 <text x="713" y="4916" font-size="16" class="mono" fill="#334155">delta: INTEGER<title>本次余额变化量；正数增加、负数扣除、插件平局可为 0</title></text>
-<text x="713" y="4941" font-size="16" class="mono" fill="#334155">reason: TEXT<title>daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品</title></text>
+<text x="713" y="4941" font-size="16" class="mono" fill="#334155">reason: TEXT<title>daily_sign_in=普通签到；sign_in_festival=节日签到；plugin_game=插件游戏；accessory_craft=制作饰品；accessory_sell=卖出饰品；food_purchase=购买食品</title></text>
 <text x="713" y="4966" font-size="16" class="mono" fill="#334155">ref_id: INTEGER?<title>制作/卖出时保存 accessories.id 的历史引用；其他原因及插件游戏为 NULL</title></text>
 <text x="713" y="4991" font-size="16" class="mono" fill="#334155">FK game_run_id: INTEGER?<title>插件游戏流水所属运行记录 -&gt; game_runs.id；非插件流水为 NULL</title></text>
 <text x="713" y="5016" font-size="16" class="mono" fill="#334155">FK plugin_id: TEXT?<title>插件游戏时保存插件 ID 快照；非插件流水为 NULL</title></text>
@@ -388,7 +407,7 @@
 <text x="713" y="5066" font-size="16" class="mono" fill="#334155">plugin_display_reason: TEXT?<title>插件展示给用户的本次变动原因；插件流水必填</title></text>
 <text x="713" y="5091" font-size="16" class="mono" fill="#334155">wallet_request_id: TEXT?<title>插件生成的幂等请求 ID；同一插件不可重复记账</title></text>
 <text x="713" y="5116" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>流水创建时间 UTC RFC3339</title></text>
-<text x="713" y="5141" font-size="13" fill="#64748b">关系：R20 / R21 / L03 / L04 / L05</text>
+<text x="713" y="5141" font-size="13" fill="#64748b">关系：R20 / R21 / R48 / L03 / L04 / L05</text>
 </g>
 <g class="card" id="table-travels" data-table="travels"><rect x="60" y="2914" width="580" height="636" rx="10" fill="white" stroke="#0d9488"/>
 <path d="M60 2992 H640" stroke="#0d9488"/>
@@ -430,7 +449,7 @@
 <text x="713" y="3167" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>用户修改后的最近更新时间 UTC RFC3339</title></text>
 <text x="713" y="3192" font-size="13" fill="#64748b">关系：R23 / R24 / R25</text>
 </g>
-<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2914" width="580" height="466" rx="10" fill="white" stroke="#0d9488"/>
+<g class="card" id="table-accessories" data-table="accessories"><rect x="1965" y="2914" width="580" height="516" rx="10" fill="white" stroke="#0d9488"/>
 <path d="M1965 2992 H2545" stroke="#0d9488"/>
 <text x="1983" y="2943" font-size="20" font-weight="700" fill="#0d9488">饰品 «table»</text>
 <text x="1983" y="2971" font-size="20" class="mono" fill="#0f172a">accessories</text>
@@ -448,7 +467,9 @@
 <text x="1983" y="3292" font-size="16" class="mono" fill="#334155">position_x: INTEGER?<title>饰品中心相对桌宠中心X，宽度千分比；NULL默认头顶</title></text>
 <text x="1983" y="3317" font-size="16" class="mono" fill="#334155">position_y: INTEGER?<title>饰品中心相对桌宠中心Y，高度千分比；NULL默认头顶</title></text>
 <text x="1983" y="3342" font-size="16" class="mono" fill="#334155">scale: INTEGER = 1000<title>饰品缩放千分比，1000默认</title></text>
-<text x="1983" y="3367" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
+<text x="1983" y="3367" font-size="16" class="mono" fill="#334155">render_layer: TEXT = &#x27;front&#x27;<title>back=桌宠后方，front=桌宠前方</title></text>
+<text x="1983" y="3392" font-size="16" class="mono" fill="#334155">layer_order: INTEGER = 0<title>同一平面覆盖顺序</title></text>
+<text x="1983" y="3417" font-size="13" fill="#64748b">关系：R26 / R27 / R28 / L05</text>
 </g>
 <g class="card" id="table-letters" data-table="letters"><rect x="1330" y="2914" width="580" height="441" rx="10" fill="white" stroke="#0d9488"/>
 <path d="M1330 2992 H1910" stroke="#0d9488"/>
@@ -596,7 +617,7 @@
 <text x="713" y="384" font-size="16" class="mono" fill="#334155">name: TEXT<title>用户可编辑名称</title></text>
 <text x="713" y="409" font-size="16" class="mono" fill="#334155">prompt: TEXT = &#x27;&#x27;<title>用户自由填写的图像生成要求</title></text>
 <text x="713" y="434" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>给AI参考的使用时机，不作为指令</title></text>
-<text x="713" y="459" font-size="16" class="mono" fill="#334155">category: TEXT = &#x27;normal&#x27;<title>normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天</title></text>
+<text x="713" y="459" font-size="16" class="mono" fill="#334155">category: TEXT = &#x27;normal&#x27;<title>normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天，craving=等待投喂，craving_favorite=期待最爱，eating_favorite=喜欢地品尝，peek_left=左侧探头，peek_right=右侧探头，rest_sit=底部坐下，rest_lie=底部趴下，walk_left=向左行走，walk_right=向右行走，lifted=被拎后颈</title></text>
 <text x="713" y="484" font-size="16" class="mono" fill="#334155">enabled: INTEGER = 1<title>0不参与表情选择/1允许选择</title></text>
 <text x="713" y="509" font-size="16" class="mono" fill="#334155">image_file: TEXT?<title>已接受正式透明PNG受管相对路径，NULL尚无正式图</title></text>
 <text x="713" y="534" font-size="16" class="mono" fill="#334155">preview_file: TEXT?<title>尚待用户接受的透明PNG；重新生成失败保留旧预览</title></text>
@@ -605,56 +626,254 @@
 <text x="713" y="609" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近修改时间RFC3339</title></text>
 <text x="713" y="634" font-size="13" fill="#64748b">关系：R43</text>
 </g>
-<text x="60" y="6479" font-size="25" font-weight="700" fill="#172554">关联明细 · 箭头由引用方指向被引用方</text>
-<text x="60" y="6514" font-size="17" fill="#475569">实线 R = 数据库外键；虚线 L = 逻辑关联。? = SQLite 允许 NULL；PK/FK = 主键/外键。唯一约束、CHECK、索引见离线页面。</text>
-<text x="60" y="6556" font-size="16" fill="#334155">R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="6585" font-size="16" fill="#334155">R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6614" font-size="16" fill="#334155">R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6643" font-size="16" fill="#334155">R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6672" font-size="16" fill="#334155">R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</text>
-<text x="60" y="6701" font-size="16" fill="#334155">R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6730" font-size="16" fill="#334155">R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6759" font-size="16" fill="#334155">R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6788" font-size="16" fill="#334155">R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6817" font-size="16" fill="#334155">R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6846" font-size="16" fill="#334155">R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6875" font-size="16" fill="#334155">R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6904" font-size="16" fill="#334155">R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</text>
-<text x="60" y="6933" font-size="16" fill="#334155">R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6962" font-size="16" fill="#334155">R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="6991" font-size="16" fill="#334155">R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7020" font-size="16" fill="#334155">R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7049" font-size="16" fill="#334155">R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7078" font-size="16" fill="#334155">R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7107" font-size="16" fill="#334155">R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
-<text x="60" y="7136" font-size="16" fill="#334155">R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="7165" font-size="16" fill="#334155">R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7194" font-size="16" fill="#334155">R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7223" font-size="16" fill="#334155">R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7252" font-size="16" fill="#334155">R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</text>
-<text x="60" y="7281" font-size="16" fill="#334155">R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="7310" font-size="16" fill="#334155">R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7339" font-size="16" fill="#334155">R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="7368" font-size="16" fill="#334155">R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="7397" font-size="16" fill="#334155">R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="7426" font-size="16" fill="#334155">R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7455" font-size="16" fill="#334155">R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="7484" font-size="16" fill="#334155">R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="7513" font-size="16" fill="#334155">R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7542" font-size="16" fill="#334155">R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
-<text x="60" y="7571" font-size="16" fill="#334155">R36  custom_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
-<text x="60" y="7600" font-size="16" fill="#334155">R37  provider_models (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7629" font-size="16" fill="#334155">R38  provider_roles (provider_id, purpose) → provider_models (provider_id, purpose) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</text>
-<text x="60" y="7658" font-size="16" fill="#334155">R39  provider_roles (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
-<text x="60" y="7687" font-size="16" fill="#334155">R40  message_images (message_id) → messages (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7716" font-size="16" fill="#334155">R41  reminder_email_items (occurrence_id) → reminder_occurrences (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7745" font-size="16" fill="#334155">R42  reminder_email_items (delivery_id) → reminder_email_deliveries (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7774" font-size="16" fill="#334155">R43  pet_artworks (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
-<text x="60" y="7803" font-size="16" fill="#334155">L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</text>
-<text x="60" y="7832" font-size="16" fill="#334155">L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</text>
-<text x="60" y="7861" font-size="16" fill="#334155">L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</text>
-<text x="60" y="7890" font-size="16" fill="#334155">L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</text>
-<text x="60" y="7919" font-size="16" fill="#334155">L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</text>
-<text x="60" y="7948" font-size="16" fill="#334155">L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</text>
-<text x="60" y="7977" font-size="16" fill="#334155">L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</text>
+<g class="card" id="table-food_catalog" data-table="food_catalog"><rect x="60" y="6523" width="580" height="316" rx="10" fill="white" stroke="#a85585"/>
+<path d="M60 6601 H640" stroke="#a85585"/>
+<text x="78" y="6552" font-size="20" font-weight="700" fill="#a85585">食品目录 «table»</text>
+<text x="78" y="6580" font-size="20" class="mono" fill="#0f172a">food_catalog</text>
+<text x="78" y="6626" font-size="16" class="mono" fill="#334155">PK id: TEXT?<title>稳定食物代码，不随显示名改变</title></text>
+<text x="78" y="6651" font-size="16" class="mono" fill="#334155">name: TEXT<title>食物显示名称</title></text>
+<text x="78" y="6676" font-size="16" class="mono" fill="#334155">asset_key: TEXT<title>随包图片资源键</title></text>
+<text x="78" y="6701" font-size="16" class="mono" fill="#334155">is_unlimited: INTEGER<title>1免费无限token，0付费有限</title></text>
+<text x="78" y="6726" font-size="16" class="mono" fill="#334155">price: INTEGER<title>单份喵币，token为0，其余统一5</title></text>
+<text x="78" y="6751" font-size="16" class="mono" fill="#334155">revision: INTEGER = 0<title>报价版本</title></text>
+<text x="78" y="6776" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>上架时间UTC</title></text>
+<text x="78" y="6801" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近目录更新UTC</title></text>
+<text x="78" y="6826" font-size="13" fill="#64748b">关系：R44 / R45 / R46 / R51</text>
+</g>
+<g class="card" id="table-food_inventory" data-table="food_inventory"><rect x="695" y="6523" width="580" height="191" rx="10" fill="white" stroke="#a85585"/>
+<path d="M695 6601 H1275" stroke="#a85585"/>
+<text x="713" y="6552" font-size="20" font-weight="700" fill="#a85585">全局食品库存 «table»</text>
+<text x="713" y="6580" font-size="20" class="mono" fill="#0f172a">food_inventory</text>
+<text x="713" y="6626" font-size="16" class="mono" fill="#334155">PK FK food_id: TEXT?<title>有限食物，禁止无限token行</title></text>
+<text x="713" y="6651" font-size="16" class="mono" fill="#334155">quantity: INTEGER<title>剩余份数</title></text>
+<text x="713" y="6676" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近购买或投喂UTC</title></text>
+<text x="713" y="6701" font-size="13" fill="#64748b">关系：R44</text>
+</g>
+<g class="card" id="table-persona_food_settings" data-table="persona_food_settings"><rect x="1330" y="6523" width="580" height="216" rx="10" fill="white" stroke="#a85585"/>
+<path d="M1330 6601 H1910" stroke="#a85585"/>
+<text x="1348" y="6552" font-size="20" font-weight="700" fill="#a85585">人设食物偏好 «table»</text>
+<text x="1348" y="6580" font-size="20" class="mono" fill="#0f172a">persona_food_settings</text>
+<text x="1348" y="6626" font-size="16" class="mono" fill="#334155">PK FK persona_id: INTEGER<title>删除人设只删除偏好</title></text>
+<text x="1348" y="6651" font-size="16" class="mono" fill="#334155">FK default_food_id: TEXT = &#x27;token&#x27;<title>用户星标默认选择</title></text>
+<text x="1348" y="6676" font-size="16" class="mono" fill="#334155">FK favorite_food_id: TEXT?<title>喜好可修改，NULL没有喜好</title></text>
+<text x="1348" y="6701" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近设置时间UTC</title></text>
+<text x="1348" y="6726" font-size="13" fill="#64748b">关系：R45 / R46 / R47</text>
+</g>
+<g class="card" id="table-food_actions" data-table="food_actions"><rect x="1965" y="6523" width="580" height="441" rx="10" fill="white" stroke="#a85585"/>
+<path d="M1965 6601 H2545" stroke="#a85585"/>
+<text x="1983" y="6552" font-size="20" font-weight="700" fill="#a85585">购买与投喂回执 «table»</text>
+<text x="1983" y="6580" font-size="20" class="mono" fill="#0f172a">food_actions</text>
+<text x="1983" y="6626" font-size="16" class="mono" fill="#334155">PK action_id: TEXT?<title>一次操作唯一幂等标识</title></text>
+<text x="1983" y="6651" font-size="16" class="mono" fill="#334155">kind: TEXT<title>purchase购买/feed投喂，仅成功操作</title></text>
+<text x="1983" y="6676" font-size="16" class="mono" fill="#334155">FK food_id: TEXT<title>食物代码</title></text>
+<text x="1983" y="6701" font-size="16" class="mono" fill="#334155">quantity: INTEGER<title>购买份数或投喂固定1</title></text>
+<text x="1983" y="6726" font-size="16" class="mono" fill="#334155">FK persona_id: INTEGER?<title>目标人设，删除后留回执</title></text>
+<text x="1983" y="6751" font-size="16" class="mono" fill="#334155">FK session_id: INTEGER?<title>亲密度所属会话，删除后留回执</title></text>
+<text x="1983" y="6776" font-size="16" class="mono" fill="#334155">food_name: TEXT<title>食物名称快照</title></text>
+<text x="1983" y="6801" font-size="16" class="mono" fill="#334155">target_name: TEXT = &#x27;&#x27;<title>人设名字快照</title></text>
+<text x="1983" y="6826" font-size="16" class="mono" fill="#334155">unit_price: INTEGER<title>购买时单价，投喂为0</title></text>
+<text x="1983" y="6851" font-size="16" class="mono" fill="#334155">FK ledger_id: INTEGER?<title>购买的唯一扣款流水</title></text>
+<text x="1983" y="6876" font-size="16" class="mono" fill="#334155">favorite_bonus: INTEGER = 0<title>0未抽中，1抽中喜好额外亲密度</title></text>
+<text x="1983" y="6901" font-size="16" class="mono" fill="#334155">intimacy_delta: INTEGER = 0<title>封顶后的实际增加</title></text>
+<text x="1983" y="6926" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>完成时间UTC</title></text>
+<text x="1983" y="6951" font-size="13" fill="#64748b">关系：R48 / R49 / R50 / R51</text>
+</g>
+<g class="card" id="table-skills" data-table="skills"><rect x="60" y="7064" width="580" height="291" rx="10" fill="white" stroke="#a85585"/>
+<path d="M60 7142 H640" stroke="#a85585"/>
+<text x="78" y="7093" font-size="20" font-weight="700" fill="#a85585">Skill资料 «table»</text>
+<text x="78" y="7121" font-size="20" class="mono" fill="#0f172a">skills</text>
+<text x="78" y="7167" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>Skill主键</title></text>
+<text x="78" y="7192" font-size="16" class="mono" fill="#334155">title: TEXT<title>卡片标题</title></text>
+<text x="78" y="7217" font-size="16" class="mono" fill="#334155">summary: TEXT = &#x27;&#x27;<title>卡片简介</title></text>
+<text x="78" y="7242" font-size="16" class="mono" fill="#334155">body: TEXT<title>完整提示词正文</title></text>
+<text x="78" y="7267" font-size="16" class="mono" fill="#334155">revision: INTEGER = 0<title>乐观编辑版本</title></text>
+<text x="78" y="7292" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建UTC</title></text>
+<text x="78" y="7317" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>最近保存UTC</title></text>
+<text x="78" y="7342" font-size="13" fill="#64748b">关系：R52</text>
+</g>
+<g class="card" id="table-persona_skills" data-table="persona_skills"><rect x="695" y="7064" width="580" height="191" rx="10" fill="white" stroke="#a85585"/>
+<path d="M695 7142 H1275" stroke="#a85585"/>
+<text x="713" y="7093" font-size="20" font-weight="700" fill="#a85585">人设Skill绑定 «table»</text>
+<text x="713" y="7121" font-size="20" class="mono" fill="#0f172a">persona_skills</text>
+<text x="713" y="7167" font-size="16" class="mono" fill="#334155">PK FK persona_id: INTEGER<title>绑定人设</title></text>
+<text x="713" y="7192" font-size="16" class="mono" fill="#334155">PK FK skill_id: INTEGER<title>绑定Skill，删除只解除关系</title></text>
+<text x="713" y="7217" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>稳定注入顺序UTC</title></text>
+<text x="713" y="7242" font-size="13" fill="#64748b">关系：R52 / R53</text>
+</g>
+<g class="card" id="table-real_assets" data-table="real_assets"><rect x="60" y="7511" width="580" height="316" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M60 7589 H640" stroke="#8b5c76"/>
+<text x="78" y="7540" font-size="20" font-weight="700" fill="#8b5c76">现实资产资金池 «table»</text>
+<text x="78" y="7568" font-size="20" class="mono" fill="#0f172a">real_assets</text>
+<text x="78" y="7614" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>记录主键</title></text>
+<text x="78" y="7639" font-size="16" class="mono" fill="#334155">name: TEXT<title>显示名称</title></text>
+<text x="78" y="7664" font-size="16" class="mono" fill="#334155">note: TEXT = &#x27;&#x27;<title>备注</title></text>
+<text x="78" y="7689" font-size="16" class="mono" fill="#334155">is_default: INTEGER = 0<title>默认资金池标记：0=否，1=是</title></text>
+<text x="78" y="7714" font-size="16" class="mono" fill="#334155">archived: INTEGER = 0<title>归档标记：0=正常，1=归档</title></text>
+<text x="78" y="7739" font-size="16" class="mono" fill="#334155">revision: INTEGER = 1<title>乐观并发版本号</title></text>
+<text x="78" y="7764" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="78" y="7789" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>更新时间</title></text>
+<text x="78" y="7814" font-size="13" fill="#64748b">关系：R54 / R57</text>
+</g>
+<g class="card" id="table-real_categories" data-table="real_categories"><rect x="695" y="7511" width="580" height="316" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M695 7589 H1275" stroke="#8b5c76"/>
+<text x="713" y="7540" font-size="20" font-weight="700" fill="#8b5c76">现实账单分类 «table»</text>
+<text x="713" y="7568" font-size="20" class="mono" fill="#0f172a">real_categories</text>
+<text x="713" y="7614" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>记录主键</title></text>
+<text x="713" y="7639" font-size="16" class="mono" fill="#334155">name: TEXT<title>显示名称</title></text>
+<text x="713" y="7664" font-size="16" class="mono" fill="#334155">icon: TEXT = &#x27;🧾&#x27;<title>分类图标</title></text>
+<text x="713" y="7689" font-size="16" class="mono" fill="#334155">direction: TEXT = &#x27;both&#x27;<title>income=收入，expense=支出，both=收支均可</title></text>
+<text x="713" y="7714" font-size="16" class="mono" fill="#334155">archived: INTEGER = 0<title>归档标记：0=正常，1=归档</title></text>
+<text x="713" y="7739" font-size="16" class="mono" fill="#334155">revision: INTEGER = 1<title>乐观并发版本号</title></text>
+<text x="713" y="7764" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="713" y="7789" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>更新时间</title></text>
+<text x="713" y="7814" font-size="13" fill="#64748b">关系：R55 / R58</text>
+</g>
+<g class="card" id="table-real_schedules" data-table="real_schedules"><rect x="1330" y="7511" width="580" height="566" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M1330 7589 H1910" stroke="#8b5c76"/>
+<text x="1348" y="7540" font-size="20" font-weight="700" fill="#8b5c76">周期记账计划 «table»</text>
+<text x="1348" y="7568" font-size="20" class="mono" fill="#0f172a">real_schedules</text>
+<text x="1348" y="7614" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>记录主键</title></text>
+<text x="1348" y="7639" font-size="16" class="mono" fill="#334155">title: TEXT<title>账单标题</title></text>
+<text x="1348" y="7664" font-size="16" class="mono" fill="#334155">kind: TEXT<title>income=收入，expense=支出，adjustment=余额校准</title></text>
+<text x="1348" y="7689" font-size="16" class="mono" fill="#334155">FK category_id: INTEGER<title>账单分类引用</title></text>
+<text x="1348" y="7714" font-size="16" class="mono" fill="#334155">FK asset_id: INTEGER<title>资金池引用</title></text>
+<text x="1348" y="7739" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>事项简介</title></text>
+<text x="1348" y="7764" font-size="16" class="mono" fill="#334155">amount_cents: INTEGER<title>人民币分，使用整数保存</title></text>
+<text x="1348" y="7789" font-size="16" class="mono" fill="#334155">anchor_local: TEXT<title>周期锚点本地时间</title></text>
+<text x="1348" y="7814" font-size="16" class="mono" fill="#334155">unit: TEXT<title>day=日，week=周，month=月，year=年</title></text>
+<text x="1348" y="7839" font-size="16" class="mono" fill="#334155">interval: INTEGER<title>周期长度</title></text>
+<text x="1348" y="7864" font-size="16" class="mono" fill="#334155">generation: INTEGER = 1<title>周期计划修订代次</title></text>
+<text x="1348" y="7889" font-size="16" class="mono" fill="#334155">next_sequence: INTEGER = 0<title>下次应处理期次序号</title></text>
+<text x="1348" y="7914" font-size="16" class="mono" fill="#334155">status: TEXT = &#x27;active&#x27;<title>active=执行中，paused=暂停，ended=结束；pending=待确认，recorded=已记账，skipped=跳过</title></text>
+<text x="1348" y="7939" font-size="16" class="mono" fill="#334155">review_required: INTEGER = 0<title>漏期是否需确认：0=否，1=是</title></text>
+<text x="1348" y="7964" font-size="16" class="mono" fill="#334155">recorder: TEXT<title>记账者名称</title></text>
+<text x="1348" y="7989" font-size="16" class="mono" fill="#334155">revision: INTEGER = 1<title>乐观并发版本号</title></text>
+<text x="1348" y="8014" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="1348" y="8039" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>更新时间</title></text>
+<text x="1348" y="8064" font-size="13" fill="#64748b">关系：R54 / R55 / R56 / R60</text>
+</g>
+<g class="card" id="table-real_entries" data-table="real_entries"><rect x="1965" y="7511" width="580" height="466" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M1965 7589 H2545" stroke="#8b5c76"/>
+<text x="1983" y="7540" font-size="20" font-weight="700" fill="#8b5c76">现实收支与校准 «table»</text>
+<text x="1983" y="7568" font-size="20" class="mono" fill="#0f172a">real_entries</text>
+<text x="1983" y="7614" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>记录主键</title></text>
+<text x="1983" y="7639" font-size="16" class="mono" fill="#334155">title: TEXT<title>账单标题</title></text>
+<text x="1983" y="7664" font-size="16" class="mono" fill="#334155">kind: TEXT<title>income=收入，expense=支出，adjustment=余额校准</title></text>
+<text x="1983" y="7689" font-size="16" class="mono" fill="#334155">FK category_id: INTEGER?<title>账单分类引用</title></text>
+<text x="1983" y="7714" font-size="16" class="mono" fill="#334155">FK asset_id: INTEGER<title>资金池引用</title></text>
+<text x="1983" y="7739" font-size="16" class="mono" fill="#334155">description: TEXT = &#x27;&#x27;<title>事项简介</title></text>
+<text x="1983" y="7764" font-size="16" class="mono" fill="#334155">amount_cents: INTEGER<title>人民币分，使用整数保存</title></text>
+<text x="1983" y="7789" font-size="16" class="mono" fill="#334155">occurred_local: TEXT<title>账单归属本地日期时间</title></text>
+<text x="1983" y="7814" font-size="16" class="mono" fill="#334155">source: TEXT<title>manual=手动，ai=AI代记，schedule/cycle=周期记账，adjustment=余额校准</title></text>
+<text x="1983" y="7839" font-size="16" class="mono" fill="#334155">recorder: TEXT<title>记账者名称</title></text>
+<text x="1983" y="7864" font-size="16" class="mono" fill="#334155">FK schedule_id: INTEGER?<title>周期计划引用</title></text>
+<text x="1983" y="7889" font-size="16" class="mono" fill="#334155">revision: INTEGER = 1<title>乐观并发版本号</title></text>
+<text x="1983" y="7914" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="1983" y="7939" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>更新时间</title></text>
+<text x="1983" y="7964" font-size="13" fill="#64748b">关系：R56 / R57 / R58 / R59</text>
+</g>
+<g class="card" id="table-real_occurrences" data-table="real_occurrences"><rect x="60" y="8177" width="580" height="366" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M60 8255 H640" stroke="#8b5c76"/>
+<text x="78" y="8206" font-size="20" font-weight="700" fill="#8b5c76">周期期次与漏期确认 «table»</text>
+<text x="78" y="8234" font-size="20" class="mono" fill="#0f172a">real_occurrences</text>
+<text x="78" y="8280" font-size="16" class="mono" fill="#334155">PK id: INTEGER<title>记录主键</title></text>
+<text x="78" y="8305" font-size="16" class="mono" fill="#334155">FK schedule_id: INTEGER<title>周期计划引用</title></text>
+<text x="78" y="8330" font-size="16" class="mono" fill="#334155">sequence: INTEGER<title>周期期次序号</title></text>
+<text x="78" y="8355" font-size="16" class="mono" fill="#334155">generation: INTEGER = 1<title>周期计划修订代次</title></text>
+<text x="78" y="8380" font-size="16" class="mono" fill="#334155">scheduled_local: TEXT<title>该期应记账本地时间</title></text>
+<text x="78" y="8405" font-size="16" class="mono" fill="#334155">snapshot_json: TEXT<title>期次内容快照</title></text>
+<text x="78" y="8430" font-size="16" class="mono" fill="#334155">status: TEXT<title>active=执行中，paused=暂停，ended=结束；pending=待确认，recorded=已记账，skipped=跳过</title></text>
+<text x="78" y="8455" font-size="16" class="mono" fill="#334155">FK entry_id: INTEGER?<title>实际账单引用</title></text>
+<text x="78" y="8480" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="78" y="8505" font-size="16" class="mono" fill="#334155">resolved_at: TEXT?<title>确认处理时间</title></text>
+<text x="78" y="8530" font-size="13" fill="#64748b">关系：R59 / R60</text>
+</g>
+<g class="card" id="table-real_budgets" data-table="real_budgets"><rect x="695" y="8177" width="580" height="191" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M695 8255 H1275" stroke="#8b5c76"/>
+<text x="713" y="8206" font-size="20" font-weight="700" fill="#8b5c76">日月年预算 «table»</text>
+<text x="713" y="8234" font-size="20" class="mono" fill="#0f172a">real_budgets</text>
+<text x="713" y="8280" font-size="16" class="mono" fill="#334155">PK period: TEXT?<title>day=每日，month=每月，year=每年</title></text>
+<text x="713" y="8305" font-size="16" class="mono" fill="#334155">amount_cents: INTEGER<title>人民币分，使用整数保存</title></text>
+<text x="713" y="8330" font-size="16" class="mono" fill="#334155">updated_at: TEXT<title>更新时间</title></text>
+<text x="713" y="8355" font-size="13" fill="#64748b">关系：独立表</text>
+</g>
+<g class="card" id="table-real_operations" data-table="real_operations"><rect x="1330" y="8177" width="580" height="216" rx="10" fill="white" stroke="#8b5c76"/>
+<path d="M1330 8255 H1910" stroke="#8b5c76"/>
+<text x="1348" y="8206" font-size="20" font-weight="700" fill="#8b5c76">记账操作回执 «table»</text>
+<text x="1348" y="8234" font-size="20" class="mono" fill="#0f172a">real_operations</text>
+<text x="1348" y="8280" font-size="16" class="mono" fill="#334155">PK request_id: TEXT?<title>操作幂等请求标识</title></text>
+<text x="1348" y="8305" font-size="16" class="mono" fill="#334155">fingerprint: TEXT<title>请求内容指纹</title></text>
+<text x="1348" y="8330" font-size="16" class="mono" fill="#334155">result_json: TEXT<title>已完成操作的结果快照</title></text>
+<text x="1348" y="8355" font-size="16" class="mono" fill="#334155">created_at: TEXT<title>创建时间</title></text>
+<text x="1348" y="8380" font-size="13" fill="#64748b">关系：独立表</text>
+</g>
+<text x="60" y="8655" font-size="25" font-weight="700" fill="#172554">关联明细 · 箭头由引用方指向被引用方</text>
+<text x="60" y="8690" font-size="17" fill="#475569">实线 R = 数据库外键；虚线 L = 逻辑关联。? = SQLite 允许 NULL；PK/FK = 主键/外键。唯一约束、CHECK、索引见离线页面。</text>
+<text x="60" y="8732" font-size="16" fill="#334155">R01  sessions (user_profile_id) → user_profiles (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="8761" font-size="16" fill="#334155">R02  sessions (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8790" font-size="16" fill="#334155">R03  session_pet_states (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8819" font-size="16" fill="#334155">R04  chat_rounds (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8848" font-size="16" fill="#334155">R05  messages (round_id) → chat_rounds (id) ｜子 0..* : 父 0..1 ｜DELETE CASCADE</text>
+<text x="60" y="8877" font-size="16" fill="#334155">R06  messages (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8906" font-size="16" fill="#334155">R07  short_memories (round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8935" font-size="16" fill="#334155">R08  short_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8964" font-size="16" fill="#334155">R09  long_memories (activated_by_round_id) → chat_rounds (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="8993" font-size="16" fill="#334155">R10  long_memories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9022" font-size="16" fill="#334155">R11  long_memory_embeddings (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9051" font-size="16" fill="#334155">R12  long_memory_embeddings (long_memory_id) → long_memories (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9080" font-size="16" fill="#334155">R13  long_memory_sources (short_memory_id) → short_memories (id) ｜子 0..1 : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="9109" font-size="16" fill="#334155">R14  long_memory_sources (long_memory_id) → long_memories (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9138" font-size="16" fill="#334155">R15  notebooks (session_id) → sessions (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9167" font-size="16" fill="#334155">R16  reminder_occurrences (reminder_id) → reminders (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9196" font-size="16" fill="#334155">R17  game_permissions (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9225" font-size="16" fill="#334155">R18  game_plugin_settings (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9254" font-size="16" fill="#334155">R19  game_plugin_data (plugin_id) → game_plugins (plugin_id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9283" font-size="16" fill="#334155">R20  currency_ledger (game_run_id) → game_runs (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="9312" font-size="16" fill="#334155">R21  currency_ledger (game_run_id, plugin_id, plugin_version) → game_runs (id, plugin_id, plugin_version) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="9341" font-size="16" fill="#334155">R22  travels (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9370" font-size="16" fill="#334155">R23  travel_journals (travel_id) → travels (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9399" font-size="16" fill="#334155">R24  travel_journals (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9428" font-size="16" fill="#334155">R25  travel_journals (travel_id, session_id) → travels (id, session_id) ｜子 0..1 : 父 1 ｜DELETE NO ACTION</text>
+<text x="60" y="9457" font-size="16" fill="#334155">R26  accessories (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="9486" font-size="16" fill="#334155">R27  accessories (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9515" font-size="16" fill="#334155">R28  accessories (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="9544" font-size="16" fill="#334155">R29  letters (reply_to_id) → letters (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="9573" font-size="16" fill="#334155">R30  letters (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="9602" font-size="16" fill="#334155">R31  letters (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9631" font-size="16" fill="#334155">R32  letters (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="9660" font-size="16" fill="#334155">R33  souvenirs (travel_id) → travels (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="9689" font-size="16" fill="#334155">R34  souvenirs (session_id) → sessions (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9718" font-size="16" fill="#334155">R35  souvenirs (travel_id, session_id) → travels (id, session_id) ｜子 0..* : 父 0..1 ｜DELETE NO ACTION</text>
+<text x="60" y="9747" font-size="16" fill="#334155">R36  custom_festivals (festival_id) → festival_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="9776" font-size="16" fill="#334155">R37  provider_models (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9805" font-size="16" fill="#334155">R38  provider_roles (provider_id, purpose) → provider_models (provider_id, purpose) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="9834" font-size="16" fill="#334155">R39  provider_roles (provider_id) → providers (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="9863" font-size="16" fill="#334155">R40  message_images (message_id) → messages (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9892" font-size="16" fill="#334155">R41  reminder_email_items (occurrence_id) → reminder_occurrences (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9921" font-size="16" fill="#334155">R42  reminder_email_items (delivery_id) → reminder_email_deliveries (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9950" font-size="16" fill="#334155">R43  pet_artworks (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="9979" font-size="16" fill="#334155">R44  food_inventory (food_id) → food_catalog (id) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="10008" font-size="16" fill="#334155">R45  persona_food_settings (favorite_food_id) → food_catalog (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="10037" font-size="16" fill="#334155">R46  persona_food_settings (default_food_id) → food_catalog (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10066" font-size="16" fill="#334155">R47  persona_food_settings (persona_id) → personas (id) ｜子 0..1 : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="10095" font-size="16" fill="#334155">R48  food_actions (ledger_id) → currency_ledger (id) ｜子 0..1 : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="10124" font-size="16" fill="#334155">R49  food_actions (session_id) → sessions (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="10153" font-size="16" fill="#334155">R50  food_actions (persona_id) → personas (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="10182" font-size="16" fill="#334155">R51  food_actions (food_id) → food_catalog (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10211" font-size="16" fill="#334155">R52  persona_skills (skill_id) → skills (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="10240" font-size="16" fill="#334155">R53  persona_skills (persona_id) → personas (id) ｜子 0..* : 父 1 ｜DELETE CASCADE</text>
+<text x="60" y="10269" font-size="16" fill="#334155">R54  real_schedules (asset_id) → real_assets (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10298" font-size="16" fill="#334155">R55  real_schedules (category_id) → real_categories (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10327" font-size="16" fill="#334155">R56  real_entries (schedule_id) → real_schedules (id) ｜子 0..* : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="10356" font-size="16" fill="#334155">R57  real_entries (asset_id) → real_assets (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10385" font-size="16" fill="#334155">R58  real_entries (category_id) → real_categories (id) ｜子 0..* : 父 0..1 ｜DELETE RESTRICT</text>
+<text x="60" y="10414" font-size="16" fill="#334155">R59  real_occurrences (entry_id) → real_entries (id) ｜子 0..1 : 父 0..1 ｜DELETE SET NULL</text>
+<text x="60" y="10443" font-size="16" fill="#334155">R60  real_occurrences (schedule_id) → real_schedules (id) ｜子 0..* : 父 1 ｜DELETE RESTRICT</text>
+<text x="60" y="10472" font-size="16" fill="#334155">L01  settings → sessions ｜逻辑关联｜current_session_id：字符串设置值，由 Rust 校验，无外键</text>
+<text x="60" y="10501" font-size="16" fill="#334155">L02  game_runs → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；插件登记删除后游戏局仍保留</text>
+<text x="60" y="10530" font-size="16" fill="#334155">L03  currency_ledger → game_plugins ｜逻辑关联｜plugin_id：历史身份快照；不依赖当前插件登记</text>
+<text x="60" y="10559" font-size="16" fill="#334155">L04  currency_ledger → user_state ｜逻辑关联｜同一事务更新余额与流水；无外键</text>
+<text x="60" y="10588" font-size="16" fill="#334155">L05  currency_ledger → accessories ｜逻辑关联｜ref_id：制作／卖出的历史饰品引用；饰品删除后账单保留</text>
+<text x="60" y="10617" font-size="16" fill="#334155">L06  long_memories_fts → long_memories ｜逻辑关联｜rowid ↔ id：外部内容 FTS5 索引，触发器同步，可重建</text>
+<text x="60" y="10646" font-size="16" fill="#334155">L07  long_memory_embeddings → embedding_providers ｜逻辑关联｜model_key：模型配置标识；不是 provider ID 外键</text>
 </svg>

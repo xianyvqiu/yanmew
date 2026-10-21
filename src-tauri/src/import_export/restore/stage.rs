@@ -134,6 +134,8 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
                 .map_err(|_| fail())?;
         }
     }
+    if table=="persona_food_settings" {if let Some(id)=row.get("favorite_food_id").and_then(Value::as_str){if !c.query_row("SELECT EXISTS(SELECT 1 FROM food_catalog WHERE id=?1 AND is_unlimited=0)",[id],|r|r.get::<_,bool>(0))?{return Err(fail());}}}
+    if table=="food_inventory" && value(&row,"food_id")?=="token" {return Err(fail());}
     if table == "settings" {
         let key = value(&row, "key")?.to_owned();
         if !super::super::protocol::setting_allowed(&key) {
@@ -315,6 +317,7 @@ impl<'de> Visitor<'de> for Rows<'_> {
                 let session = row.remove("session_id").ok_or_else(|| A::Error::custom("旧日期缺少会话归属"))?;
                 crate::error::parse_id(session.as_str().ok_or_else(|| A::Error::custom("旧日期会话ID无效"))?).map_err(A::Error::custom)?;
             }
+            if self.schema_version<19 && self.table=="accessories" {row.entry("render_layer").or_insert(Value::from("front"));row.entry("layer_order").or_insert(Value::from(0));}
             if self.schema_version<12 {if self.table=="personas"{row.entry("pet_image_enabled").or_insert(Value::from(0));row.entry("pet_image_revision").or_insert(Value::from(0));}if self.table=="accessories"{row.entry("position_x").or_insert(Value::Null);row.entry("position_y").or_insert(Value::Null);row.entry("scale").or_insert(Value::from(1000));}}
             if self.table == "sessions" && self.schema_version < 11 {
                 row.entry("is_pinned").or_insert(Value::from(0));
@@ -448,7 +451,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         serde_json::from_reader(zip.by_name("manifest.json").map_err(|_| fail())?)
             .map_err(|_| fail())?;
     if manifest.format_version != FORMAT_VERSION
-        || ![6, 7, 8, 9, 10, 11, 12, 13, SCHEMA_VERSION].contains(&manifest.schema_version)
+        || ![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, SCHEMA_VERSION].contains(&manifest.schema_version)
     {
         return Err(AppError::new(
             "BACKUP_VERSION_UNSUPPORTED",
@@ -474,6 +477,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     }
     let c = Connection::open(directory.path.join("source.db"))?;
     c.execute_batch(include_str!("../../../../db/schema.sql"))?;
+    crate::foods::seed(&c)?;
     let triggers = c
         .prepare("SELECT name FROM sqlite_master WHERE type='trigger'")?
         .query_map([], |r| r.get::<_, String>(0))?
@@ -515,7 +519,8 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     let expected = super::super::protocol::COLUMNS
         .iter()
         .filter(|(n, _)| {
-            (scope.includes(n) || (manifest.schema_version<13 && *n=="custom_festivals" && scope.includes("sessions")))
+            if n.starts_with("real_")&&manifest.schema_version<18{return false;}
+            (manifest.schema_version>=15 || !["food_inventory","persona_food_settings","food_actions","skills","persona_skills"].contains(n)) && (scope.includes(n) || (manifest.schema_version<13 && *n=="custom_festivals" && scope.includes("sessions")))
                 && (manifest.schema_version >= 7
                     || !["provider_roles", "message_images"].contains(n))
                 && (manifest.schema_version >= 8 || *n != "provider_models")
@@ -552,6 +557,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
             }
         }
     }
+    if manifest.schema_version<18&&manifest.package_type==PackageKind::Full{crate::real_money::seed(&c)?;}
     super::super::snapshot::validate(&c, &scope)?;
     validate_business(&c, manifest.package_type)?;
     if manifest.package_type == PackageKind::Full
@@ -657,6 +663,8 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
 
 /// 复用数据库约束之外的业务校验；字数范围不限制手动保存的数据。
 fn validate_business(c: &Connection, kind: PackageKind) -> AppResult<()> {
+    if c.query_row("SELECT EXISTS(SELECT 1 FROM currency_ledger l WHERE reason='food_purchase' AND NOT EXISTS(SELECT 1 FROM food_actions a WHERE a.ledger_id=l.id AND a.kind='purchase' AND l.delta=-(a.unit_price*a.quantity)))",[],|r|r.get::<_,bool>(0))?{return Err(fail());}
+
     for sql in [
         "SELECT 1 FROM sessions WHERE intimacy>999 LIMIT 1",
         "SELECT 1 FROM chat_rounds WHERE (status='interrupted' AND stop_reason IS NULL) OR (status<>'interrupted' AND stop_reason IS NOT NULL) OR (status='pending' AND completed_at IS NOT NULL) OR (status='completed' AND completed_at IS NULL) LIMIT 1",

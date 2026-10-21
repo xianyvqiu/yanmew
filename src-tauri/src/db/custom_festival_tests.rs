@@ -3,6 +3,7 @@ use chrono::Datelike;
 
 fn legacy() -> Connection {
     let c=test_database();
+    c.execute_batch("ALTER TABLE accessories DROP COLUMN render_layer; ALTER TABLE accessories DROP COLUMN layer_order;").unwrap();
     let start=SCHEMA.find("CREATE TABLE IF NOT EXISTS custom_festivals (").unwrap();
     let end=start+SCHEMA[start..].find("\n);").unwrap()+3;
     let old=SCHEMA[start..end].replace("custom_festivals","session_festivals")

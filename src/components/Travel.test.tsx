@@ -72,7 +72,9 @@ it("详情成功加载后标已读，收藏和回信绑定原出行与上下文"
   await openMail();
   expect(api.letters.flags).toHaveBeenCalledWith(context,"7",{read:true});
   fireEvent.click(screen.getByRole("button",{name:/小喵的来信/}));
-  expect(screen.getByText("本次旅行尚未结束，可以回复一次。")).toBeTruthy();
+  await waitFor(()=>expect(screen.queryByRole("region",{name:"信件详情"})).toBeNull());
+  fireEvent.click(screen.getByRole("button",{name:/小喵的来信/}));
+  await screen.findByRole("button",{name:"收藏"});
   fireEvent.click(screen.getByRole("button",{name:"收藏"}));
   await waitFor(()=>expect(api.letters.flags).toHaveBeenCalledWith(context,"7",{favorite:true}));
   await screen.findByRole("button",{name:"取消收藏"});

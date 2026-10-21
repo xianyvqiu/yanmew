@@ -123,7 +123,7 @@ async fn download(raw: &str, cancel: &Cancellation) -> AppResult<Vec<u8>> {
 }
 async fn parse(value: Value, cancel: &Cancellation) -> AppResult<Vec<u8>> {
     let first = value
-        .get("data")
+        .get("data").or_else(||value.get("images"))
         .and_then(Value::as_array)
         .and_then(|rows| rows.first())
         .ok_or_else(|| failed("生图服务未返回有效图片"))?;
@@ -154,8 +154,8 @@ pub(crate) async fn generate(
     let prompt=format!("绘制一个用于颜文字桌宠头顶的单独饰品。名称：{name}。设计细节：{description}。真正透明背景，四边留透明空间，只有饰品本身，主体居中，清晰小尺寸可读；不要绘制宠物、人物、脸或整个场景，不要文字、水印、棋盘格、阴影底板。输出透明PNG。");
     cancel.wait(TIMEOUT,async {
         cancel.check()?;
-        let response=client.search_http().post(format!("{}/images/generations",snapshot.provider.base_url)).bearer_auth(&snapshot.key)
-            .json(&json!({"model":snapshot.provider.model,"prompt":prompt,"n":1,"size":"1024x1024","background":"transparent","output_format":"png"}))
+        let response=client.search_http().post(endpoint(&snapshot.provider.base_url,"generations")).bearer_auth(&snapshot.key)
+            .json(&generation_body(snapshot,&prompt,true))
             .send().await.map_err(network)?;
         if !response.status().is_success(){return Err(failed("生图服务拒绝或未完成请求，请检查模型、Key、额度及透明输出支持；本次不自动重试"));}
         let value=serde_json::from_slice(&body(response,MAX_RESPONSE).await?).map_err(|_|failed("生图响应格式无效"))?;
@@ -172,6 +172,28 @@ pub(crate) async fn edit(client:&AiClient,snapshot:&Snapshot,image:&[u8],require
  let mut payload=Vec::new();
  for (key,value) in [("model",snapshot.provider.model.as_str()),("prompt",prompt.as_str()),("n","1"),("size","1024x1024"),("background","transparent"),("output_format","png")] {payload.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{value}\r\n").as_bytes());}
  payload.extend_from_slice(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"reference.png\"\r\nContent-Type: image/png\r\n\r\n").as_bytes());payload.extend_from_slice(image);payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
- cancel.wait(TIMEOUT,async{cancel.check()?;let response=client.search_http().post(format!("{}/images/edits",snapshot.provider.base_url)).bearer_auth(&snapshot.key).header(reqwest::header::CONTENT_TYPE,format!("multipart/form-data; boundary={boundary}")).body(payload).send().await.map_err(network)?;
+ cancel.wait(TIMEOUT,async{cancel.check()?;let response=client.search_http().post(endpoint(&snapshot.provider.base_url,"edits")).bearer_auth(&snapshot.key).header(reqwest::header::CONTENT_TYPE,format!("multipart/form-data; boundary={boundary}")).body(payload).send().await.map_err(network)?;
  if !response.status().is_success(){return Err(failed("参考图生成失败：请确认所选生图服务和模型支持图像编辑及透明输出，检查Key和额度；不会自动付费重试"));}let value=serde_json::from_slice(&body(response,MAX_RESPONSE).await?).map_err(|_|failed("参考图生成响应格式无效"))?;parse(value,cancel).await}).await
+}
+
+/// 根地址与已包含完整路径的地址均可用，不改写用户连接记录。
+fn endpoint(base:&str,action:&str)->String {
+ let base=base.trim_end_matches('/');
+ let root=base.strip_suffix("/images/generations").or_else(||base.strip_suffix("/images/edits")).or_else(||base.strip_suffix("/chat/completions")).unwrap_or(base);
+ let root=if siliconflow(root)&&url::Url::parse(root).is_ok_and(|u|u.path().is_empty()||u.path()=="/"){format!("{root}/v1")}else{root.into()};
+ format!("{root}/images/{action}")
+}
+fn siliconflow(base:&str)->bool {url::Url::parse(base).ok().and_then(|u|u.host_str().map(str::to_owned)).is_some_and(|h|matches!(h.as_str(),"api.siliconflow.cn"|"api.siliconflow.com"|"api-st.siliconflow.cn"))}
+fn generation_body(snapshot:&Snapshot,prompt:&str,transparent:bool)->Value {
+ if siliconflow(&snapshot.provider.base_url) {json!({"model":snapshot.provider.model,"prompt":prompt,"image_size":"1024x1024"})}
+ else {let mut body=json!({"model":snapshot.provider.model,"prompt":prompt,"n":1,"size":"1024x1024"});if transparent{body["background"]=json!("transparent");body["output_format"]=json!("png");}body}
+}
+/// 聊天中按用户要求生成普通图片，不套用饰品或透明底提示词。
+pub(crate) async fn generate_picture(client:&AiClient,snapshot:&Snapshot,prompt:&str,cancel:&Cancellation)->AppResult<Vec<u8>> {
+ cancel.wait(TIMEOUT,async {
+  cancel.check()?;
+  let response=client.search_http().post(endpoint(&snapshot.provider.base_url,"generations")).bearer_auth(&snapshot.key).json(&generation_body(snapshot,prompt,false)).send().await.map_err(network)?;
+  if !response.status().is_success(){return Err(failed(&format!("生图请求失败（HTTP {}），请检查生图用途的模型、额度和服务配置；未自动重试",response.status().as_u16())));}
+  let value=serde_json::from_slice(&body(response,MAX_RESPONSE).await?).map_err(|_|failed("生图响应格式无效"))?;parse(value,cancel).await
+ }).await.map_err(|e|if e.code=="AI_TIMEOUT"{AppError::new("IMAGE_GENERATION_TIMEOUT","聊天生图超时，服务商可能已经计费；本次没有自动重试")}else{e})
 }

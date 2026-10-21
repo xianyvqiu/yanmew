@@ -3,7 +3,7 @@
   "name": "我的家",
   "description": "种田、钓鱼、养殖、做饭与仓库。必须授权全局喵币，熟练度独立保存。",
   "author": "颜喵",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "api_version": "1.0.0",
   "entry": "ui/index.html",
   "storage_version": 1,

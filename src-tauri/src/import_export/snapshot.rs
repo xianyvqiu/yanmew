@@ -17,6 +17,7 @@ pub(super) struct Scope {
 }
 impl Scope {
     pub fn includes(&self, table: &str) -> bool {
+        if table.starts_with("real_"){return self.request.kind==PackageKind::Full;}
         match self.request.kind {
             PackageKind::Full => true,
             PackageKind::PluginData => [
@@ -26,9 +27,11 @@ impl Scope {
                 "game_plugin_data",
             ]
             .contains(&table),
-            PackageKind::PersonaProfile => ["personas","pet_artworks"].contains(&table),
+            PackageKind::PersonaProfile => ["personas","pet_artworks","persona_food_settings","skills","persona_skills"].contains(&table),
             PackageKind::UserProfile if !self.request.include_sessions => table == "user_profiles",
             _ => ![
+                "food_inventory",
+                "food_actions",
                 "custom_festivals",
                 "provider_roles",
                 "provider_models",
@@ -85,6 +88,8 @@ impl Scope {
             "user_profiles" => {
                 format!("id IN (SELECT user_profile_id FROM sessions WHERE id IN ({sessions}))")
             }
+            "skills" => format!("id IN (SELECT skill_id FROM persona_skills WHERE persona_id IN (SELECT id FROM personas WHERE {}))",self.predicate("personas")),
+            "persona_skills" | "persona_food_settings" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
             "pet_artworks" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
             "message_images" => format!("message_id IN (SELECT id FROM messages WHERE session_id IN ({sessions}))"),
             "sessions" => format!("id IN ({sessions})"),
@@ -141,6 +146,7 @@ pub(super) fn initialize(c: &Connection, request: &ExportRequest) -> AppResult<S
 }
 
 pub(super) fn validate(c: &Connection, scope: &Scope) -> AppResult<()> {
+    if scope.request.kind==PackageKind::Full{crate::real_money::validate(c)?;}
     // 真正的外键异常应明确失败；历史已删除饰品的账单引用另按协议置空。
     if c.prepare("PRAGMA foreign_key_check")?
         .query([])?

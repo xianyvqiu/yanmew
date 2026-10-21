@@ -14,6 +14,7 @@ vi.mock("./NotebookPanel", () => ({ default: () => <label>记事本全文<textar
 const context: CurrentContext = { personaId: "1", sessionId: "3", contextRevision: 1 };
 const record = (kind: MemoryKind, id = kind === "short" ? "10" : "20"): MemoryRecord => ({
   id, sessionId: "3", kind, roundId: kind === "short" ? "7" : null,
+  roundNumber: kind === "short" ? 1 : null, sourceStartRoundNumber: kind === "long" ? 1 : null, sourceEndRoundNumber: kind === "long" ? 2 : null, activatedByRoundNumber: kind === "long" ? 3 : null,
   integrationState: kind === "short" ? "integrated" : null, title: kind === "long" ? "长期标题" : null,
   content: kind === "short" ? "短期原正文" : "长期原正文", sourceCount: kind === "long" ? 2 : null,
   activatedByRoundId: kind === "long" ? "9" : null, coveredThroughRoundId: kind === "long" ? "8" : null,
@@ -22,8 +23,8 @@ const record = (kind: MemoryKind, id = kind === "short" ? "10" : "20"): MemoryRe
 });
 const detail = (kind: MemoryKind, id?: string): MemoryDetail => ({ record: record(kind, id), memoryRevision: 1,
   sources: kind === "long" ? [
-    { shortMemoryId: "12", roundId: "8", sourceOrder: 2, content: "后来源", updatedAt: "now" },
-    { shortMemoryId: "11", roundId: "7", sourceOrder: 1, content: "先来源", updatedAt: "now" },
+    { shortMemoryId: "12", roundId: "8", roundNumber: 2, sourceOrder: 2, content: "后来源", updatedAt: "now" },
+    { shortMemoryId: "11", roundId: "7", roundNumber: 1, sourceOrder: 1, content: "先来源", updatedAt: "now" },
   ] : [], relatedLongMemories: kind === "short" ? [{ id: "20", title: "长期标题" }] : [],
 });
 let changed: (() => void)[] = [];
@@ -45,7 +46,7 @@ afterEach(cleanup);
 
 async function openShort() {
   fireEvent.click(screen.getByRole("tab", { name: "短期记忆" }));
-  fireEvent.click(await screen.findByRole("button", { name: /回合 7/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /回合 1/ }));
   return screen.findByRole("textbox", { name: "短期记忆正文" });
 }
 
@@ -96,7 +97,7 @@ describe("MemoryManagementPanel", () => {
     fireEvent.change(editor, { target: { value: "短期草稿" } });
     fireEvent.click(screen.getByRole("button", { name: "查看长期记忆：长期标题" }));
     await screen.findByRole("textbox", { name: "长期记忆标题" });
-    expect(screen.getByText(/来源 2 条 · 覆盖至回合 8 · 覆盖至 AI 消息 88 · 触发回合 9/)).toBeTruthy();
+    expect(screen.getByText(/来源 2 条 · 本会话回合 1–2 · 触发于本会话回合 3/)).toBeTruthy();
     fireEvent.click(screen.getByText("来源短期记忆（2 条）"));
     const sources = screen.getAllByRole("listitem");
     expect(within(sources[0]).getByText("先来源")).toBeTruthy();

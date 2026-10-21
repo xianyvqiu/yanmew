@@ -4,6 +4,7 @@ use super::*;
 fn v13_standby_upgrade_preserves_artworks_sequence_and_unifies_legacy_thresholds() {
     for (bored, sleep, expected) in [(Some("25"), Some("40"), "25"), (None, Some("35"), "35"), (None, None, "45")] {
         let mut c = test_database();
+        c.execute_batch("ALTER TABLE accessories DROP COLUMN render_layer;ALTER TABLE accessories DROP COLUMN layer_order;").unwrap();
         let old = PET_CREATION_MIGRATION.find("CREATE TABLE IF NOT EXISTS pet_artworks (").unwrap();
         c.execute_batch("DROP TABLE pet_artworks; DELETE FROM settings WHERE key IN ('standby_minutes','idle_event_minutes'); PRAGMA user_version=13;").unwrap();
         c.execute_batch(&PET_CREATION_MIGRATION[old..]).unwrap();

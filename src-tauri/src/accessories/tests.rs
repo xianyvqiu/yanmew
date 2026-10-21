@@ -24,11 +24,11 @@ fn list_is_scoped_paginated_and_serializes_large_numbers_as_strings() {
     assert!(list(&c, 1, Some(-1), 30).is_err());
 }
 #[test]
-fn wear_keeps_one_item_and_wrong_session_does_not_unwear_existing() {
+fn wear_keeps_multiple_items_and_wrong_session_does_not_unwear_existing() {
     let mut c = database();
     assert!(wear(&mut c, 1, 1, true).unwrap().is_worn);
     assert!(wear(&mut c, 1, 2, true).unwrap().is_worn);
-    assert!(!get(&c, 1, 1).unwrap().is_worn);
+    assert!(get(&c, 1, 1).unwrap().is_worn);
     assert!(wear(&mut c, 1, 3, true).is_err());
     assert!(get(&c, 1, 2).unwrap().is_worn);
     assert_eq!(
@@ -145,4 +145,16 @@ fn actual_context_revision_and_session_are_required() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn layers_reorder_current_session_without_changing_wallet_or_worn_state(){
+ let mut c=crate::db::test_database();
+ c.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'测试','a','a')",[]).unwrap();
+ c.execute_batch("INSERT INTO accessories(id,session_id,name,display_text,description,cost,source,created_at,is_worn) VALUES(501,1,'帽子','✦','一',20,'crafted','a',1),(502,1,'围巾','✦','二',20,'crafted','a',1);").unwrap();
+ let initial=crate::currency::get_wallet(&c).unwrap().coins;
+ layer(&mut c,1,501,"back","keep").unwrap();assert_eq!(get(&c,1,501).unwrap().render_layer,"back");
+ layer(&mut c,1,501,"front","top").unwrap();assert!(get(&c,1,501).unwrap().layer_order>get(&c,1,502).unwrap().layer_order);
+ layer(&mut c,1,501,"front","bottom").unwrap();assert!(get(&c,1,501).unwrap().layer_order<get(&c,1,502).unwrap().layer_order);
+ assert!(layer(&mut c,2,501,"front","top").is_err());assert!(layer(&mut c,1,501,"invalid","top").is_err());assert!(get(&c,1,501).unwrap().is_worn&&get(&c,1,502).unwrap().is_worn);assert_eq!(crate::currency::get_wallet(&c).unwrap().coins,initial);
 }

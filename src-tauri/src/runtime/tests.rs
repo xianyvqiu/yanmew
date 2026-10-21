@@ -72,7 +72,7 @@ fn standby_uses_existing_idle_counter_library_and_interaction_reset() {
     let standby=runtime.pet_view().unwrap();
     assert_eq!(standby.activity,Activity::Standby);
     assert_eq!(standby.expression,"(u_u)");
-    assert!(standby.can_interact && standby.can_wander);
+    assert!(standby.can_interact && !standby.can_wander);
     assert_eq!(snapshot(&runtime,1).idle_elapsed_ms,600_000);
     assert_eq!(runtime.pet_view().unwrap().revision,standby.revision);
     let lease=runtime.requests.start("chat:1".into(),1).unwrap();
@@ -89,6 +89,21 @@ fn standby_uses_existing_idle_counter_library_and_interaction_reset() {
     runtime.read(|s,_| {crate::config::save(&mut s.connection,[("standby_minutes".into(),"2".into())].into_iter().collect())?;Ok(())}).unwrap();
     clock.advance(120);
     assert_eq!(runtime.pet_view().unwrap().activity,Activity::Standby);
+}
+
+#[test]
+fn stationary_standby_keeps_idle_counting_until_bored_can_wander() {
+    let (runtime, clock) = setup(0);
+    assert!(runtime.pet_view().unwrap().can_wander);
+    clock.advance(600);
+    let standby = runtime.pet_view().unwrap();
+    assert_eq!(standby.activity, Activity::Standby);
+    assert!(!standby.can_wander);
+    clock.advance(35 * 60);
+    let bored = runtime.pet_view().unwrap();
+    assert_eq!(bored.activity, Activity::Bored);
+    assert!(bored.can_wander);
+    assert_eq!(snapshot(&runtime, 1).idle_elapsed_ms, 45 * 60_000);
 }
 
 #[test]
@@ -481,4 +496,12 @@ fn travel_departure_blocks_chat_and_interaction_without_reward() {
     assert_eq!(runtime.pet_view().unwrap().intimacy,Some(0));
     clock.offline(7200); assert_ne!(runtime.pet_view().unwrap().activity,Activity::Away);
     assert!(travel_wait(&runtime).unwrap()>=7200);
+}
+
+#[test]
+fn click_after_standby_is_not_feeding_and_recovers_wander() {
+ let (runtime,clock)=setup(1);runtime.pet_view().unwrap();clock.advance(600);assert_eq!(runtime.pet_view().unwrap().activity,Activity::Standby);
+ let before=runtime.read(|s,_|Ok((s.connection.query_row("SELECT count(*) FROM food_actions",[],|r|r.get::<_,i64>(0))?,s.connection.query_row("SELECT count(*) FROM currency_ledger",[],|r|r.get::<_,i64>(0))?))).unwrap();
+ runtime.pet_interact(input(Action::Click)).unwrap();assert_eq!(runtime.pet_view().unwrap().activity,Activity::Interacting);clock.advance(3);let normal=runtime.pet_view().unwrap();assert_eq!(normal.activity,Activity::Normal);assert!(normal.can_wander);
+ let after=runtime.read(|s,_|Ok((s.connection.query_row("SELECT count(*) FROM food_actions",[],|r|r.get::<_,i64>(0))?,s.connection.query_row("SELECT count(*) FROM currency_ledger",[],|r|r.get::<_,i64>(0))?))).unwrap();assert_eq!(before,after);
 }

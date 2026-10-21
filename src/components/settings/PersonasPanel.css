@@ -9,6 +9,8 @@
 .ym-persona-color > span { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--ym-border-strong); flex-shrink: 0; }
 .ym-persona-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--ym-border-strong); margin-right: 6px; vertical-align: middle; }
 .ym-expression-list { display: grid; gap: 10px; }
+.ym-expression-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; }
+.ym-expression-fields textarea { width: 100%; min-width: 0; resize: vertical; font-family: var(--ym-font-kaomoji); }
 .ym-expression-list dt { color: var(--ym-text-secondary); font-size: var(--ym-font-caption); }
 .ym-expression-list dd { margin: 4px 0 0; overflow-wrap: anywhere; font-family: var(--ym-font-kaomoji); }
 .ym-persona-danger { color: var(--ym-danger); }

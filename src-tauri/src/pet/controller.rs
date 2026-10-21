@@ -375,7 +375,7 @@ impl Controller {
                 && !away
                 && matches!(
                     activity,
-                    Activity::Normal | Activity::Standby | Activity::Hungry | Activity::Bored
+                    Activity::Normal | Activity::Hungry | Activity::Bored
                 ),
         };
         view.can_interact &= view.session_id.is_some();
@@ -386,6 +386,15 @@ impl Controller {
             self.last_view = Some(view.clone());
         }
         Ok(view)
+    }
+
+    /// 食品事务提交后仅设置短时展示，不再次发放奖励。
+    pub(crate) fn food_feedback(&mut self,c:&Connection,persona:i64,favorite:bool,sample:ClockSample,random:&mut dyn RandomSource)->AppResult<()> {
+        let category=if favorite {"eating_favorite"}else{"eating"};
+        let expression=crate::foods::expression(c,persona,category,random)?;
+        self.transient=Some((sample.running+Duration::from_secs(3),Activity::Eating,expression));
+        if let Some(anchor)=&mut self.anchor {anchor.running=sample.running;anchor.idle_allowed=false;}
+        Ok(())
     }
 
     pub fn interact(
@@ -420,6 +429,9 @@ impl Controller {
             |r| r.get(0),
         )?;
         let expression = pick_expression(connection,parse_id(&input.persona_id)?,library.as_deref(), activity, random)?;
+        if matches!(input.action,Action::Feed) {
+            crate::foods::feed(connection,&format!("legacy-feed-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()),"token",revision,PetWriteScope{persona_id:parse_id(&input.persona_id)?,session_id,context_revision:revision,state_revision:snapshot.state_revision},random)?;
+        } else {
         super::interact(
             connection,
             revision,
@@ -431,7 +443,9 @@ impl Controller {
             },
             input.action.interaction(),
             sample.utc,
+            random,
         )?;
+        }
         self.transient = Some((
             sample.running + Duration::from_secs(3),
             activity,
@@ -452,16 +466,8 @@ fn pick_expression(
     random: &mut dyn RandomSource,
 ) -> AppResult<String> {
     if let Some(image)=crate::pet_creation::select(connection,persona,image_category(activity),None,random)? {return Ok(image);}
-    let fallback = match activity {
-        Activity::Standby => "(｡-ω-｡)",
-        Activity::Sleeping => "(-_-) zZ",
-        Activity::Bored => "(._.)",
-        Activity::Hungry => "(>_<)",
-        Activity::Eating => "(๑´ڡ`๑)",
-        Activity::Thinking => "(・・?)",
-        Activity::Interacting => "(^_^)",
-        _ => "(・ω・)",
-    };
+    let click = if activity == Activity::Interacting { Some(random.below(3)?) } else { None };
+    let fallback = crate::expressions::builtin(match click { Some(0)=>"click_happy",Some(1)=>"click_surprised",Some(2)=>"click_shy",Some(_)=>return Err(AppError::storage()),None=>image_category(activity) });
     let Some(raw) = raw else {
         return Ok(fallback.into());
     };
@@ -469,13 +475,14 @@ fn pick_expression(
         serde_json::from_str(raw).map_err(|_| AppError::storage())?;
     crate::expressions::validate_library(&library)?;
     let choices = match activity {
+        Activity::Normal | Activity::Dormant => library.normal,
         Activity::Standby => library.standby,
         Activity::Sleeping => library.sleepy,
         Activity::Bored => library.bored,
         Activity::Hungry => library.hungry,
         Activity::Eating => library.eating,
         Activity::Thinking => library.thinking,
-        Activity::Interacting => match random.below(3)? {
+        Activity::Interacting => match click.ok_or_else(AppError::storage)? {
             0 => library.click.happy,
             1 => library.click.surprised,
             2 => library.click.shy,

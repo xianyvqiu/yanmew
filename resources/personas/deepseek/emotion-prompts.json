@@ -1,0 +1,56 @@
+[
+  {
+    "role": "deepseek",
+    "emotion": "happy",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_happy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion HAPPY: soft lazy whale delight: relaxed beaming closed-eye smile, hands loosely clasped at heart, slightly swaying body and happily curved whale tail, gentle cute mood. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "deepseek",
+    "emotion": "angry",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_angry.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion ANGRY: adorably sulky whale: puffed cheeks and pout, arms folded, fin ears lowered and whale tail firmly angled aside, harmless childish complaint. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "deepseek",
+    "emotion": "sad",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_sad.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion SAD: softhearted whale sadness: watery blue eyes, fingertips wiping one tear, shoulders droop and whale tail lowered, tender vulnerable expression. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "deepseek",
+    "emotion": "shy",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_shy.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion SHY: bashful whale maiden: rosy cheeks, eyes lowered with small shy smile, both hands fiddle with apron hem, whale tail tucked close beside legs. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "deepseek",
+    "emotion": "afraid",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_afraid.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion AFRAID: timid whale seeking shelter: wide wet blue eyes, hands hold apron near chest, shoulders hunched and tail curves protectively around side, frightened but cute. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  },
+  {
+    "role": "deepseek",
+    "emotion": "speechless",
+    "reference": "deepseek/base.png",
+    "file": "deepseek/emotion_speechless.png",
+    "tool": "built-in image_gen",
+    "transparent": true,
+    "prompt": "Create ONE full-body transparent PNG desktop pet expression variant using the supplied image as exact identity, outfit and painting-style reference. Preserve cute blue long-haired blue-eyed whale girl with whale fin ears and whale tail, blue-white maid dress and white maid headband, same boots and hair ornaments, no cat ears or dragon parts. Emotion SPEECHLESS: lazy whale utterly done: blank sleepy half-lidded blue eyes, flat mouth and slack shoulders, one limp hand turned palm up, whale tail droops, resigned cute deadpan. Same polished detailed anime chibi rendering and proportions as supplied default base, visually readable distinct expression at small size. Entire character including all hair, ears/horns, hands, feet, costume and tail inside canvas with transparent margins; centered isolated full-body cutout. Genuinely transparent alpha background, NO ground plane, NO checkerboard, NO solid backdrop, NO text, NO symbols, NO other characters, NO food, NO eating utensils. Single character only, not a sheet. Do not redesign costume or species."
+  }
+]

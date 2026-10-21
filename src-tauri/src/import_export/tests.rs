@@ -189,7 +189,7 @@ fn six_kinds_have_closed_scopes_and_preserve_states() {
             }
         }
         if kind == PackageKind::PersonaProfile {
-            assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["personas", "pet_artworks"]);
+            assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["persona_food_settings", "persona_skills", "personas", "pet_artworks", "skills"]);
         }
         if kind == PackageKind::UserProfile && !include_sessions {
             assert_eq!(tables.keys().collect::<Vec<_>>(), vec!["user_profiles"]);

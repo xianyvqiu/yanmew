@@ -15,6 +15,7 @@ const keys = [
 const values = ["120", "10", "45", "60", "120", "2", "4", "10", "50", "150", "300", "20", "50", "120", "300"];
 const makeSettings = (overrides: Partial<Settings> = {}) => ({
   ...Object.fromEntries(keys.map((key, index) => [key, values[index]])),
+  pet_chat_autocollapse_minutes:"3",
   theme_mode: "system",
   short_memory_min_chars: "12",
   ...overrides,

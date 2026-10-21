@@ -238,13 +238,26 @@ fn create_in_transaction(
         ));
     }
     if let Some(id) = user_profile_id { crate::user_profiles::get(&transaction, id)?; }
+    let session=insert_in_transaction(transaction,persona_id,user_profile_id,title,changed_at)?;
+    let session_id=crate::error::parse_id(&session.id)?;
+    set_current_in_transaction(transaction, persona_id, session_id, changed_at)?;
+    get(transaction, persona_id, session_id)
+}
+
+/// 资料创建复用写入与旅行初始化，但不切换当前会话或创建教程消息。
+pub(crate) fn create_default_in_transaction(transaction:&Transaction<'_>,persona_id:i64)->AppResult<()> {
+    if !transaction.query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE persona_id=?1)",[persona_id],|r|r.get::<_,bool>(0))? {
+        insert_in_transaction(transaction,persona_id,None,DEFAULT_TITLE,&now())?;
+    }
+    Ok(())
+}
+fn insert_in_transaction(transaction:&Transaction<'_>,persona_id:i64,user_profile_id:Option<i64>,title:&str,changed_at:&str)->AppResult<Session> {
     transaction.execute(
         "INSERT INTO sessions(persona_id,user_profile_id,title,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)",
         params![persona_id, user_profile_id, title, changed_at],
     )?;
     let session_id = transaction.last_insert_rowid();
     crate::travel::reset_wait(transaction, session_id)?;
-    set_current_in_transaction(transaction, persona_id, session_id, changed_at)?;
     get(transaction, persona_id, session_id)
 }
 

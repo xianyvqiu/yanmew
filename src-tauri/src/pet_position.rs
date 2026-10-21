@@ -15,15 +15,15 @@ type Point = (i32, i32);
 const SAVE_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug)]
-struct Area {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
+pub(crate) struct Area {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl Area {
-    fn intersection(self, point: Point, size: PhysicalSize<u32>) -> i64 {
+    pub(crate) fn intersection(self, point: Point, size: PhysicalSize<u32>) -> i64 {
         let width = (i64::from(self.x) + i64::from(self.width))
             .min(i64::from(point.0) + i64::from(size.width))
             - i64::from(self.x).max(i64::from(point.0));
@@ -32,7 +32,7 @@ impl Area {
             - i64::from(self.y).max(i64::from(point.1));
         width.max(0).saturating_mul(height.max(0))
     }
-    fn fit(self, point: Point, size: PhysicalSize<u32>) -> Point {
+    pub(crate) fn fit(self, point: Point, size: PhysicalSize<u32>) -> Point {
         // 超小工作区放在左上角，普通尺寸则使整个窗口留在工作区内。
         let x = i64::from(point.0).clamp(
             i64::from(self.x),
@@ -78,7 +78,7 @@ fn window_error() -> AppError {
     )
 }
 
-fn areas(window: &WebviewWindow) -> AppResult<(Vec<Area>, usize)> {
+pub(crate) fn areas(window: &WebviewWindow) -> AppResult<(Vec<Area>, usize)> {
     let monitors = window.available_monitors().map_err(|_| window_error())?;
     let current = window
         .current_monitor()
@@ -330,6 +330,9 @@ impl WindowPosition {
             window
                 .set_position(PhysicalPosition::new(target.0, target.1))
                 .map_err(|_| window_error())?;
+        }
+        if fit_entire_window {
+            window.state::<crate::pet_desktop::Desktop>().realign_dock(window)?;
         }
         Ok(())
     }

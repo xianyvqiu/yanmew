@@ -8,3 +8,4 @@ pub mod links;
 pub mod game_host;
 
 pub mod files;
+pub mod instance;

@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use tauri::{Emitter, Manager};
 
 // 仅安装在主宠窗；保留 Tauri 的焦点处理，阻止系统重画不存在的标题栏。
 #[cfg(windows)]
@@ -8,21 +9,37 @@ unsafe extern "system" fn pet_frame_proc(
     wparam: windows::Win32::Foundation::WPARAM,
     lparam: windows::Win32::Foundation::LPARAM,
     subclass_id: usize,
-    _: usize,
+    reference: usize,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::{
         Foundation::{LPARAM, LRESULT},
         UI::{
             Shell::{DefSubclassProc, RemoveWindowSubclass},
-            WindowsAndMessaging::{WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT},
+            WindowsAndMessaging::{WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT, WM_EXITSIZEMOVE},
         },
     };
+    if reference != 0 && message != 0 && message == crate::platform::windows::instance::wake_message() {
+        let app = unsafe { &*(reference as *const tauri::AppHandle) }.clone();
+        tauri::async_runtime::spawn_blocking(move || { if let Err(error) = crate::show_pet_window(&app) { eprintln!("唤出已有宠窗失败：{error}"); } });
+        return LRESULT(0);
+    }
+    if reference != 0 && message == WM_EXITSIZEMOVE {
+        let app = unsafe { &*(reference as *const tauri::AppHandle) }.clone();
+        if let Some(window) = app.get_webview_window("main") {
+            // startDragging 只提交消息；只有这条原生通知才表示用户已经松手。
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = crate::commands::finish_pet_drag(&window).await { crate::pet_position::report(&app, &error); }
+                let _ = app.emit_to("main", "pet-drag-finished", ());
+            });
+        }
+    }
     match message {
         WM_NCPAINT => LRESULT(0),
         WM_NCACTIVATE => unsafe { DefSubclassProc(hwnd, message, wparam, LPARAM(-1)) },
         _ => unsafe {
             if message == WM_NCDESTROY {
                 let _ = RemoveWindowSubclass(hwnd, Some(pet_frame_proc), subclass_id);
+                if reference != 0 { drop(Box::from_raw(reference as *mut tauri::AppHandle)); }
             }
             DefSubclassProc(hwnd, message, wparam, lparam)
         },
@@ -58,13 +75,14 @@ pub fn enforce_frameless(window: &tauri::WebviewWindow) -> Result<(), String> {
             .0,
     );
     let current = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
-    // 相同回调与 ID 重复安装只更新现有项，不会在托盘恢复时叠加。
-    if !unsafe {
-        windows::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(pet_frame_proc), 1, 0)
-    }
-    .as_bool()
-    {
-        return Err("安装宠窗无边框绘制处理失败".into());
+    // 托盘恢复重复调用时复用原钩子，避免叠加回调或泄漏 AppHandle。
+    let mut reference = 0;
+    if !unsafe { windows::Win32::UI::Shell::GetWindowSubclass(hwnd, Some(pet_frame_proc), 1, Some(&mut reference)) }.as_bool() {
+        let reference = Box::into_raw(Box::new(window.app_handle().clone()));
+        if !unsafe { windows::Win32::UI::Shell::SetWindowSubclass(hwnd, Some(pet_frame_proc), 1, reference as usize) }.as_bool() {
+            unsafe { drop(Box::from_raw(reference)); }
+            return Err("安装宠窗无边框绘制处理失败".into());
+        }
     }
     let expected = frameless_style(current);
     if expected != current {
