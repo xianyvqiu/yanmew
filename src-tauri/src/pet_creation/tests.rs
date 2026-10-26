@@ -131,7 +131,7 @@ fn upgrade_v11_keeps_old_mode_and_default_accessory_position() {
     assert_eq!(
         c.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        19
+        crate::import_export::SCHEMA_VERSION
     );
     crate::db::initialize(&mut c).unwrap();
 }

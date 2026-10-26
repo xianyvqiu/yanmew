@@ -11,6 +11,18 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("../platform/navigation", () => ({ navigation: { open: mocks.open } }));
 vi.mock("../hooks/useReminderNotifications", () => ({ default: mocks.hook, noticeKey: (value: { item: ReminderOccurrence } | null) => value?.item.id ?? "" }));
 const occurrence: ReminderOccurrence = { id: "1", reminderId: "2", name: "喝水", content: "一杯水", scheduledAt: "2032-01-01T01:00:00Z", status: "pending", deliveryState: "queued", createdAt: "2032-01-01T01:00:00Z", completedAt: null };
+it("一分钟后只收起，文案更新不重置显示计时",async()=>{
+  vi.useFakeTimers();
+  try{
+    value.notice={kind:"due",item:{...occurrence,status:"done",autoCompleted:true}};value.dismiss.mockResolvedValue(true);
+    const view=render(<PetReminderNotifications ready hidden={false} unobscured/>);
+    await act(async()=>{vi.advanceTimersByTime(30_000);});expect(value.dismiss).not.toHaveBeenCalled();
+    value.notice={kind:"due",item:{...occurrence,status:"done",autoCompleted:true,content:"更新了显示内容"}};
+    view.rerender(<PetReminderNotifications ready hidden={false} unobscured/>);
+    await act(async()=>{vi.advanceTimersByTime(29_999);});expect(value.dismiss).not.toHaveBeenCalled();
+    await act(async()=>{vi.advanceTimersByTime(1);});expect(value.dismiss).toHaveBeenCalledOnce();expect(value.complete).not.toHaveBeenCalled();
+  }finally{vi.useRealTimers();}
+});
 let frame = 0;
 let frames: Map<number, FrameRequestCallback>;
 let value: { notice: { kind: "due"; item: ReminderOccurrence } | null; pendingIds: string[]; error: string; busy: boolean; shown: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn>; dismiss: ReturnType<typeof vi.fn>; complete: ReturnType<typeof vi.fn>; reportError: ReturnType<typeof vi.fn> };
@@ -110,4 +122,11 @@ it("隐藏和拖动撤下普通提示，恢复时不补弹也不自动唤醒宠�
   await act(async () => {});
   expect(screen.queryByRole("status")).toBeNull();
   expect(mocks.invoke).not.toHaveBeenCalled();
+});
+
+it("知道了直接收起当前提醒，不调用完成接口",async()=>{
+ value.notice={kind:"due",item:{...occurrence,status:"done",autoCompleted:true}};
+ render(<PetReminderNotifications ready hidden={false} unobscured/>);
+ await act(async()=>{screen.getByRole("button",{name:"知道了"}).click();});
+ expect(value.dismiss).toHaveBeenCalledWith("1");expect(value.complete).not.toHaveBeenCalled();
 });

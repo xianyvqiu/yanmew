@@ -1,5 +1,7 @@
 /** 协议 1.0.0；所有存档全局按插件隔离，不包含人设、会话或主题。 */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** 可选管理页摘要：先保存实际进度，再通过 storage.set("ui.summary", summary) 更新；最多三项纯文本指标。 */
+export type SaveSummary = { version: 1; status?: "saved" | "playing" | "completed"; metrics?: { label: string; value: string }[] };
 export type Permission = { permission: "wallet.modify" | "network.fetch"; scope: string; decision: "pending" | "allowed" | "denied"; pluginVersion: string; decidedAt: string | null };
 export type Context = { readonly language: "zh-CN"; readonly gameRunId: string; readonly walletPermissionGranted: boolean; readonly pluginVersion: string; readonly permissions: readonly Permission[]; readonly settings: Readonly<Record<string, Json>> };
 export type WalletRequest = { request_id: string; game_run_id: string; delta: number; reason: string; details?: Json };

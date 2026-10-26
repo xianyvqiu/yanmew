@@ -107,6 +107,23 @@ describe("MemoryManagementPanel", () => {
     expect(screen.getByRole("textbox", { name: "记事本全文" })).toHaveProperty("value", "记事本草稿");
   });
 
+  it("来源跳转到其他长期记录时保留已有草稿和当前页", async () => {
+    api.get.mockImplementation(async (_context: CurrentContext, kind: MemoryKind, id: string) => kind === "short"
+      ? { ...detail(kind, id), relatedLongMemories: [{ id: "21", title: "另一个长期记忆" }] } : detail(kind, id));
+    render(<MemoryManagementPanel context={context} />);
+    fireEvent.click(screen.getByRole("tab", { name: "长期记忆" }));
+    fireEvent.click(await screen.findByRole("button", { name: /长期标题.*长期原正文/ }));
+    const editor = await screen.findByRole("textbox", { name: "长期记忆正文" });
+    fireEvent.change(editor, { target: { value: "需要保留的长期草稿" } });
+    await openShort();
+    const listCalls = api.list.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "查看长期记忆：另一个长期记忆" }));
+    await screen.findByText("当前编辑仍保留。请先保存，或重新加载放弃草稿，再查看其他记忆。");
+    expect(editor).toHaveProperty("value", "需要保留的长期草稿");
+    expect(api.get).not.toHaveBeenCalledWith(context, "long", "21");
+    expect(api.list).toHaveBeenCalledTimes(listCalls);
+  });
+
   it("预览过期保留修改草稿并阻止重复确认", async () => {
     render(<MemoryManagementPanel context={context} />);
     await openShort(); fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
@@ -119,14 +136,33 @@ describe("MemoryManagementPanel", () => {
     expect(screen.getByRole("button", { name: "确认替换" })).toHaveProperty("disabled", true);
   });
 
+  it("等尺寸卡片原位展开收起，保留未保存草稿并阻止翻页", async () => {
+    render(<MemoryManagementPanel context={context} />);
+    const editor = await openShort();
+    fireEvent.change(editor, {target:{value:"尚未保存的记忆草稿"}});
+    const card = screen.getByRole("button", {name:/回合 1/});
+    expect(card.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(card);
+    expect(card.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("textbox", {name:"短期记忆正文"})).toBeNull();
+    fireEvent.click(card);
+    expect(screen.getByRole("textbox", {name:"短期记忆正文"})).toHaveProperty("value","尚未保存的记忆草稿");
+    expect(screen.getByRole("button", {name:"下一页"})).toHaveProperty("disabled",true);
+    expect(card.closest(".ym-memory-grid")).toBeTruthy();
+  });
+
   it("分页使用游标，手动编辑不限建议范围且空内容不能保存", async () => {
     api.list.mockImplementation(async (_context: CurrentContext, kind: MemoryKind, afterId: string | null) => ({
       items: [record(kind, afterId ? "11" : "10")], nextAfterId: kind === "short" && !afterId ? "10" : null,
     }));
     render(<MemoryManagementPanel context={context} />);
+    await openShort();
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(api.list).toHaveBeenCalledWith(context, "short", "10", 12));
+    await screen.findByText("第 2 页 · 每页 12 条");
+    fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+    await screen.findByText("第 1 页 · 每页 12 条");
     const editor = await openShort();
-    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
-    await waitFor(() => expect(api.list).toHaveBeenCalledWith(context, "short", "10"));
     fireEvent.change(editor, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "保存编辑" })).toHaveProperty("disabled", true);
     const content = "长".repeat(150);
@@ -157,7 +193,7 @@ describe("MemoryManagementPanel", () => {
     render(<MemoryManagementPanel context={context} />);
     await openShort(); fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
     fireEvent.click(screen.getByRole("tab", { name: "长期记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: /长期标题长期原正文/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /长期标题.*长期原正文/ }));
     await screen.findByRole("textbox", { name: "长期记忆标题" });
     expect(screen.getByRole("button", { name: "重新整合" })).toHaveProperty("disabled", true);
     expect(api.preview).toHaveBeenCalledTimes(1);
@@ -181,7 +217,7 @@ describe("MemoryManagementPanel", () => {
     await screen.findByText("取消失败：读取失败");
     expect(screen.getByRole("button", { name: "重新生成" })).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByRole("tab", { name: "长期记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: /长期标题长期原正文/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /长期标题.*长期原正文/ }));
     await screen.findByRole("textbox", { name: "长期记忆标题" });
     expect(screen.getByRole("button", { name: "重新整合" })).toHaveProperty("disabled", false);
     fireEvent.click(screen.getByRole("tab", { name: "短期记忆" }));
@@ -207,7 +243,7 @@ describe("MemoryManagementPanel", () => {
     await screen.findByText("取消失败：读取失败");
     expect(editor).toHaveProperty("value", "预览修改");
     fireEvent.click(screen.getByRole("tab", { name: "长期记忆" }));
-    fireEvent.click(await screen.findByRole("button", { name: /长期标题长期原正文/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /长期标题.*长期原正文/ }));
     await screen.findByRole("textbox", { name: "长期记忆标题" });
     expect(screen.getByRole("button", { name: "重新整合" })).toHaveProperty("disabled", true);
     fireEvent.click(screen.getByRole("tab", { name: "短期记忆" }));

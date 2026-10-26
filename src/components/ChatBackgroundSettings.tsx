@@ -1,3 +1,5 @@
+import BackgroundCropDialog from "./BackgroundCropDialog";
+import {useBackgroundViewport} from "./chatBackgroundViewport";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { backgroundApi, errorMessage } from "../api";
 import type { ChatAppearance, ChatBackgroundInput, ChatBackgroundView, Persona } from "../types";
@@ -9,12 +11,16 @@ const MAX_BYTES = 10 * 1024 * 1024;
 
 export default function ChatBackgroundSettings({ persona, contextRevision, disabled = false, onSaved, label = "聊天外观" }: Props) {
   const id = useId();
+  const viewport=useBackgroundViewport();
+  const previewFrame=useRef<HTMLDivElement>(null);
+  const [previewWidth,setPreviewWidth]=useState(0);
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ChatBackgroundView | null>(null);
   const [opacity, setOpacity] = useState(85);
   const [blur, setBlur] = useState(0);
   const [appearance, setAppearance] = useState<ChatAppearance>(DEFAULT_CHAT_APPEARANCE);
   const [image, setImage] = useState<ChatBackgroundInput["image"]>(null);
+  const [cropSource, setCropSource] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -30,6 +36,7 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
   const fileInput = useRef<HTMLInputElement>(null);
   const chooseToken = useRef(0);
   const observedConfig = useRef<string | null>(null);
+  useEffect(()=>{const element=previewFrame.current;if(!element)return;const measure=()=>setPreviewWidth(element.clientWidth);measure();if(typeof ResizeObserver==="undefined")return;const observer=new ResizeObserver(measure);observer.observe(element);return()=>observer.disconnect();},[open]);
   useEffect(() => {
     alive.current = true;
     return () => { alive.current = false; token.current++; chooseToken.current++; reader.current?.abort(); };
@@ -80,8 +87,7 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
       const encoded = String(current.result).split(",", 2)[1];
       if (!encoded) { setError("图片读取失败，请重新选择"); setReading(false); return; }
       const mime = /\.jpe?g$/i.test(file.name) ? "jpeg" : /\.webp$/i.test(file.name) ? "webp" : "png";
-      setImage({ fileName: file.name, base64: encoded }); setPreview(`data:image/${mime};base64,${encoded}`);
-      dirty.current = true; setReading(false);
+      setCropSource(`data:image/${mime};base64,${encoded}`); setReading(false);
     };
     current.onerror = () => { if (alive.current && generation === chooseToken.current) { setError("图片读取失败，请重新选择"); setReading(false); } };
     current.readAsDataURL(file);
@@ -112,8 +118,9 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
   const blocked = disabled || busy || loading || reading;
   const changeAppearance = (next: ChatAppearance) => { dirty.current = true; setAppearance(next); setNotice(""); };
   return <div className="ym-background-settings">
-    <button type="button" className="ym-button" disabled={busy} aria-expanded={open} aria-controls={`${id}-body`}
+    <button type="button" className="ym-button ym-module-toggle" disabled={busy} aria-expanded={open} aria-controls={`${id}-body`}
       onClick={() => setOpen(value => !value)}>{label}</button>
+    {cropSource && <BackgroundCropDialog source={cropSource} viewport={viewport} onCancel={() => { setCropSource(null); if(fileInput.current)fileInput.current.value=""; }} onSave={base64 => { setImage({fileName:"chat-background.png",base64}); setPreview(`data:image/png;base64,${base64}`); dirty.current=true; setCropSource(null); }} />}
     <div id={`${id}-body`} hidden={!open}>
       <p className="ym-page-note">背景、气泡和文字颜色按人设保存，所有会话共用。图片支持 JPG / PNG / WebP，最大 10MB。预览满意后点击保存外观。</p>
       {loading && <p role="status">正在读取外观…</p>}
@@ -124,8 +131,9 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
         <legend className="ym-page-note">{persona.name}的聊天外观</legend>
         <label className="ym-field">选择背景图片<input ref={fileInput} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={event => choose(event.target.files?.[0])} /></label>
         {reading && <p role="status">正在读取图片…</p>}
-        <div className="ym-background-preview ym-chat-bubbles" aria-label="聊天背景预览" {...chatAppearanceAttributes(appearance)}>
-          {preview && <BackgroundImage source={preview} opacity={opacity} blur={blur} />}
+        <p className="ym-page-note">按聊天背景区域 {Math.round(viewport.width)} × {Math.round(viewport.height)} 的比例预览。调整聊天窗口比例后，铺满背景时会重新裁边。</p>
+        <div ref={previewFrame} className="ym-background-preview ym-chat-bubbles" aria-label="聊天背景预览" {...chatAppearanceAttributes(appearance)} style={{...chatAppearanceAttributes(appearance).style,aspectRatio:`${viewport.width} / ${viewport.height}`}}>
+          {preview && <BackgroundImage source={preview} opacity={opacity} blur={blur*(previewWidth>0?previewWidth/viewport.width:1)} />}
           <ol className="ym-message-list ym-background-preview-messages" aria-label="聊天气泡预览">
             <li data-role="user"><p>今天过得怎么样？</p></li>
             <li data-role="assistant"><p>很高兴见到你 (・ω・)</p></li>
@@ -148,9 +156,10 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
             <button type="button" className="ym-button" aria-label={`${name}文字颜色跟随主题`} disabled={appearance[key] === null} onClick={() => changeAppearance({ ...appearance, [key]: null })}>跟随主题</button>
           </div>)}
         </div>
-        <div><button type="button" className="ym-button" onClick={() => changeAppearance(DEFAULT_CHAT_APPEARANCE)}>恢复默认样式</button><span className="ym-page-note"> 仅重置气泡和文字颜色，保存后生效。</span></div>
+        <p className="ym-page-note">恢复默认样式只重置气泡和文字颜色，保存后生效。</p>
         <div className="ym-inline-form">
-          <button type="button" className="ym-button" disabled={stale} onClick={() => { void save(false); }}>{busy ? "正在保存…" : "保存外观"}</button>
+          <button type="button" className="ym-button" data-variant="primary" disabled={stale} onClick={() => { void save(false); }}>{busy ? "正在保存…" : "保存外观"}</button>
+          <button type="button" className="ym-button" onClick={() => changeAppearance(DEFAULT_CHAT_APPEARANCE)}>恢复默认样式</button>
           <button type="button" className="ym-button" disabled={stale} onClick={() => { void save(true); }}>恢复默认背景</button>
         </div>
       </fieldset>

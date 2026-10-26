@@ -9,7 +9,7 @@ vi.mock("../../api", () => ({ configurationApi: api, errorMessage: (error: { mes
 const keys = [
   "short_memory_min_chars", "short_memory_max_chars", "long_memory_min_chars", "long_memory_max_chars",
   "memory_merge_count", "recent_message_count", "recent_long_memory_count",
-  "travel_journal_min_chars", "travel_journal_max_chars", "tool_call_rounds", "notebook_max_chars",
+  "travel_journal_min_chars", "travel_journal_max_chars", "notebook_max_chars",
 ] as const;
 const values = ["12", "100", "150", "250", "20", "30", "30", "250", "350", "3", "4000"];
 const makeSettings = (overrides: Partial<Settings> = {}) => ({
@@ -23,7 +23,7 @@ const labels = {
   long_memory_min_chars: "长期记忆最少字数", long_memory_max_chars: "长期记忆最多字数",
   memory_merge_count: "每条长期记忆使用短期记忆数 k", recent_message_count: "进入上下文的最近消息原文数",
   recent_long_memory_count: "直接进入上下文的最近长期记忆数 m", travel_journal_min_chars: "旅行游记最少字数",
-  travel_journal_max_chars: "旅行游记最多字数", tool_call_rounds: "单次回复工具调用轮数上限",
+  travel_journal_max_chars: "旅行游记最多字数",
   notebook_max_chars: "记事本 AI 维护建议上限",
 } satisfies Record<(typeof keys)[number], string>;
 
@@ -50,9 +50,9 @@ it("校验正整数上限与三组范围，并只提交本页修改字段", asyn
   expect(screen.getByText(/规范的十进制正整数/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "保存" }).hasAttribute("disabled")).toBe(true);
   fireEvent.change(minShort, { target: { value: "12" } });
-  fireEvent.change(screen.getByLabelText(labels.tool_call_rounds), { target: { value: "2147483648" } });
+  fireEvent.change(screen.getByLabelText(labels.recent_message_count), { target: { value: "2147483648" } });
   expect(screen.getByText(/不能超过 2147483647/)).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(labels.tool_call_rounds), { target: { value: "3" } });
+  fireEvent.change(screen.getByLabelText(labels.recent_message_count), { target: { value: "30" } });
   fireEvent.change(minShort, { target: { value: "101" } });
   const maxShort = screen.getByLabelText(labels.short_memory_max_chars);
   expect(maxShort.getAttribute("aria-invalid")).toBe("true");

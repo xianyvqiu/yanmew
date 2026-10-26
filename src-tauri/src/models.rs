@@ -325,6 +325,7 @@ pub struct ReminderOccurrence {
     pub delivery_state: ReminderDeliveryState,
     pub completed_at: Option<String>,
     pub created_at: String,
+    pub auto_completed: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -471,6 +472,8 @@ pub struct Letter {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct Souvenir {
+    pub title:Option<String>,
+    pub image_file:Option<String>,
     pub id:String,pub session_id:String,pub travel_id:Option<String>,pub content:String,pub note:String,
     pub is_favorite:bool,pub created_at:String,
 }

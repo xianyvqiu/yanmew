@@ -1,14 +1,16 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, imageGenerationApi } from "../../api";
 import type { AppError, ImageGenerationConfig, ImageGenerationProvider, ImageGenerationProviderInput } from "../../types";
 
 function ProviderForm({ provider, busy, error, save, cancel }: { provider: ImageGenerationProvider | null; busy: boolean; error: AppError | null; save: (input: ImageGenerationProviderInput) => Promise<void>; cancel: () => void }) {
+  const form=useRevealForm();
   const [name, setName] = useState(provider?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "https://api.openai.com/v1");
   const [model, setModel] = useState(provider?.model ?? "");
   const [key, setKey] = useState("");
   const [clear, setClear] = useState(false);
-  return <form aria-label="生图提供商表单" className="ym-provider-form" onSubmit={event => {
+  return <form ref={form} aria-label="生图提供商表单" className="ym-provider-form" onSubmit={event => {
     event.preventDefault();
     void save({ name, protocol: "openai-compatible", baseUrl, model, apiKey: clear ? { action: "clear" } : key ? { action: "set", value: key } : { action: "keep" } });
   }}>

@@ -1,8 +1,11 @@
+import ChatUsageNote from "../components/ChatUsageNote";
+import VirtualMessageList from "../components/VirtualMessageList";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, sessionApi } from "../api";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
 import { useTravel } from "../hooks/useTravel";
 import { useChat } from "../hooks/useChat";
+import {useChatScroll} from "../hooks/useChatScroll";
 import type { Message,ChatImageInput,Session } from "../types";
 import ChatImage from "../components/ChatImage";
 import ChatComposer from "../components/ChatComposer";
@@ -31,9 +34,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
   const { context, persona, sessions, userProfiles } = snapshot;
   const chat = useChat(context);
   const skillUpdate=useSkillUpdate(context);
-  const history = useRef<HTMLElement>(null);
-  const followHistory = useRef(true);
-  useEffect(() => { if (followHistory.current && history.current) history.current.scrollTop = history.current.scrollHeight; }, [chat.active?.partialContent, chat.messages.length]);
+  const scroll=useChatScroll(`${context.personaId}:${context.sessionId}:${context.contextRevision}`,chat.ready,chat.messages,chat.active?.partialContent,chat.messages[0]?.id);
   const travel = useTravel(context);
   const away = Boolean(travel.current);
   const { messages, loading, afterId } = chat;
@@ -55,20 +56,14 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
   const [profilePickerOpen, setProfilePickerOpen] = useState(false);
   const [profilePickerError, setProfilePickerError] = useState("");
   const currentSession = sessions.find(item => item.id === context.sessionId);
-  const [binding, setBinding] = useState(currentSession?.userProfileId ?? "");
-  const bindingOwner = useRef(`${context.personaId}:${context.sessionId}`);
-  const bindingDirty = useRef(false);
   const [deleting, setDeleting] = useState<SessionDeleteConfirmation | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [editing, setEditing] = useState<MessageTarget | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [messageDeleting, setMessageDeleting] = useState<MessageDeleteConfirmation | null>(null);
   const [messageError, setMessageError] = useState("");
-  const [title, setTitle] = useState(sessions.find(item => item.id === context.sessionId)?.title ?? "");
   const alive = useRef(true);
   const locked = useRef(false);
-  const titleOwner = useRef(context.sessionId);
-  const titleDirty = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const messageDialog = useRef<HTMLDialogElement>(null);
   const currentContext = useRef(context);
@@ -82,17 +77,6 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
   useEffect(() => {
     if (newProfile && !userProfiles.some(profile => profile.id === newProfile)) setNewProfile("");
   }, [userProfiles, newProfile]);
-  useEffect(() => {
-    const owner = `${context.personaId}:${context.sessionId}`;
-    if (bindingOwner.current !== owner) { bindingOwner.current = owner; bindingDirty.current = false; }
-    if (!bindingDirty.current || (binding && !userProfiles.some(profile => profile.id === binding))) {
-      bindingDirty.current = false; setBinding(currentSession?.userProfileId ?? "");
-    }
-  }, [context.personaId, context.sessionId, currentSession?.userProfileId, userProfiles, binding]);
-  useEffect(() => {
-    if (titleOwner.current !== context.sessionId) { titleOwner.current = context.sessionId; titleDirty.current = false; }
-    if (!titleDirty.current) setTitle(sessions.find(item => item.id === context.sessionId)?.title ?? "");
-  }, [sessions, context.sessionId]);
   useEffect(() => {
     if (deleting && !sameContext(deleting.context, context)) { setDeleting(null); setDeleteError(""); }
     if (renaming && !sameContext(renaming.context, context)) { setRenaming(null); setRenameError(""); }
@@ -127,14 +111,14 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
     locked.current = true; setBusy(true); setProfilePickerError("");
     const target = { ...context };
     try {
-      const saved = await sessionApi.setUserProfile(target, target.sessionId!, profileId);
+      await sessionApi.setUserProfile(target, target.sessionId!, profileId);
       if (alive.current && sameContext(target, currentContext.current)) {
-        bindingDirty.current = false; setBinding(saved.userProfileId ?? ""); setProfilePickerOpen(false); onRefresh();
+        setProfilePickerOpen(false); onRefresh();
       }
     } catch (cause) { if (alive.current && sameContext(target, currentContext.current)) setProfilePickerError(errorMessage(cause)); }
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
-  const tail = !afterId && chat.ready && !loading ? messages[messages.length - 1] : undefined;
+  const tail = chat.ready && !loading ? messages[messages.length - 1] : undefined;
   const tailRound = tail?.roundId && tail.roundId === chat.lastRound?.round.id ? chat.lastRound : null;
   const deletableTail = tail && (tail.roundId === null || (tailRound && (tail.role === "assistant" || !tailRound.assistantMessage))) ? tail : undefined;
   const finalReply = tail?.role === "assistant" && tail.id === tailRound?.assistantMessage?.id ? tailRound : null;
@@ -186,14 +170,6 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
     if (!target || !sameContext(target.context, currentContext.current)) return;
     await messageAction(() => chat.deleteTail(target.message), () => { setMessageDeleting(null); setMessageError(""); }, true);
   };
-  const renameSession = async () => {
-    const target = context;
-    await sessionApi.rename(target, target.sessionId!, title);
-    if (alive.current && sameContext(target, currentContext.current)) {
-      titleDirty.current = false;
-      setTitle(title.trim());
-    }
-  };
   const deleteSession = async () => {
     const target = deleting;
     if (!target || locked.current) return;
@@ -238,29 +214,6 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
       <div className="ym-session-dialog-body ym-chat-session-settings">
       <ChatBackgroundSettings persona={persona} contextRevision={context.contextRevision} label="聊天外观"
         disabled={busy || dialogOpen || editing !== null} onSaved={() => { /* 配置通知会原位刷新，不重建正在回复的聊天页。 */ }} />
-      <label className="ym-field">新会话的用户设定<select aria-label="新会话的用户设定" value={newProfile} disabled={busy || dialogOpen} onChange={event => setNewProfile(event.target.value)}>
-        <option value="">未绑定</option>{userProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-      </select></label>
-
-      {context.sessionId && <form className="ym-inline-form" onSubmit={event => { event.preventDefault(); void act(renameSession); }}>
-        <label className="ym-field">会话名称<input value={title} maxLength={100} disabled={busy || dialogOpen} onChange={event => { titleDirty.current = true; setTitle(event.target.value); }} /></label>
-        <button className="ym-button" disabled={busy || dialogOpen || !title.trim()} type="submit">保存名称</button>
-      </form>}
-      {context.sessionId && <form className="ym-inline-form" onSubmit={event => {
-        event.preventDefault();
-        const target = { ...context };
-        void act(async () => {
-          if (!sameContext(target, currentContext.current)) return;
-          const saved = await sessionApi.setUserProfile(target, target.sessionId!, binding || null);
-          if (alive.current && sameContext(target, currentContext.current)) { bindingDirty.current = false; setBinding(saved.userProfileId ?? ""); }
-        });
-      }}>
-        <label className="ym-field">当前会话的用户设定<select aria-label="当前会话的用户设定" value={binding} disabled={busy || dialogOpen || Boolean(editing)} onChange={event => { bindingDirty.current = true; setBinding(event.target.value); }}>
-          <option value="">未绑定</option>{userProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-        </select></label>
-        <button className="ym-button" type="submit" disabled={busy || dialogOpen || Boolean(editing) || !chat.ready || binding === (currentSession?.userProfileId ?? "")}>修改绑定</button>
-      </form>}
-      <p className="ym-page-note">用户设定在设置窗管理。修改绑定，或编辑、删除正在使用的设定，会先中断当前回复；已有消息和记忆保留，新设定用于下一次回复。</p>
       <p className="ym-page-note">切换会话会取消已经开始的旅行与待回信。</p>
       {context.sessionId && <button className="ym-button ym-session-delete-entry" data-variant="danger" disabled={busy || dialogOpen || Boolean(editing)}
         onClick={() => { if (currentSession) openSessionDelete(currentSession); }}>删除会话</button>}
@@ -268,11 +221,12 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
       </div>
     </dialog>
     {!sessionSettingsOpen && !editing && !messageDeleting && (error || chat.error) && <div role="alert" className="ym-page-error">{error || chat.error}<button className="ym-button" disabled={busy || dialogOpen} onClick={() => { setError(""); void chat.reload(); }}>重新加载</button></div>}
-    <section ref={history} className="ym-page-card ym-chat-history" aria-label="聊天记录" onScroll={() => { const element = history.current; if (element) followHistory.current = element.scrollHeight - element.scrollTop - element.clientHeight < 40; }}>
+    <section ref={scroll.viewport} className="ym-page-card ym-chat-history" aria-label="聊天记录"><div ref={scroll.content} className="ym-chat-history-content">
       <h2 className="ym-chat-history-title">聊天记录</h2>
+      {afterId && <button className="ym-button" disabled={loading || busy || dialogOpen} onClick={() => { void chat.loadMore(); }}>加载更早消息</button>}
       {!context.sessionId ? <p className="ym-page-empty">为 {persona.name} 创建一个会话，开始记录彼此的日常。</p>
         : !messages.length && !loading ? <p className="ym-page-empty">这个会话还没有消息。</p>
-        : <ol className="ym-message-list">{messages.filter(message => chat.active?.regenerating || message.id !== chat.active?.round.assistantMessage?.id).map(message => <li key={message.id} data-role={message.role}>
+        : <VirtualMessageList key={`${context.sessionId}:${context.contextRevision}`} viewport={scroll.viewport} onLayoutChange={scroll.onVirtualLayout} pinnedId={editing?.message.id} items={messages.filter(message => chat.active?.regenerating || message.id !== chat.active?.round.assistantMessage?.id)} renderItem={message => <li key={message.id} data-role={message.role}>
           <div className="ym-message-meta"><strong>{message.role === "user" ? "你" : persona.name}</strong><time>{new Date(message.createdAt).toLocaleString()}</time></div>
           <ChatMessageText content={message.content} markdown={message.role === "assistant"} />
           {message.images?.map(image=><ChatImage key={image.id} image={image} context={context}/>)}
@@ -300,7 +254,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
               <span className="ym-page-note">已达到本次输出上限</span>
               <button className="ym-button" disabled={busy || chat.busy || !chat.ready || loading || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)} onClick={() => { void messageAction(() => chat.continueReply()); }}>继续生成</button>
             </div>}
-        </li>)}</ol>}
+        </li>} />}
       {chat.active && <div className="ym-stream-message" aria-label="正在生成的回复">
         <strong>{persona.name} {chat.active.expression}</strong>
         <ChatMessageText content={chat.active.partialContent || "正在想怎么回答你…"} />
@@ -317,10 +271,9 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
         上下文容量：{chat.budget.contextWindow == null ? "未知" : `${chat.budget.contextWindow} tokens`}；
         输入{chat.budget.estimated ? "估算" : "计数"}：{chat.budget.estimatedInputTokens} tokens；
         能力来源：{chat.budget.capacitySource === "manual" ? "手动设置" : chat.budget.capacitySource === "provider" ? "提供商" : chat.budget.capacitySource === "builtin" ? "已核对模型资料" : "未知"}。
-        {chat.budget.effectiveMaxOutputTokens < chat.budget.configuredMaxOutputTokens && "本次输出因模型能力或剩余上下文容量而降低，已保存设置不变。"}</p>}
+        {chat.budget.effectiveMaxOutputTokens < chat.budget.configuredMaxOutputTokens && "本次输出因模型能力或剩余上下文容量而降低，已保存设置不变。"}<ChatUsageNote usage={chat.budget.providerUsage}/></p>}
       {loading && <p role="status">正在读取聊天记录…</p>}
-      {afterId && <button className="ym-button" disabled={loading || busy || dialogOpen} onClick={() => { void chat.loadMore(); }}>加载后续消息</button>}
-    </section>
+    </div></section>
     <SkillUpdateConfirmation update={skillUpdate}/>
     {away && <section className="ym-page-card" aria-label="旅行中的会话">
       <h2>{persona.name}出门啦</h2><p>本次旅行期间只能写信。切换人设或会话会取消旅行和待回信，不生成返回奖励。</p>
@@ -332,7 +285,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
     <ChatComposer images={images} onImagesChange={setImages} attachmentOwnerKey={`${context.personaId}:${context.sessionId}:${context.contextRevision}`} value={draft} onChange={setDraft} onSend={() => { void send(); }}
       onCancel={() => { if (!locked.current && !dialogOpen) void chat.cancel(); }} disabled={!context.sessionId || !chat.ready || busy || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)}
       busy={chat.busy} cancelling={chat.cancelling || busy || dialogOpen} />
-    {profilePickerOpen && <UserProfilePicker profiles={userProfiles} selectedId={currentSession?.userProfileId ?? null} busy={busy} error={profilePickerError}
+    {profilePickerOpen && <UserProfilePicker defaultProfileId={newProfile} onDefaultChange={setNewProfile} profiles={userProfiles} selectedId={currentSession?.userProfileId ?? null} busy={busy} error={profilePickerError}
       onSelect={id => { void bindProfile(id); }} onClose={() => setProfilePickerOpen(false)} onDetails={id => {
         setProfilePickerError(""); void navigation.openSettingsDetail("userProfile", id).catch(cause => { if (alive.current) setProfilePickerError(errorMessage(cause)); });
       }} />}

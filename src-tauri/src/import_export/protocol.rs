@@ -34,7 +34,7 @@ pub(super) const COLUMNS: &[(&str, &str)] = &[
     ("long_memory_sources", "long_memory_id,short_memory_id,source_order"),
     ("notebooks", "session_id,content,updated_at"),
     ("reminders", "id,name,kind,schedule,content,status,fire_at,source,created_at"),
-    ("reminder_occurrences", "id,reminder_id,scheduled_at,status,delivery_state,completed_at,created_at"),
+    ("reminder_occurrences", "id,reminder_id,scheduled_at,status,delivery_state,completed_at,created_at,presentation_state,presentation_persona_id,presentation_session_id,presentation_input,presentation_text,presentation_message_id"),
     ("user_state", "id,coins,updated_at"),
     ("game_plugins", "plugin_id,name,description,author,installed_version,api_version,storage_version,source_type,package_path,package_sha256,repository,homepage,release_page,network_origins_json,is_bundled,package_status,is_enabled,installed_at,updated_at"),
     ("game_permissions", "plugin_id,permission,permission_scope,decision,plugin_version,decided_at"),
@@ -46,7 +46,7 @@ pub(super) const COLUMNS: &[(&str, &str)] = &[
     ("travel_journals", "id,session_id,travel_id,title,content,created_at,updated_at"),
     ("accessories", "id,session_id,name,display_text,description,cost,source,travel_id,is_worn,created_at,image_file,position_x,position_y,scale,render_layer,layer_order"),
     ("letters", "id,session_id,travel_id,sender,content,reply_to_id,has_been_replied,reply_due_at,reply_state,letter_kind,is_favorite,is_read,created_at"),
-    ("souvenirs", "id,session_id,travel_id,content,note,is_favorite,created_at"),
+    ("souvenirs", "id,session_id,travel_id,content,note,is_favorite,created_at,image_file,title"),
     ("custom_festivals", "id,festival_id,kind,name,year,calendar_type,solar_month,solar_day,lunar_month,lunar_day,is_leap_month,blessing,note,source,created_at,updated_at"),
 ];
 
@@ -87,6 +87,7 @@ pub(super) fn setting_allowed(key: &str) -> bool {
             "last_sign_in_date",
             "window_pos_x",
             "window_pos_y",
+            "souvenir_images_enabled",
             "image_generation_config",
             "web_search_config",
             "reminder_email_config",

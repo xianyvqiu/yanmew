@@ -1,3 +1,5 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
+import DateTimePicker from "../DateTimePicker";
 import { useId, useState, type FormEvent } from "react";
 import type { AppError, Reminder, ReminderInput, ReminderSchedule } from "../../types";
 
@@ -45,6 +47,7 @@ export function parseLocalDateTime(value: string): Date | null {
 
 export default function ReminderForm({ reminder, busy, error, onSave, onCancel }: ReminderFormProps) {
   const id = useId();
+  const form=useRevealForm();
   const originalDateInput = localDateTimeValue(reminder?.fireAt);
   const [name, setName] = useState(reminder?.name ?? "");
   const [content, setContent] = useState(reminder?.content ?? "");
@@ -117,7 +120,7 @@ export default function ReminderForm({ reminder, busy, error, onSave, onCancel }
     setValidationErrors(current => ({ ...current, schedule: undefined }));
   };
 
-  return <form className="ym-reminder-form" onSubmit={submit}>
+  return <form ref={form} className="ym-reminder-form" onSubmit={submit}>
     <fieldset disabled={busy}>
       <legend>{reminder ? "编辑提醒" : "新增提醒"}</legend>
 
@@ -149,14 +152,14 @@ export default function ReminderForm({ reminder, busy, error, onSave, onCancel }
 
       {kind === "once" ? <label className="ym-field" htmlFor={`${id}-fire-at`}>
         提醒时间
-        <input id={`${id}-fire-at`} aria-label="提醒时间" type="datetime-local" value={fireAt}
+        <DateTimePicker id={`${id}-fire-at`} aria-label="提醒时间" type="datetime-local" value={fireAt}
           aria-invalid={Boolean(fireAtError)} aria-describedby={fireAtError ? `${id}-fire-at-error` : reminder?.kind === "once" && reminder.fireAt === null ? `${id}-fire-at-help` : undefined}
           onChange={event => { setFireAt(event.target.value); setValidationErrors(current => ({ ...current, fireAt: undefined })); }} />
         {reminder?.kind === "once" && reminder.fireAt === null && <span id={`${id}-fire-at-help`} className="ym-page-note">此提醒已触发；留空可只修改文字，填写未来时间可重新安排。</span>}
         {fireAtError && <span id={`${id}-fire-at-error`} role="alert">{fireAtError}</span>}
       </label> : <div className="ym-field">
         <label htmlFor={`${id}-time`}>循环时间</label>
-        <input id={`${id}-time`} aria-label="循环时间" type="time" value={time}
+        <DateTimePicker id={`${id}-time`} aria-label="循环时间" type="time" value={time}
           aria-invalid={Boolean(scheduleError)} aria-describedby={scheduleError ? `${id}-schedule-error` : undefined}
           onChange={event => { setTime(event.target.value); setValidationErrors(current => ({ ...current, schedule: undefined })); }} />
         {kind === "weekly" && <fieldset className="ym-reminder-form__choices" aria-label="每周日期">

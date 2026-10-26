@@ -32,10 +32,15 @@ export function usePetActivity() {
     if (locked.current) return;
     const captured = current.current;
     if (!captured?.sessionId) { setError("当前还没有会话，创建会话后即可互动"); return; }
-    if (!captured.canInteract) { setError("它出门啦，回来以后再互动吧"); return; }
+    if (!captured.canInteract) return;
     locked.current = true; setPending(true);
     try { accept(await petApi.interact(captured, action)); }
-    catch (cause) { if (alive.current && current.current?.contextRevision === captured.contextRevision) setError(errorMessage(cause)); }
+    catch (cause) {
+      if(alive.current&&current.current?.contextRevision===captured.contextRevision){
+        if((cause as {code?:string})?.code==="PET_AWAY"){try{accept(await petApi.get());}catch{/* 等待后续状态通知，不将正常出行显示为互动故障。 */}}
+        else setError(errorMessage(cause));
+      }
+    }
     finally { locked.current = false; if (alive.current) setPending(false); }
   };
   const refresh = async () => {

@@ -1,0 +1,8 @@
+{
+  "name": "U2Net",
+  "source": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx",
+  "mirror": "https://huggingface.co/skillsafe-ai/u2net/resolve/main/u2net.onnx",
+  "sha256": "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491",
+  "bytes": 175997641,
+  "license": "Apache-2.0"
+}

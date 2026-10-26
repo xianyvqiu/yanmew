@@ -18,7 +18,7 @@ export async function readQueuedReminders(): Promise<ReminderOccurrence[]> {
   let after: string | undefined;
   do {
     const page = await reminderApi.listOccurrences({ deliveryState: "queued", afterId: after, limit: 200 });
-    page.items.forEach(item => { if (item.status === "pending") items.set(item.id, item); });
+    page.items.forEach(item => { if (item.status === "pending" || (item.status === "done" && item.autoCompleted)) items.set(item.id, item); });
     after = page.nextAfterId ?? undefined;
   } while (after !== undefined);
   return [...items.values()];

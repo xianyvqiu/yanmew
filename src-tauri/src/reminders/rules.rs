@@ -221,12 +221,16 @@ pub fn dispatch<T: TimeZone>(
             due
         };
         let delivery = if offline { "missed" } else { "queued" };
-        let status = if offline { "expired" } else { "pending" };
+        let status = if offline { "expired" } else { "done" };
         let added = tx.execute("INSERT INTO reminder_occurrences(reminder_id,scheduled_at,status,delivery_state,completed_at,created_at)
             VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(reminder_id,scheduled_at) DO NOTHING",
-            params![rule.id,stamp(scheduled),status,delivery,offline.then(|| stamp(now)),stamp(now)])?;
+            params![rule.id,stamp(scheduled),status,delivery,Some(stamp(now)),stamp(now)])?;
         inserted += added;
-        if added > 0 { email_occurrences.push(tx.last_insert_rowid()); }
+        if added > 0 {
+            let occurrence=tx.last_insert_rowid();
+            email_occurrences.push(occurrence);
+            if !offline {super::presentation::schedule(&tx,occurrence,&rule.name,&rule.content)?;}
+        }
         let next = if let Some(schedule) = &mut rule.schedule {
             let next = schedule.next(zone, now)?;
             schedule.set_cursor(zone, next);

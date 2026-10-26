@@ -6,7 +6,54 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 19;
+const VERSION: i64 = 25;
+#[cfg(test)]
+mod reminder_presentation_migration_tests {
+    use super::*;
+    #[test]
+    fn v24_reminder_upgrade_keeps_legacy_records_and_sequences(){
+        let mut c=test_database();
+        c.execute_batch("DROP INDEX idx_reminder_presentation_pending;ALTER TABLE reminder_occurrences DROP COLUMN presentation_message_id;ALTER TABLE reminder_occurrences DROP COLUMN presentation_text;ALTER TABLE reminder_occurrences DROP COLUMN presentation_input;ALTER TABLE reminder_occurrences DROP COLUMN presentation_session_id;ALTER TABLE reminder_occurrences DROP COLUMN presentation_persona_id;ALTER TABLE reminder_occurrences DROP COLUMN presentation_state;PRAGMA user_version=24;INSERT INTO reminders(id,name,kind,content,status,source,created_at) VALUES(7,'旧提醒','once','保留内容','pending','manual','2026-10-23T00:00:00Z');INSERT INTO reminder_occurrences(id,reminder_id,scheduled_at,status,delivery_state,created_at) VALUES(17,7,'2026-10-23T01:00:00Z','pending','queued','2026-10-23T01:00:00Z'),(99,7,'2026-10-24T01:00:00Z','expired','shown','2026-10-24T01:00:00Z');DELETE FROM reminder_occurrences WHERE id=99;").unwrap();
+        initialize(&mut c).unwrap();let row=crate::reminders::get_occurrence(&c,17).unwrap();assert_eq!(row.content,"保留内容");assert_eq!(row.status,crate::models::ReminderStatus::Pending);assert!(!row.auto_completed);
+        assert_eq!(c.query_row("SELECT presentation_state FROM reminder_occurrences WHERE id=17",[],|r|r.get::<_,String>(0)).unwrap(),"legacy");
+        c.execute("INSERT INTO reminder_occurrences(reminder_id,scheduled_at,status,delivery_state,created_at) VALUES(7,'2026-10-25T01:00:00Z','expired','shown','2026-10-25T01:00:00Z')",[]).unwrap();assert!(c.last_insert_rowid()>99);
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());initialize(&mut c).unwrap();
+    }
+}
+const REMINDER_PRESENTATIONS_MIGRATION: &str = include_str!("../../db/migrations/025_reminder_presentations.sql");
+const SOUVENIR_TITLES_MIGRATION:&str=include_str!("../../db/migrations/024_souvenir_titles.sql");
+const PET_WAIT_MIGRATION:&str=include_str!("../../db/migrations/023_pet_wait_pet.sql");
+const PET_TOSS_MIGRATION:&str=include_str!("../../db/migrations/022_pet_toss.sql");
+#[cfg(test)]
+mod toss_migration_tests {
+    use super::*;
+    #[test]
+    fn v21_toss_upgrade_preserves_artwork_files_flags_and_sequence() {
+        let mut c=test_database();
+        c.execute_batch(PET_ERROR_MIGRATION).unwrap();
+        c.execute_batch("INSERT INTO pet_artworks(id,persona_id,kind,name,category,enabled,image_file,preview_file,revision,created_at,updated_at) VALUES(17,1,'expression','自定义超载','error',0,'assets/accessories/old.png','assets/accessories/preview.png',7,'a','b'),(99,1,'expression','已删除','normal',1,NULL,NULL,1,'a','b');DELETE FROM pet_artworks WHERE id=99;PRAGMA user_version=21;").unwrap();
+        initialize(&mut c).unwrap();
+        let row:(String,String,i64,String,String,i64)=c.query_row("SELECT name,category,enabled,image_file,preview_file,revision FROM pet_artworks WHERE id=17",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).unwrap();
+        assert_eq!(row,("自定义超载".into(),"error".into(),0,"assets/accessories/old.png".into(),"assets/accessories/preview.png".into(),7));
+        for category in ["toss_up","toss_down","landing"]{c.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(1,'expression',?1,?1,'a','b')",[category]).unwrap();assert!(c.last_insert_rowid()>99);}
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+        initialize(&mut c).unwrap();assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+    }
+}
+const SOUVENIR_IMAGES_MIGRATION: &str = include_str!("../../db/migrations/021_souvenir_images.sql");
+#[cfg(test)]
+mod souvenir_image_migration_tests {
+    use super::*;
+    #[test]
+    fn v20_souvenir_upgrade_preserves_text_and_sequence(){
+        let mut c=test_database();
+        c.execute_batch("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(81,1,'原会话','2026-10-01T00:00:00Z','2026-10-01T00:00:00Z'); INSERT INTO souvenirs(id,session_id,content,note,is_favorite,created_at) VALUES(17,81,'原礼物','原备注',1,'2026-10-01T00:00:00Z'),(99,81,'删除项','备注',0,'2026-10-01T00:00:00Z'); DELETE FROM souvenirs WHERE id=99; ALTER TABLE souvenirs DROP COLUMN image_file; PRAGMA user_version=20;").unwrap();
+        initialize(&mut c).unwrap();let gift=crate::souvenirs::get(&c,81,17).unwrap();assert_eq!(gift.content,"原礼物");assert_eq!(gift.note,"原备注");assert!(gift.is_favorite);assert!(gift.image_file.is_none());
+        c.execute("INSERT INTO souvenirs(session_id,content,note,created_at) VALUES(81,'新礼物','备注','2026-10-02T00:00:00Z')",[]).unwrap();assert!(c.last_insert_rowid()>99);
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);initialize(&mut c).unwrap();assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+    }
+}
+const PET_ERROR_MIGRATION: &str = include_str!("../../db/migrations/020_pet_error.sql");
 const PET_LAYERS_MIGRATION: &str = include_str!("../../db/migrations/019_pet_layers.sql");
 const REAL_MONEY_MIGRATION: &str = include_str!("../../db/migrations/018_real_money.sql");
 const WALKING_MIGRATION: &str = include_str!("../../db/migrations/017_pet_walking.sql");
@@ -107,7 +154,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 => {}
+        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -162,6 +209,32 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
     if (1..17).contains(&version) { tx.execute_batch(WALKING_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
     if (1..18).contains(&version) { tx.execute_batch(REAL_MONEY_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
     if (1..19).contains(&version) { tx.execute_batch(PET_LAYERS_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..20).contains(&version) { tx.execute_batch(PET_ERROR_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
+    if (1..21).contains(&version) {
+        let exists=tx.prepare("PRAGMA table_info(souvenirs)")?.query_map([],|r|r.get::<_,String>(1))?.collect::<Result<Vec<_>,_>>()?.iter().any(|name|name=="image_file");
+        if !exists {tx.execute_batch(SOUVENIR_IMAGES_MIGRATION)?;}
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..22).contains(&version) {
+        let sql:String=tx.query_row("SELECT sql FROM sqlite_master WHERE name='pet_artworks'",[],|r|r.get(0))?;
+        if !sql.contains("'toss_up'") {tx.execute_batch(PET_TOSS_MIGRATION)?;}
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..23).contains(&version) {
+        let sql:String=tx.query_row("SELECT sql FROM sqlite_master WHERE name='pet_artworks'",[],|r|r.get(0))?;
+        if !sql.contains("'wait_pet'") {tx.execute_batch(PET_WAIT_MIGRATION)?;}
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..24).contains(&version) {
+        let exists=tx.prepare("PRAGMA table_info(souvenirs)")?.query_map([],|r|r.get::<_,String>(1))?.collect::<Result<Vec<_>,_>>()?.iter().any(|name|name=="title");
+        if !exists {tx.execute_batch(SOUVENIR_TITLES_MIGRATION)?;}
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
+    if (1..25).contains(&version) {
+        let exists=tx.prepare("PRAGMA table_info(reminder_occurrences)")?.query_map([],|r|r.get::<_,String>(1))?.collect::<Result<Vec<_>,_>>()?.iter().any(|name|name=="presentation_state");
+        if !exists {tx.execute_batch(REMINDER_PRESENTATIONS_MIGRATION)?;}
+        tx.pragma_update(None,"user_version",VERSION)?;
+    }
     crate::real_money::seed(&tx)?;
     crate::foods::seed(&tx)?;
     config::normalize_legacy_idle_settings(&tx)?;
@@ -180,6 +253,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
     tx.execute("INSERT OR IGNORE INTO persona_food_settings(persona_id,default_food_id,favorite_food_id,updated_at) SELECT id,'token','dried_fish',?1 FROM personas WHERE is_builtin=1",[chrono::Utc::now().to_rfc3339()])?;
     let created_initial_session = version == 0;
     if created_initial_session {
+        tx.execute("INSERT OR IGNORE INTO settings(key,value) VALUES ('onboarding_pending','true')", [])?;
         crate::sessions::create_initial_in_transaction(&tx)?;
     }
     ensure_builtin_embedding(&tx)?;
@@ -973,12 +1047,54 @@ mod reminder_email_migration_tests {
 
 #[cfg(test)]mod pet_layers_migration_tests{
  use super::*;
+ #[test]fn v19_upgrade_adds_error_preserving_rows_indexes_and_sequence(){
+ let mut c=Connection::open_in_memory().unwrap();
+ c.execute_batch(&SCHEMA.replace("'lifted','error'","'lifted'")).unwrap();
+ c.execute_batch("PRAGMA user_version=19;INSERT INTO personas(id,name,prompt,initial_prompt,is_builtin) VALUES(1,'电子小猫','原设定','原设定',1);INSERT INTO pet_artworks(id,persona_id,kind,name,prompt,description,category,enabled,image_file,preview_file,revision,created_at,updated_at) VALUES(41,1,'expression','旧表情','提示','说明','chat',0,'old.png','preview.png',7,'a','b');INSERT INTO pet_artworks(id,persona_id,kind,name,category,created_at,updated_at) VALUES(999,1,'expression','删除项','chat','a','a');DELETE FROM pet_artworks WHERE id=999;").unwrap();
+ initialize(&mut c).unwrap();
+ assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+ let row:(String,String,String,i64,String,String,i64)=c.query_row("SELECT name,prompt,description,enabled,image_file,preview_file,revision FROM pet_artworks WHERE id=41",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).unwrap();
+ assert_eq!(row,("旧表情".into(),"提示".into(),"说明".into(),0,"old.png".into(),"preview.png".into(),7));
+ c.execute_batch("INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(1,'expression','超载','error','a','a')").unwrap();assert!(c.last_insert_rowid()>999);
+ assert_eq!(c.query_row("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN('idx_pet_artworks_base','idx_pet_artworks_persona')",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+ assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+ initialize(&mut c).unwrap();assert_eq!(c.query_row("SELECT count(*) FROM pet_artworks",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+ }
  #[test]fn v18_upgrade_preserves_accessories_and_adds_multiple_wear_and_lifted(){
  let mut c=test_database();
  c.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'迁移测试','a','a')",[]).unwrap();
  c.execute_batch("INSERT INTO accessories(id,session_id,name,display_text,cost,description,source,is_worn,created_at,position_x,position_y,scale) VALUES(101,1,'原挂件','✦',20,'保留','crafted',1,'a',125,-500,1500);ALTER TABLE accessories DROP COLUMN render_layer;ALTER TABLE accessories DROP COLUMN layer_order;CREATE UNIQUE INDEX idx_accessories_one_worn ON accessories(session_id) WHERE is_worn=1;PRAGMA user_version=18;").unwrap();
- initialize(&mut c).unwrap();assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),19);
+ initialize(&mut c).unwrap();assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
  let row:(String,i64,Option<i32>,Option<i32>,i32,String,i64)=c.query_row("SELECT name,is_worn,position_x,position_y,scale,render_layer,layer_order FROM accessories WHERE id=101",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).unwrap();assert_eq!(row,("原挂件".into(),1,Some(125),Some(-500),1500,"front".into(),0));
  c.execute_batch("INSERT INTO accessories(session_id,name,display_text,description,cost,source,is_worn,created_at) VALUES(1,'第二件','✦','多件',20,'crafted',1,'a');INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(1,'expression','拎后颈','lifted','a','a');").unwrap();assert_eq!(c.query_row("SELECT count(*) FROM accessories WHERE is_worn=1",[],|r|r.get::<_,i64>(0)).unwrap(),2);
  }
+}
+
+#[cfg(test)]
+mod wait_pet_migration_tests {
+    use super::*;
+    #[test]
+    fn v22_wait_pet_upgrade_preserves_custom_artwork_and_deleted_id_highwater() {
+        let mut c=test_database();c.execute_batch(PET_TOSS_MIGRATION).unwrap();
+        c.execute_batch("INSERT INTO pet_artworks(id,persona_id,kind,name,category,enabled,image_file,preview_file,revision,created_at,updated_at) VALUES(37,1,'expression','自己的下落','toss_down',0,'assets/accessories/down.png','assets/accessories/preview.png',8,'a','b'),(101,1,'expression','删除项','normal',1,NULL,NULL,0,'a','b');DELETE FROM pet_artworks WHERE id=101;PRAGMA user_version=22;").unwrap();
+        initialize(&mut c).unwrap();
+        let row:(String,i64,String,String,i64)=c.query_row("SELECT category,enabled,image_file,preview_file,revision FROM pet_artworks WHERE id=37",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap();
+        assert_eq!(row,("toss_down".into(),0,"assets/accessories/down.png".into(),"assets/accessories/preview.png".into(),8));
+        c.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,created_at,updated_at) VALUES(1,'expression','等摸摸','wait_pet','a','b')",[]).unwrap();assert!(c.last_insert_rowid()>101);
+        assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+        initialize(&mut c).unwrap();assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+    }
+}
+
+#[cfg(test)]
+mod souvenir_title_migration_tests {
+    use super::*;
+    #[test]
+    fn v23_souvenir_title_upgrade_keeps_legacy_content_images_and_sequence() {
+        let mut c=test_database();c.execute_batch("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(81,1,'旧会话','a','a');INSERT INTO souvenirs(id,session_id,content,note,is_favorite,created_at,image_file) VALUES(17,81,'原礼物','原备注',1,'a','assets/accessories/old.png'),(99,81,'删掉的','备注',0,'a',NULL);DELETE FROM souvenirs WHERE id=99;ALTER TABLE souvenirs DROP COLUMN title;PRAGMA user_version=23;").unwrap();
+        initialize(&mut c).unwrap();let old=crate::souvenirs::get(&c,81,17).unwrap();assert!(old.title.is_none());assert_eq!(old.content,"原礼物");assert_eq!(old.note,"原备注");assert!(old.is_favorite);assert_eq!(old.image_file.as_deref(),Some("assets/accessories/old.png"));
+        c.execute("INSERT INTO souvenirs(session_id,title,content,note,created_at) VALUES(81,'贝壳','一枚小贝壳','给你','b')",[]).unwrap();assert!(c.last_insert_rowid()>99);
+        assert!(c.execute("UPDATE souvenirs SET title=''",[]).is_err());initialize(&mut c).unwrap();assert_eq!(c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0)).unwrap(),VERSION);
+        assert!(c.prepare("PRAGMA foreign_key_check").unwrap().query([]).unwrap().next().unwrap().is_none());
+    }
 }

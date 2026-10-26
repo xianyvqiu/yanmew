@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { petApi } from "../api";
 import { navigation } from "../platform/navigation";
 import type { PetActivity, ProactiveMessageNotice } from "../types";
 import PetStateBubble from "./PetStateBubble";
 import PersonaEvolutionBubble from "./PersonaEvolutionBubble";
+import { usePetAutoCollapse } from "../windows/usePetAutoCollapse";
 import "./ReminderNotifications.css";
 
 function matches(notice: ProactiveMessageNotice, view: PetActivity | null) {
@@ -13,8 +14,9 @@ function matches(notice: ProactiveMessageNotice, view: PetActivity | null) {
 }
 
 /** 只消费已保存消息的实时通知；遮挡时由提醒插槽卸载，不补弹历史。 */
-export default function PetConversationBubbles({ view, seenMessageIds }: {
+export default function PetConversationBubbles({ view, seenMessageIds, autoCollapse }: {
   view: PetActivity | null; seenMessageIds?: Set<string>;
+  autoCollapse?: { root: RefObject<HTMLElement>; minutes: number; hidden: boolean; busy: boolean; hasDraft: boolean };
 }) {
   const [notice, setNotice] = useState<ProactiveMessageNotice | null>(null);
   const [error, setError] = useState("");
@@ -25,6 +27,12 @@ export default function PetConversationBubbles({ view, seenMessageIds }: {
   const activeNotice = useRef(notice);
   activeNotice.current = notice;
   const openingRef = useRef(false);
+  const bubble = useRef<HTMLElement>(null);
+  usePetAutoCollapse(autoCollapse?.root ?? bubble, {
+    minutes: autoCollapse?.minutes ?? 3, visible: Boolean(notice && matches(notice, view)),
+    hidden: autoCollapse?.hidden ?? false, busy: opening || Boolean(autoCollapse?.busy),
+    hasDraft: autoCollapse?.hasDraft ?? false, onCollapse: () => setNotice(null),
+  });
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
@@ -38,11 +46,6 @@ export default function PetConversationBubbles({ view, seenMessageIds }: {
     return () => { disposed = true; activeNotice.current = null; stop?.(); };
   }, []);
   useEffect(() => {
-    if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(null), 20000);
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
-  useEffect(() => {
     if (notice && !matches(notice, view)) setNotice(null);
   }, [notice, view]);
   const open = async () => {
@@ -54,7 +57,7 @@ export default function PetConversationBubbles({ view, seenMessageIds }: {
     } finally { openingRef.current = false; setOpening(false); }
   };
   if (!notice || !matches(notice, view)) return <PersonaEvolutionBubble view={view} fallback={<PetStateBubble view={view} durationMs={8000} />} />;
-  return <section className="ym-reminder-notification" data-pet-interactive role="status" aria-label="桌宠主动消息">
+  return <section ref={bubble} className="ym-reminder-notification" data-pet-interactive role="status" aria-label="桌宠主动消息">
     <div className="ym-reminder-notification__body">
       <p className="ym-reminder-notification__message">{notice.message.content}</p>
       {error && <p className="ym-reminder-notification__error" role="alert">{error}</p>}

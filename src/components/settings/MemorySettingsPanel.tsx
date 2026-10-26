@@ -7,7 +7,7 @@ const MAX_INTEGER = 2_147_483_647;
 const memoryKeys = [
   "short_memory_min_chars", "short_memory_max_chars", "long_memory_min_chars", "long_memory_max_chars",
   "memory_merge_count", "recent_message_count", "recent_long_memory_count",
-  "travel_journal_min_chars", "travel_journal_max_chars", "tool_call_rounds", "notebook_max_chars",
+  "travel_journal_min_chars", "travel_journal_max_chars", "notebook_max_chars",
 ] as const satisfies readonly NumericSettingKey[];
 type MemoryKey = (typeof memoryKeys)[number];
 type Draft = Record<MemoryKey, string>;
@@ -23,7 +23,6 @@ const definitions: Record<MemoryKey, { label: string; unit: string; group: "memo
   recent_long_memory_count: { label: "直接进入上下文的最近长期记忆数 m", unit: "条", group: "context", help: "m 与最近消息原文条数独立设置。" },
   travel_journal_min_chars: { label: "旅行游记最少字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
   travel_journal_max_chars: { label: "旅行游记最多字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
-  tool_call_rounds: { label: "单次回复工具调用轮数上限", unit: "轮", group: "tools", help: "统一约束记事本、深层回忆等工具。" },
   notebook_max_chars: { label: "记事本 AI 维护建议上限", unit: "字", group: "tools", help: "这是软限制；已有或超限内容仍完整保存，不会截断。" },
 };
 

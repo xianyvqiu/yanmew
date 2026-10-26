@@ -1,3 +1,4 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
 import { useId, useState, type FormEvent } from "react";
 import type { AppError, Provider, ProviderInput, SecretUpdate } from "../../types";
 
@@ -13,6 +14,7 @@ type ProviderFormProps = {
 
 export default function ProviderForm({ provider, busy, error, onSave, onCancel, embedding = false, connectionOnly=false }: ProviderFormProps) {
   const id = useId();
+  const form=useRevealForm();
   const [name, setName] = useState(provider?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
   const [model, setModel] = useState(provider?.model ?? "");
@@ -55,7 +57,7 @@ export default function ProviderForm({ provider, busy, error, onSave, onCancel, 
     });
   };
 
-  return <form className="ym-provider-form" onSubmit={submit}>
+  return <form ref={form} className="ym-provider-form" onSubmit={submit}>
     <fieldset disabled={busy}>
       <legend>{provider ? "编辑提供商" : "新增提供商配置"}</legend>
       <label className="ym-field" htmlFor={`${id}-name`}>

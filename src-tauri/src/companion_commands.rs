@@ -187,6 +187,14 @@ pub async fn save_skill(
     let _=app.emit("skills-changed",());Ok(())
 }
 #[tauri::command]
+pub async fn parse_skill_markdown(window:WebviewWindow,runtime:State<'_,Runtime>,filename:String,body:String)->AppResult<skills::markdown::Draft>{
+    allow(&window,false)?;skills::markdown::parse(runtime.inner().clone(),filename,body).await
+}
+#[tauri::command]
+pub fn cancel_skill_markdown_import(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<()>{
+    allow(&window,false)?;runtime.requests.cancel_key(skills::markdown::REQUEST_KEY);Ok(())
+}
+#[tauri::command]
 pub async fn delete_skill(
     window: WebviewWindow,
     app: AppHandle,

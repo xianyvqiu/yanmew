@@ -52,10 +52,12 @@ pub trait ChatToolEventSink: ReminderEventSink {
     fn persona_evolution_failed(&self, _error: &crate::error::AppError) {}
 }
 pub trait ReminderEventSink: Send + Sync {
+    fn chat_messages_changed(&self, _session_id: &str) {}
     fn reminders_changed(&self);
     fn reminder_failed(&self, error: &crate::error::AppError);
 }
 pub trait PetEventSink: Send + Sync {
+    fn weather_changed(&self) {}
     fn changed(&self, view: &crate::pet::controller::View);
     fn failed(&self, error: &crate::error::AppError);
     fn state_bubble(&self, _bubble: &PetStateBubble) {}

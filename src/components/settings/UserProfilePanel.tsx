@@ -1,3 +1,4 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
 import CardBrowserControls from "../CardBrowserControls";
 import {useCardBrowser} from "../../hooks/useCardBrowser";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -15,6 +16,7 @@ export default function UserProfilePanel({ detailRequest }: { detailRequest?: Se
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const form=useRevealForm(!!draft,draft?.id);
   const [confirmation, setConfirmation] = useState<UserProfile | null>(null);
   const mounted = useRef(false);
   const lifetime = useRef(0);
@@ -144,7 +146,7 @@ export default function UserProfilePanel({ detailRequest }: { detailRequest?: Se
       {detailRequest && consumedDetail.current !== detailRequest && (busy || draft || confirmation) && <p role="status" className="ym-page-note">有未完成的操作，完成或取消后会打开目标用户设定详情；当前编辑内容保留。</p>}
       {notice && <p role="status">{notice}</p>}
       {error && !confirmation && !draft && <div className="ym-page-error" role="alert">{error}<button className="ym-button" disabled={disabled} onClick={() => { setError(""); void refresh(); }}>重新读取</button></div>}
-      {draft && <form className="ym-persona-form" onSubmit={save}>
+      {draft && <form ref={form} className="ym-persona-form" onSubmit={save}>
         <fieldset disabled={busy}>
           <legend>{draft.id ? "编辑用户设定" : "新建用户设定"}</legend>
           <label className="ym-field">名称<input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>

@@ -126,6 +126,9 @@ export const chatApi = {
 import type { WeatherView } from "./types";
 
 export const weatherApi = {
+  refreshInformation: (contextRevision:number) => invoke<void>("refresh_weather_information",{contextRevision}),
+  retryCare: (contextRevision:number,kind:"warnings"|"typhoons") => invoke<void>("retry_weather_care",{contextRevision,kind}),
+  listen: (handler: () => void) => listen("weather-changed", handler),
   get: () => invoke<WeatherView>("get_weather"),
   refresh: (contextRevision: number) => invoke<WeatherView>("refresh_weather", { contextRevision }),
   cancel: () => invoke<void>("cancel_weather_refresh"),
@@ -235,9 +238,9 @@ export const sessionApi = {
   delete: (context: CurrentContext, sessionId: RecordId) => invoke<SessionDeleteResult>("delete_session", {
     personaId: context.personaId, sessionId, contextRevision: context.contextRevision,
   }),
-  messages: (context: CurrentContext, afterId: RecordId | null = null, limit = 100) => invoke<MessagePage>("list_messages", {
+  messages: (context: CurrentContext, afterId: RecordId | null = null, limit = 100, backward = false) => invoke<MessagePage>("list_messages", {
     personaId: context.personaId, sessionId: context.sessionId,
-    contextRevision: context.contextRevision, afterId, limit,
+    contextRevision: context.contextRevision, afterId, limit, ...(backward ? {backward:true} : {}),
   }),
 };
 
@@ -301,6 +304,10 @@ export const accessoryCraftApi = {
 
 import type { Souvenir, GiftGenerationStatus } from "./types";
 export const souvenirsApi = {
+  image:(context:CurrentContext,id:RecordId)=>invoke<{dataUrl:string|null;notice:string|null}>("get_souvenir_image",{context,id}),
+  imageSettings:()=>invoke<boolean>("get_souvenir_image_settings"),
+  setImageSettings:(enabled:boolean)=>invoke<boolean>("set_souvenir_image_settings",{enabled}),
+  listenImageSettings:(receive:(enabled:boolean)=>void)=>listen<boolean>("souvenir-image-settings-changed",event=>receive(event.payload)),
   list: (context:CurrentContext,beforeId:RecordId|null=null,limit=30) => invoke<Souvenir[]>("list_souvenirs",{context,beforeId,limit}),
   get: (context:CurrentContext,id:RecordId) => invoke<Souvenir>("get_souvenir",{context,id}),
   favorite: (context:CurrentContext,id:RecordId,favorite:boolean) => invoke<Souvenir>("set_souvenir_favorite",{context,id,favorite}),
@@ -335,7 +342,7 @@ export const festivalsApi = {
 
 export type CardKind="travels"|"letters"|"journals"|"accessories"|"souvenirs"|"dates";
 export const cardBrowserApi={
-  browse:<T,>(kind:CardKind,context:CurrentContext,search:string,order:"newest"|"oldest",page:number)=>invoke<{items:T[];total:number;page:number;pages:number}>("browse_cards",{input:{kind,context,search,order,page}}),
+  browse:<T,>(kind:CardKind,context:CurrentContext,search:string,order:"newest"|"oldest",page:number,travelIds:string[]=[])=>invoke<{items:T[];total:number;page:number;pages:number;travels?:import("./types").TravelOrigin[]}>("browse_cards",{input:{kind,context,search,order,page,travelIds}}),
   listen:(kind:CardKind,receive:()=>void)=>listen(kind==="accessories"?"accessories-changed":kind==="dates"?"festivals-changed":"travel-changed",receive),
 };
 
@@ -365,6 +372,7 @@ export const saveAccessoryPlacement=(context:CurrentContext,id:string,x:number|n
 
 export const moveAccessoryLayer=(context:CurrentContext,id:string,plane:"front"|"back",action:"keep"|"up"|"down"|"top"|"bottom")=>invoke<Accessory>("move_accessory_layer",{context,id,plane,action});
 
+export const getPetErrorExpression=(personaId:string)=>invoke<string>("get_pet_error_expression",{personaId});
 export const getPetLiftExpression=(personaId:string)=>invoke<string>("get_pet_lift_expression",{personaId});
 
 export const uploadAccessoryCraft=(context:CurrentContext,name:string,description:string,data:number[])=>invoke("upload_accessory_craft",{context,name,description,data});

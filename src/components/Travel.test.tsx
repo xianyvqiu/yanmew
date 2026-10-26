@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import TravelPanel from "./TravelPanel";
 import LetterEditor from "./LetterEditor";
@@ -49,6 +49,16 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};
 });
 afterEach(cleanup);
+it("邮箱区分回信、途中主动信和回来信，详情解释来信来源",async()=>{
+ const reply={...stored,id:"9",letterKind:"reply" as const,replyToId:"8",isRead:true,content:"这是针对原信的回答"};
+ const midway={...stored,id:"10",letterKind:"midway" as const,isRead:true,content:"半程主动报平安"};
+ const returned={...stored,id:"11",letterKind:"return" as const,isRead:true,content:"我回来啦"};
+ const rows=[reply,midway,returned];api.letters.list.mockResolvedValue(rows);api.letters.get.mockImplementation(async(_context,id)=>rows.find(row=>row.id===id));
+ render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
+ const replyCard=await screen.findByRole("button",{name:/这是针对原信的回答/});expect(within(replyCard).getByText("回信",{exact:true})).toBeTruthy();
+ const midwayCard=screen.getByRole("button",{name:/半程主动报平安/});expect(within(midwayCard).getByText("途中信",{exact:true})).toBeTruthy();
+ expect(within(screen.getByRole("button",{name:/我回来啦/})).getByText("回来信",{exact:true})).toBeTruthy();fireEvent.click(midwayCard);await screen.findByText(/旅行半程主动寄来的信/);
+});
 
 async function openMail() {
   render(<TravelPanel context={context} personaName="小喵" />);
@@ -94,7 +104,7 @@ it("返回后的邮箱仍可查看，回信禁用，取消历史不显示奖励"
   api.travel.current.mockResolvedValue(null);
   api.travel.list.mockResolvedValue([{...trip,status:"cancelled",cancelledAt:"2026-10-09T00:35:00Z",giftKind:null}]);
   render(<TravelPanel context={context} personaName="小喵" />);
-  fireEvent.click(await screen.findByRole("button",{name:"湖边"}));
+  fireEvent.click(await screen.findByRole("button",{name:/湖边/}));
   await screen.findByText("旅行已取消，不生成回来信、伴手礼或游记。");
   fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
   fireEvent.click(await screen.findByRole("button",{name:/小喵的来信/}));
@@ -117,17 +127,17 @@ it("邮箱搜索完整历史，聚焦保留页码，重入历史保留独立条�
   render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
   await screen.findByText("信件编号0");fireEvent.click(screen.getByRole("button",{name:"下一页"}));await screen.findByText("信件编号12");
   await act(async()=>fireEvent.focus(window));expect(await screen.findByText("信件编号12")).toBeTruthy();
-  expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2);
+  expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2,[]);
   fireEvent.click(screen.getByRole("button",{name:"出行历史"}));fireEvent.click(screen.getByRole("button",{name:"邮箱"}));expect(screen.getByText("信件编号12")).toBeTruthy();
   fireEvent.change(screen.getByRole("searchbox"),{target:{value:"信件编号12"}});await screen.findByText("信件编号12");
-  await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"信件编号12","newest",1));
+  await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"信件编号12","newest",1,[]));
 });
 it("旧分页响应不能覆盖较新的刷新结果",async()=>{
   const first=Array.from({length:13},(_,i)=>({...stored,id:String(100-i),content:`信件编号${i}`}));
   let finish!:(value:object)=>void;
   api.browse.mockImplementation(async(kind,_scope,_search,_order,page)=>kind==="travels"?{items:[trip],total:1,page:1,pages:1}:page===2?new Promise(resolve=>{finish=resolve;}):{items:first.slice(0,12),total:13,page:1,pages:2});
   render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));await screen.findByText("信件编号0");fireEvent.click(screen.getByRole("button",{name:"下一页"}));
-  await waitFor(()=>expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2));
+  await waitFor(()=>expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",2,[]));
   api.browse.mockResolvedValue({items:[{...stored,content:"新的结果"}],total:1,page:1,pages:1});
   await act(async()=>fireEvent.focus(window));await screen.findByText("新的结果");
   await act(async()=>finish({items:[{...stored,content:"失效的旧分页结果"}],total:13,page:2,pages:2}));
@@ -187,4 +197,18 @@ it("忽略其他会话事件，聚焦仍主动补查当前出行",async()=> {
   expect(api.travel.current.mock.calls.length).toBe(count);
   await act(async()=>window.dispatchEvent(new Event("focus")));
   expect(api.travel.current.mock.calls.length).toBe(count+1);
+});
+
+it("标已读成功立即更新摘要标签，列表补读未完成时收起仍保持已读",async()=>{
+ const browse=api.browse.getMockImplementation()!;let marked=false;
+ api.browse.mockImplementation((kind,...args)=>kind==="letters"&&marked?new Promise(()=>{}):browse(kind,...args));
+ const flags=api.letters.flags.getMockImplementation()!;api.letters.flags.mockImplementation(async(...args)=>{const value=await flags(...args);marked=true;return value;});
+ render(<TravelPanel context={context} personaName="猫猫" tab="mailbox"/>);await screen.findByText("未读",{exact:true});
+ fireEvent.click(screen.getByRole("button",{name:/猫猫的来信/}));await screen.findByText("已读",{exact:true});
+ expect(screen.queryByText("未读",{exact:true})).toBeNull();expect(screen.getByText("已读",{exact:true}).className).toContain("ym-letter-read-badge");
+ fireEvent.click(screen.getByRole("button",{name:"收起信件"}));expect(screen.getByText("已读",{exact:true})).toBeTruthy();
+});
+it("标已读失败时保留未读标签并说明失败",async()=>{
+ api.letters.flags.mockRejectedValueOnce(new Error("暂时未能保存已读状态"));render(<TravelPanel context={context} personaName="猫猫" tab="mailbox"/>);await screen.findByText("未读",{exact:true});
+ fireEvent.click(screen.getByRole("button",{name:/猫猫的来信/}));expect((await screen.findAllByText("暂时未能保存已读状态")).length).toBeGreaterThan(0);expect(screen.getByText("未读",{exact:true})).toBeTruthy();expect(screen.queryByText("已读",{exact:true})).toBeNull();
 });

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { configurationApi, errorMessage, memoryManagementApi } from "../../api";
 import type { CurrentContext, MemoryDetail, MemoryKind, MemoryPreview, MemoryRecord, Settings } from "../../types";
 import NotebookPanel from "./NotebookPanel";
+import InlineDetailCard from "../InlineDetailCard";
+const PAGE_SIZE = 12;
 import "./MemoryManagementPanel.css";
 
 type Tab = "notebook" | MemoryKind;
@@ -83,13 +85,16 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
   const detailGeneration = useRef(0);
   const operationGeneration = useRef(0);
   const selectedId = useRef<string | null>(null);
-  const pageDepth = useRef(1);
+  const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const currentPage = useRef(0);
+  const cursors = useRef<(string | null)[]>([null]);
   const busyRef = useRef(busy);
   const refreshPending = useRef(false);
   const state = useRef({ detail, title, content, preview });
   const refreshRef = useRef<(() => void) | null>(null);
   const loadDetailRef = useRef<((id: string, force?: boolean) => Promise<void>) | null>(null);
-  const loadListRef = useRef<((more?: boolean) => Promise<void>) | null>(null);
+  const loadListRef = useRef<((page?: number, locateId?: string) => Promise<void>) | null>(null);
   busyRef.current = busy;
   state.current = { detail, title, content, preview };
   const label = kind === "short" ? "短期记忆" : "长期记忆";
@@ -132,27 +137,28 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
       }
     };
 
-    const loadList = async (more = false) => {
+    const loadList = async (requestedPage = currentPage.current, locateId?: string): Promise<void> => {
       if (!context.sessionId) { setListLoading(false); return; }
       const token = ++listGeneration.current;
       setListLoading(true); setListError("");
       try {
-        let cursor = more ? nextCursor.current : null;
-        const records: MemoryRecord[] = [];
-        const pages = more ? 1 : pageDepth.current;
-        for (let page = 0; page < pages; page++) {
-          const result = await memoryManagementApi.list(context, kind, cursor);
+        let index = requestedPage;
+        const positions = [...cursors.current];
+        let cursor = positions[index];
+        if (cursor === undefined) return;
+        while (true) {
+          const result = await memoryManagementApi.list(context, kind, cursor, PAGE_SIZE);
           if (disposed || token !== listGeneration.current) return;
-          records.push(...result.items);
-          cursor = result.nextAfterId;
-          if (!cursor) break;
+          positions[index] = cursor;
+          if (locateId && !result.items.some(item => item.id === locateId) && result.nextAfterId) {
+            cursor = result.nextAfterId; index++; continue;
+          }
+          cursors.current = positions.slice(0, index + 1);
+          if (result.nextAfterId) cursors.current[index + 1] = result.nextAfterId;
+          currentPage.current = index; setPage(index);
+          setItems(result.items); setNextAfterId(result.nextAfterId);
+          break;
         }
-        if (more) pageDepth.current++;
-        setItems(current => {
-          const combined = more ? [...current, ...records] : records;
-          return combined.filter((record, index) => combined.findIndex(item => item.id === record.id) === index);
-        });
-        nextCursor.current = cursor; setNextAfterId(cursor);
       } catch (cause) {
         if (!disposed && token === listGeneration.current) setListError(errorMessage(cause));
       } finally {
@@ -194,19 +200,22 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
     };
   }, [context, kind]);
 
-  const nextCursor = useRef<string | null>(null);
-  const select = (id: string) => {
+  const select = (id: string, toggle = true) => {
+    if (selectedId.current === id) { setExpanded(value => toggle ? !value : true); return true; }
     if (busyRef.current || state.current.preview || dirty) {
       setNotice("当前编辑仍保留。请先保存，或重新加载放弃草稿，再查看其他记忆。");
-      return;
+      return false;
     }
-    selectedId.current = id;
+    selectedId.current = id; setExpanded(true);
     setDetail(null); setTitle(""); setContent(""); setOperationError(""); setNotice(""); setRemoteChanged(false);
     state.current = { detail: null, title: "", content: "", preview: null };
     void loadDetailRef.current?.(id);
+    return true;
   };
 
-  useEffect(() => { if (target) select(target.id); }, [target]);
+  useEffect(() => {
+    if (target && select(target.id, false)) void loadListRef.current?.(0, target.id);
+  }, [target]);
 
   const finishOperation = (token: number) => {
     if (!mounted.current || token !== operationGeneration.current) return;
@@ -300,6 +309,14 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
       <p>选择或创建会话后，这里会显示该会话的{label}。</p></div>
   </section>;
 
+  const changePage = (index: number) => {
+    if (dirty || preview || busy || detailLoading || listLoading) return;
+    detailGeneration.current++; selectedId.current = null; setExpanded(false); setDetail(null);
+    state.current = { detail: null, title: "", content: "", preview: null };
+    setReadError(""); setOperationError(""); setNotice("");
+    void loadListRef.current?.(index);
+  };
+
   const editorInvalid = !validText(preview ? previewContent : content) || (kind === "long" && !validText(preview ? previewTitle : title));
   const minChars = settings?.[kind === "short" ? "short_memory_min_chars" : "long_memory_min_chars"];
   const maxChars = settings?.[kind === "short" ? "short_memory_max_chars" : "long_memory_max_chars"];
@@ -313,28 +330,19 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
     {minChars && maxChars && <p className="ym-page-note">AI {actionLabel}生成的正文须为 {minChars}–{maxChars} 个汉字。
       手动编辑与预览修改不受该字数范围限制。</p>}
     {settingsError && <p role="alert" className="ym-notebook-error">读取建议字数失败：{settingsError}</p>}
-    <div className="ym-memory-layout">
-      <div className="ym-memory-list" aria-label={`${label}列表`}>
-        {items.map(record => <button className="ym-memory-item" type="button" key={record.id}
-          aria-pressed={detail?.record.id === record.id} disabled={blocked} onClick={() => select(record.id)}>
-          <strong>{kind === "long" ? record.title : `回合 ${record.roundNumber ?? "未知"}`}</strong>
-          {kind === "short" && <span className="ym-memory-state">{record.integrationState === "integrated" ? "已经整合" : "尚未整合"}</span>}
-          <span className="ym-memory-summary">{record.content}</span>
-          {kind === "long" && <span className="ym-page-note">{record.sourceCount} 条来源 · 本会话回合 {record.sourceStartRoundNumber ?? "未知"}–{record.sourceEndRoundNumber ?? "未知"}</span>}
-        </button>)}
-        {listLoading && <p role="status">正在读取{label}…</p>}
-        {!items.length && !listLoading && !listError && <div className="ym-notebook-empty" role="status">
-          <strong>暂无{label}</strong><p>{kind === "short" ? "完成对话后会自动生成短期记忆。" : "待整合短期记忆达到条件后会自动生成长期记忆。"}</p>
-        </div>}
-        {listError && <div role="alert" className="ym-page-error">读取列表失败：{listError}
-          <button className="ym-button" type="button" disabled={listLoading} onClick={() => void loadListRef.current?.()}>重试列表</button></div>}
-        {nextAfterId && <button className="ym-button" type="button" disabled={listLoading} onClick={() => void loadListRef.current?.(true)}>加载更多</button>}
-      </div>
-      <div className="ym-memory-detail">
+    <div className="ym-memory-grid" aria-label={`${label}列表`}>
+      {(detail && !items.some(item => item.id === detail.record.id) ? [detail.record, ...items] : items).map(record =>
+        <InlineDetailCard key={record.id}
+          title={kind === "long" ? record.title : `回合 ${record.roundNumber ?? "未知"}`}
+          summary={<span className="ym-memory-summary">{record.content}</span>}
+          meta={kind === "short" ? <span className="ym-memory-state">{record.integrationState === "integrated" ? "已经整合" : "尚未整合"}</span>
+            : `${record.sourceCount} 条来源 · 本会话回合 ${record.sourceStartRoundNumber ?? "未知"}–${record.sourceEndRoundNumber ?? "未知"}`}
+          expanded={expanded && selectedId.current === record.id} onToggle={() => select(record.id)}
+          disabled={blocked && selectedId.current !== record.id} detailLabel={`${label}详情`}>
+          {selectedId.current === record.id && <div className="ym-memory-detail">
         {detailLoading && <p role="status">正在读取记忆详情…</p>}
         {readError && <div role="alert" className="ym-page-error">读取记忆失败：{readError}
           <button className="ym-button" type="button" onClick={() => selectedId.current && void loadDetailRef.current?.(selectedId.current)}>重试详情</button></div>}
-        {!detail && !detailLoading && !readError && <p className="ym-page-note">选择一条{label}查看正文和来源。</p>}
         {detail && <>
           <div className="ym-memory-detail-heading"><h3>{kind === "short" ? `回合 ${detail.record.roundNumber ?? "未知"}` : detail.record.title}</h3>
             <span className="ym-notebook-updated">最近保存：{new Date(detail.record.updatedAt).toLocaleString()}</span></div>
@@ -382,8 +390,20 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
           </>}
           {editorInvalid && <p className="ym-notebook-error" role="status">正文{kind === "long" ? "和标题" : ""}不能为空。</p>}
         </>}
-      </div>
+          </div>}
+        </InlineDetailCard>)}
     </div>
+    {listLoading && <p role="status">正在读取{label}…</p>}
+    {!items.length && !listLoading && !listError && <div className="ym-notebook-empty" role="status">
+      <strong>暂无{label}</strong><p>{kind === "short" ? "完成对话后会自动生成短期记忆。" : "待整合短期记忆达到条件后会自动生成长期记忆。"}</p>
+    </div>}
+    {listError && <div role="alert" className="ym-page-error">读取列表失败：{listError}
+      <button className="ym-button" type="button" disabled={listLoading} onClick={() => void loadListRef.current?.()}>重试列表</button></div>}
+    <nav className="ym-memory-pagination" aria-label={`${label}分页`}>
+      <button className="ym-button" type="button" disabled={page === 0 || listLoading || blocked} onClick={() => changePage(page - 1)}>上一页</button>
+      <span aria-live="polite">第 {page + 1} 页 · 每页 {PAGE_SIZE} 条</span>
+      <button className="ym-button" type="button" disabled={!nextAfterId || listLoading || blocked} onClick={() => changePage(page + 1)}>下一页</button>
+    </nav>
     {previewOwner && previewOwner !== kind && <p role="status" className="ym-page-note">另一页签有 AI 生成或预览，请先确认或取消后再生成。</p>}
     {operationError && <p role="alert" className="ym-notebook-error">{operationError}</p>}
     {notice && <p role="status" className="ym-notebook-notice">{notice}</p>}

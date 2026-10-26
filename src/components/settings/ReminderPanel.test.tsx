@@ -97,3 +97,43 @@ it("排队中的触发记录点击确认时只传 occurrence ID 与 queued 状�
   await waitFor(() => expect(api.acknowledge).toHaveBeenCalledWith(["occ-queued"], "queued"));
   expect(api.complete).not.toHaveBeenCalled();
 });
+
+
+it("规则与记录独立分页，搜索可找到首屏以外的数据，筛选不执行写操作", () => {
+  hook.value.rules = Array.from({length:14}, (_,i) => ({...dailyRule,id:`r-${i+1}`,name:`规则${i+1}`,content:i===0?"年度保险资料":"普通详情",kind:i%2===0?"once":"daily",status:i%3===0?"done":"pending",createdAt:`2032-04-${String(i+1).padStart(2,"0")}T00:00:00Z`}));
+  hook.value.occurrences = hook.value.rules.map((rule:Reminder,i:number) => makeOccurrence(`o-${i+1}`,{reminderId:rule.id,name:rule.name,content:rule.content,status:rule.status,scheduledAt:rule.createdAt}));
+  const view=render(<ReminderPanel/>);
+  const rules=within(screen.getByRole("region",{name:"提醒规则列表"}));
+  const records=within(screen.getByRole("region",{name:"提醒触发记录列表"}));
+  expect(rules.getAllByRole("article")).toHaveLength(6);
+  expect(records.getAllByRole("article")).toHaveLength(6);
+  fireEvent.click(rules.getByRole("button",{name:"下一页"}));
+  expect(rules.getByText("2 / 3 页 · 14 条")).toBeTruthy();
+  expect(records.getByText("1 / 3 页 · 14 条")).toBeTruthy();
+  fireEvent.change(rules.getByRole("searchbox",{name:"搜索提醒规则"}),{target:{value:"年度保险"}});
+  expect(rules.getByRole("article",{name:"规则1"})).toBeTruthy();
+  expect(rules.getByText("1 / 1 页 · 1 条")).toBeTruthy();
+  fireEvent.click(rules.getByRole("button",{name:"清除规则筛选"}));
+  fireEvent.change(rules.getByRole("combobox",{name:"提醒类型"}),{target:{value:"daily"}});
+  fireEvent.change(rules.getByRole("combobox",{name:"规则状态"}),{target:{value:"done"}});
+  expect(rules.getAllByRole("article").map(n=>n.getAttribute("aria-label"))).toEqual(["规则10","规则4"]);
+  fireEvent.change(records.getByRole("combobox",{name:"记录类型"}),{target:{value:"once"}});
+  fireEvent.change(records.getByRole("combobox",{name:"记录状态"}),{target:{value:"done"}});
+  expect(records.getAllByRole("article").map(n=>n.getAttribute("aria-label"))).toEqual(["规则13 本次提醒","规则7 本次提醒","规则1 本次提醒"]);
+  expect(api.complete).not.toHaveBeenCalled();expect(api.updateStatus).not.toHaveBeenCalled();expect(api.delete).not.toHaveBeenCalled();
+  fireEvent.click(rules.getByRole("button",{name:"清除规则筛选"}));
+  fireEvent.click(rules.getByRole("button",{name:"下一页"}));
+  hook.value.rules=hook.value.rules.slice(0,2);
+  view.rerender(<ReminderPanel/>);
+  expect(rules.getByText("1 / 1 页 · 2 条")).toBeTruthy();
+});
+
+it("没有匹配的分类结果时显示说明，清除筛选恢复规则",()=>{
+  render(<ReminderPanel/>);
+  const rules=within(screen.getByRole("region",{name:"提醒规则列表"}));
+  fireEvent.change(rules.getByRole("combobox",{name:"提醒类型"}),{target:{value:"monthly"}});
+  expect(rules.getByText("没有符合筛选条件的提醒规则。")).toBeTruthy();
+  expect(rules.queryByRole("article")).toBeNull();
+  fireEvent.click(rules.getByRole("button",{name:"清除规则筛选"}));
+  expect(rules.getByRole("article",{name:"喝水"})).toBeTruthy();
+});

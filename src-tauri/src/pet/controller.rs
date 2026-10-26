@@ -405,6 +405,9 @@ impl Controller {
         sample: ClockSample,
         random: &mut dyn RandomSource,
     ) -> AppResult<()> {
+        self.interact_with_petting(connection,revision,input,false,sample,random)
+    }
+    pub(crate) fn interact_with_petting(&mut self,connection:&mut Connection,revision:u64,input:InteractionInput,petted:bool,sample:ClockSample,random:&mut dyn RandomSource)->AppResult<()> {
         let context = crate::persona::context(connection, revision)?;
         if self.stopping
             || context.persona_id != input.persona_id
@@ -428,7 +431,17 @@ impl Controller {
             [&input.persona_id],
             |r| r.get(0),
         )?;
-        let expression = pick_expression(connection,parse_id(&input.persona_id)?,library.as_deref(), activity, random)?;
+        let expression = if petted && matches!(input.action,Action::Click) {
+            let persona=parse_id(&input.persona_id)?;
+            match crate::pet_creation::select_click(connection,persona,0,random)? {
+                Some(image)=>image,
+                None=>{
+                    let lib=crate::expressions::effective_library(library.as_deref().map(serde_json::from_str::<serde_json::Value>).transpose().map_err(|_|AppError::storage())?.as_ref());
+                    let choices=lib["click"]["happy"].as_array().ok_or_else(AppError::storage)?;
+                    choices[random.below(choices.len() as u64)? as usize].as_str().ok_or_else(AppError::storage)?.to_owned()
+                }
+            }
+        }else{pick_expression(connection,parse_id(&input.persona_id)?,library.as_deref(), activity, random)?};
         if matches!(input.action,Action::Feed) {
             crate::foods::feed(connection,&format!("legacy-feed-{}",chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()),"token",revision,PetWriteScope{persona_id:parse_id(&input.persona_id)?,session_id,context_revision:revision,state_revision:snapshot.state_revision},random)?;
         } else {
@@ -465,8 +478,9 @@ fn pick_expression(
     activity: Activity,
     random: &mut dyn RandomSource,
 ) -> AppResult<String> {
-    if let Some(image)=crate::pet_creation::select(connection,persona,image_category(activity),None,random)? {return Ok(image);}
     let click = if activity == Activity::Interacting { Some(random.below(3)?) } else { None };
+    let image=if let Some(reaction)=click {crate::pet_creation::select_click(connection,persona,reaction,random)?}else{crate::pet_creation::select(connection,persona,image_category(activity),None,random)?};
+    if let Some(image)=image{return Ok(image)}
     let fallback = crate::expressions::builtin(match click { Some(0)=>"click_happy",Some(1)=>"click_surprised",Some(2)=>"click_shy",Some(_)=>return Err(AppError::storage()),None=>image_category(activity) });
     let Some(raw) = raw else {
         return Ok(fallback.into());
@@ -497,3 +511,32 @@ fn pick_expression(
 }
 
 fn image_category(activity:Activity)->&'static str {match activity {Activity::Standby=>"standby",Activity::Sleeping=>"sleepy",Activity::Bored=>"bored",Activity::Hungry=>"hungry",Activity::Eating=>"eating",Activity::Thinking=>"thinking",Activity::Interacting=>"click",Activity::Speaking=>"chat",_=>"normal"}}
+
+#[cfg(test)]
+mod click_tests {
+    use super::*;
+    struct Reaction(u64);
+    impl RandomSource for Reaction{fn below(&mut self,n:u64)->AppResult<u64>{Ok(if n==3{self.0}else{0})}}
+    fn pictures()->Connection{
+        let c=crate::db::test_database();c.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=1",[]).unwrap();
+        for (id,kind,category,name,enabled)in [(1,"base","normal","初始图",true),(2,"expression","click","开心互动",true),(3,"expression","chat","惊讶",true),(4,"expression","chat","害羞",true),(5,"expression","lifted","惊讶的拎起",true),(6,"expression","chat","惊讶旧图",false)]{
+            c.execute("INSERT INTO pet_artworks(id,persona_id,kind,category,name,enabled,image_file,created_at,updated_at) VALUES(?1,1,?2,?3,?4,?5,'test.png','a','a')",rusqlite::params![id,kind,category,name,enabled]).unwrap();
+        }c
+    }
+    #[test]
+    fn picture_and_kaomoji_clicks_share_three_reaction_draws(){
+        let c=pictures();
+        for (reaction,id,builtin)in [(0,2,"click_happy"),(1,3,"click_surprised"),(2,4,"click_shy")]{
+            assert_eq!(pick_expression(&c,1,None,Activity::Interacting,&mut Reaction(reaction)).unwrap(),format!("@pet-image:{id}"));
+            c.execute("UPDATE personas SET pet_image_enabled=0 WHERE id=1",[]).unwrap();
+            assert_eq!(pick_expression(&c,1,None,Activity::Interacting,&mut Reaction(reaction)).unwrap(),crate::expressions::builtin(builtin));
+            c.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=1",[]).unwrap();
+        }
+    }
+    #[test]
+    fn missing_picture_reaction_falls_back_without_selecting_disabled_or_special_pose(){
+        let c=pictures();c.execute("DELETE FROM pet_artworks WHERE id=3",[]).unwrap();
+        assert_eq!(pick_expression(&c,1,None,Activity::Interacting,&mut Reaction(1)).unwrap(),"@pet-image:2");
+        assert_eq!(crate::pet_creation::select_click(&c,1,0,&mut Reaction(2)).unwrap().as_deref(),Some("@pet-image:2"));
+    }
+}

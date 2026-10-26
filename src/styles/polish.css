@@ -5,9 +5,9 @@
 .ym-window-shell h1{letter-spacing:.015em}.ym-window-shell :is(h2,h3){line-height:1.45}
 .ym-window-shell__header{padding:20px 24px;gap:14px;background:var(--ym-canvas)}
 .ym-window-shell__subtitle,.ym-window-shell__context-caption{font-size:12px;color:var(--ym-text-muted)}
-.ym-window-shell__context{gap:3px}.ym-window-shell__content{padding:28px 24px 36px;scrollbar-gutter:stable}
+.ym-window-shell__context{gap:3px}.ym-window-shell__content{padding:20px 16px 24px;scrollbar-gutter:stable}
 .ym-window-shell__sidebar{background:var(--ym-canvas);padding:24px 12px}
-.ym-window-shell .ym-workspace-page{width:100%;max-width:1160px;margin-inline:auto;gap:24px}
+.ym-window-shell .ym-workspace-page{width:100%;max-width:none;margin-inline:0;gap:24px}
 .ym-window-shell .ym-page-card{padding:24px 20px;border-radius:18px;box-shadow:none}
 .ym-window-shell .ym-page-heading{gap:12px 20px;margin-bottom:18px;align-items:center}
 .ym-window-shell .ym-page-card h2{font-size:17px;margin-bottom:16px}
@@ -39,9 +39,9 @@
 .ym-window-shell .ym-object-card:has(.ym-card-open):hover{border-color:var(--ym-border-strong)}
 .ym-window-shell .ym-card-open{font-size:15px;font-weight:600;line-height:1.6;overflow-wrap:anywhere}
 .ym-window-shell .ym-card-open:hover{color:var(--ym-accent-strong)}
-.ym-window-shell .ym-card-summary{font-size:13px;line-height:1.8;margin-block:10px;display:block;overflow:visible;-webkit-line-clamp:unset;white-space:normal}
-.ym-window-shell .ym-browser-controls{padding:16px 0 20px;margin:12px 0 20px;border-bottom:1px solid var(--ym-border);gap:16px;align-items:end}
-.ym-window-shell .ym-browser-pages{gap:10px;font-size:12px;flex:1 1 220px}
+.ym-window-shell .ym-card-summary{font-size:13px;line-height:1.8;margin-block:10px;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;-webkit-line-clamp:2;white-space:normal}
+.ym-window-shell .ym-browser-controls{padding:12px 0 16px;margin:8px 0 16px;border-bottom:1px solid var(--ym-border);gap:12px;align-items:end}
+.ym-window-shell .ym-browser-pages{gap:8px;font-size:12px;flex:1 1 100%}
 .ym-window-shell .ym-browser-pages span{white-space:normal}
 .ym-window-shell .ym-detail-header{padding-bottom:18px;border-bottom:1px solid var(--ym-border)}
 .ym-window-shell .ym-session-dialog{padding:26px 22px;border-radius:18px;max-width:calc(100vw - 32px)}
@@ -67,8 +67,8 @@
 .ym-letter-disclosure{display:inline-flex;align-items:center;gap:6px;color:var(--ym-accent-strong);font-size:12px}
 .ym-letter-disclosure svg{width:16px;height:16px;transition:transform 200ms var(--ym-ease-standard)}
 .ym-letter-card[data-expanded="true"] .ym-letter-disclosure svg{transform:rotate(180deg)}
-.ym-window-shell .ym-letter-detail{margin:0 18px;padding:20px 0 22px;border-top:1px solid var(--ym-border);animation:ym-reveal-in 240ms var(--ym-ease-standard) both}
-.ym-window-shell .ym-letter-detail[data-closing="true"]{animation:ym-reveal-out 180ms var(--ym-ease-standard) both;pointer-events:none}
+.ym-window-shell .ym-letter-detail{margin:0 18px;padding:20px 0 22px;border-top:1px solid var(--ym-border);animation:ym-reveal-in 280ms var(--ym-ease-standard) both}
+.ym-window-shell .ym-letter-detail[data-closing="true"]{animation:ym-reveal-out 220ms var(--ym-ease-standard) both;pointer-events:none}
 .ym-window-shell .ym-letter-body{max-width:72ch;line-height:1.9;font-size:14px;white-space:pre-wrap;margin-block:18px 24px;overflow-wrap:anywhere}
 .ym-letter-card .ym-letter-detail .ym-page-heading{align-items:start}
 @keyframes ym-reveal-in{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:translateY(0)}}
@@ -106,3 +106,10 @@
 .ym-window-shell .ym-travel-panel>section[aria-label="当前出行"]>p{margin-block:8px 10px}
 
 .ym-window-shell .ym-letter-card:focus-within{outline:2px solid var(--ym-focus);outline-offset:3px}
+
+.ym-window-shell .ym-card-summary[hidden]{display:none}
+.ym-window-shell .ym-card-status .ym-letter-meta{margin-top:0}
+.ym-window-shell .ym-letter-card[data-expanded="true"] .ym-letter-item{padding-block:14px}
+.ym-window-shell .ym-letter-card .ym-card-summary{margin-block:0}
+.ym-window-shell .ym-browser-controls>.ym-field:not(.ym-browser-search){flex:0 1 170px;min-width:min(100%,150px)}
+.ym-window-shell .ym-browser-controls>.ym-page-empty{flex-basis:100%;padding:8px 0;margin:0}

@@ -8,8 +8,30 @@ fn runtime(url: &str, kind: &str) -> Runtime {
 }
 fn text() -> Gift {
     Gift::Text {
+        title:Some("湖边明信片".into()),
         content: "明信片".into(),
         note: "湖边的小礼物。".into(),
+    }
+}
+#[test]
+fn souvenir_image_switch_defaults_on_and_stays_text_when_disabled(){
+    let r=runtime("http://localhost","text");
+    r.read(|s,_|{assert!(super::super::images_enabled(&s.connection)?);super::super::set_images_enabled(&s.connection,false)?;assert!(!super::super::images_enabled(&s.connection)?);Ok(())}).unwrap();
+    let(snapshot,lease)=capture(&r,1).unwrap();let prepared=Prepared{gift:text(),png:Some(vec![1,2,3]),image_revision:None,notice:None};assert!(commit(&r,&snapshot,&lease,&prepared).unwrap());
+    r.read(|s,_|{let gift=super::super::list(&s.connection,1,None,30)?.remove(0);assert_eq!(gift.content,"明信片");assert_eq!(gift.title.as_deref(),Some("湖边明信片"));assert!(gift.image_file.is_none());Ok(())}).unwrap();
+}
+#[test]
+fn souvenir_image_commit_publishes_only_while_enabled(){
+    for enabled in [true,false] {
+        let mut r=runtime("http://localhost","text");
+        let root=std::env::temp_dir().join(format!("yanmew-souvenir-image-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        r.paths=Ok(crate::platform::contracts::AppPaths::portable(root.clone()));std::fs::create_dir_all(&r.paths.as_ref().unwrap().data_root).unwrap();
+        let revision=r.read(|s,_|{super::super::set_images_enabled(&s.connection,enabled)?;crate::image_generation::revision(&s.connection)}).unwrap();
+        let mut pixels=image::RgbaImage::new(16,16);pixels.put_pixel(8,8,image::Rgba([200,100,150,255]));let mut bytes=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(pixels).write_to(&mut bytes,image::ImageFormat::Png).unwrap();let png=crate::accessories::images::normalize(&bytes.into_inner()).unwrap();
+        let(snapshot,lease)=capture(&r,1).unwrap();let prepared=Prepared{gift:text(),png:Some(png),image_revision:Some(revision),notice:None};assert!(commit(&r,&snapshot,&lease,&prepared).unwrap());drop(lease);
+        let gift=r.read(|s,_|Ok(super::super::list(&s.connection,1,None,30)?.remove(0))).unwrap();assert_eq!(gift.content,"明信片");assert_eq!(gift.image_file.is_some(),enabled);
+        if let Some(file)=gift.image_file {assert!(crate::accessories::images::read(r.paths.as_ref().unwrap(),&file).is_ok());crate::accessories::images::cleanup_one(&r,&file,&[]);assert!(crate::accessories::images::read(r.paths.as_ref().unwrap(),&file).is_ok());}
+        drop(r);assert_eq!(root.parent(),Some(std::env::temp_dir().as_path()));assert!(root.file_name().unwrap().to_str().unwrap().starts_with("yanmew-souvenir-image-"));std::fs::remove_dir_all(root).unwrap();
     }
 }
 #[test]
@@ -40,9 +62,9 @@ fn text_gift_does_not_read_broken_image_configuration() {
 #[test]
 fn parse_rejects_truncation_tools_wrong_kind_and_prose_visual() {
     let choice = Choice {
-        reasoning_content: None,
+        usage: None, reasoning_content: None,
         index: 0,
-        content: json!({"kind":"text","content":"明信片","note":"给你的"}).to_string(),
+        content: json!({"kind":"text","title":"湖边明信片","content":"明信片","note":"给你的"}).to_string(),
         tools: vec![],
         finish: Finish::Stop,
     };
@@ -60,7 +82,7 @@ fn parse_rejects_truncation_tools_wrong_kind_and_prose_visual() {
     });
     assert!(parse(&bad, "text").is_err());
     let bad = Choice {
-        reasoning_content: None,
+        usage: None, reasoning_content: None,
         content:
             json!({"kind":"accessory","name":"花","display_text":"普通花朵","description":"我的花"})
                 .to_string(),
@@ -135,7 +157,7 @@ async fn database_retry_reuses_prepared_result_and_does_not_request_again() {
     r.travel_gifts.queue.lock().unwrap().attempted.remove(&1);
     let first = r.travel_gifts.process(&r, 1).await;
     assert!(first.is_err());
-    assert_eq!(r.travel_gifts.queue.lock().unwrap().prepared.len(), 1);
+    assert_eq!(r.travel_gifts.queue.lock().unwrap().prepared.len(), 1,"{first:?}");
     assert!(!r.travel_gifts.take_image_permission(1).unwrap());
     r.read(|s, _| {
         s.connection.execute_batch("DROP TRIGGER fail_accessory;")?;
@@ -166,4 +188,14 @@ fn status_retry_preserve_image_attempt_and_backoff_are_session_scoped() {
     })
     .unwrap();
     assert!(r.travel_gifts.queue.lock().unwrap().attempted.contains(&1));
+}
+
+#[test]
+fn title_is_required_for_new_gifts_but_legacy_facts_remain_readable() {
+    let mut choice=Choice{usage: None,
+        index:0,reasoning_content:None,content:json!({"kind":"text","title":"海螺","content":"银白色的海螺","note":"带给你"}).to_string(),finish:Finish::Stop,tools:vec![]};
+    assert!(parse(&choice,"text").is_ok());
+    choice.content=json!({"kind":"text","content":"海螺","note":"带给你"}).to_string();assert!(parse(&choice,"text").is_err());
+    assert!(validated_snapshot(&json!({"schema_version":1,"kind":"text","content":"旧海螺","note":"旧备注"}).to_string(),"text").is_ok());
+    assert!(validated_snapshot(&json!({"schema_version":2,"kind":"text","content":"海螺","note":"备注"}).to_string(),"text").is_err());
 }

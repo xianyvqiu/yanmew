@@ -910,7 +910,7 @@ Result: TypeScript/Vite 与 Rust 构建成功，产物为 src-tauri/target/debug
 - `pet_store.rs`、`runtime.rs`、`state.rs`、会话/用户设定入口：持久化和取消保护。
 - `db/schema.sql`、`db/migrations/005_proactive_messages.sql`、`db.rs`：v5 新库与旧库升级。
 - `events.rs`、`platform/windows/events.rs`、`jobs.rs`、`lib.rs`：后台事件及唯一循环集成。
-- `src/components/PetConversationBubbles.tsx`、`src/windows/PetWindow.tsx`、`src/api.ts`、`src/types.ts`：提醒插槽、20 秒主动气泡及查看聊天。
+- `src/components/PetConversationBubbles.tsx`、`src/windows/PetWindow.tsx`、`src/api.ts`、`src/types.ts`：提醒插槽、随聊天设置自动收起的主动气泡及查看聊天。
 
 - [x] **Step 1: 复用聊天能力生成主动消息**
 
@@ -928,7 +928,7 @@ Result: TypeScript/Vite 与 Rust 构建成功，产物为 src-tauri/target/debug
 
 - [x] **Step 3: 已保存消息展示**
 
-提交后发送 `chat-messages-changed` 及 `proactive-message {personaId,sessionId,contextRevision,message}`，由既有聊天窗刷新历史。主动气泡显示 20 秒，可打开/聚焦聊天窗；提醒优先，隐藏、拖动或提醒遮挡后不补弹。普通状态气泡仍 8 秒，提醒仍保留到完成/收起。气泡纳入原生窗口交互区域。
+提交后发送 `chat-messages-changed` 及 `proactive-message {personaId,sessionId,contextRevision,message}`，由既有聊天窗刷新历史。主动气泡沿用快捷聊天自动收起设置（默认鼠标移开、无操作3分钟，可调整或关闭），可打开/聚焦聊天窗；提醒优先，隐藏、拖动或提醒遮挡后不补弹。普通状态气泡仍 8 秒，提醒仍保留到完成/收起。气泡纳入原生窗口交互区域。
 
 - [x] **Step 4: 定向验证**
 

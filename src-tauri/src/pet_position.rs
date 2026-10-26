@@ -116,6 +116,9 @@ struct Pending {
     stopping: bool,
 }
 impl Pending {
+    fn placement(&mut self,point:Point)->bool {
+        if self.drag_origin.is_some()||self.stopping{return false}self.position=Some(point);true
+    }
     fn moved(&mut self, position: Point) -> bool {
         if self.drag_origin.is_none() || self.stopping {
             return false;
@@ -215,6 +218,11 @@ impl WindowPosition {
         Ok(())
     }
 
+    pub(crate) async fn remember_placement(&self,window:&WebviewWindow,runtime:Runtime)->AppResult<()> {
+        let p=window.outer_position().map_err(|_|window_error())?;
+        if !self.0.pending.lock().map_err(|_|AppError::storage())?.placement((p.x,p.y)){return Ok(())}
+        let worker=self.clone();tauri::async_runtime::spawn_blocking(move||worker.persist(&runtime)).await.map_err(|_|AppError::storage())?
+    }
     pub async fn finish_drag(&self, window: &WebviewWindow, runtime: Runtime) -> AppResult<()> {
         let position = window
             .is_minimized()
@@ -305,6 +313,8 @@ impl WindowPosition {
     }
 
     pub fn ensure_visible(&self, window: &WebviewWindow, fit_entire_window: bool) -> AppResult<()> {
+        // 抛接按身体边界约束；不得把其透明留白重新拉回屏幕而打断物理轨迹。
+        if window.state::<crate::pet_desktop::Desktop>().has_toss() {return Ok(())}
         if window.is_minimized().map_err(|_| window_error())? {
             return Ok(());
         }
@@ -318,6 +328,7 @@ impl WindowPosition {
         {
             return Ok(());
         }
+        if window.state::<crate::pet_desktop::Desktop>().preserve_upper_position(window)? {return Ok(())}
         let current = window.outer_position().map_err(|_| window_error())?;
         let size = window.outer_size().map_err(|_| window_error())?;
         let (areas, fallback) = areas(window)?;
@@ -350,6 +361,13 @@ pub fn report(app: &AppHandle, error: &AppError) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejected_throw_can_save_the_final_snapped_position_after_release() {
+        let mut pending=Pending{drag_origin:Some((100,200)),..Pending::default()};
+        pending.moved((100,-50));pending.finish(Some((100,-50)));pending.acknowledge((100,-50));
+        pending.drag_origin=Some((100,-50));pending.moved((100,0));pending.finish(Some((100,0)));
+        assert_eq!(pending.position,Some((100,0)));assert!(pending.drag_origin.is_none());
+    }
     #[test]
     fn write_failure_keeps_latest_pair_for_exit_retry_without_saving_system_corrections() {
         let runtime = crate::runtime::test_runtime("http://127.0.0.1:1");
@@ -496,4 +514,11 @@ mod tests {
         state.drag_origin = Some((90, 100));
         assert!(!state.moved((110, 120)));
     }
+    #[test]
+    fn programmatic_placement_is_saved_once_and_cannot_replace_a_new_user_drag() {
+        let mut p=Pending::default();assert!(p.placement((100,600)));assert_eq!(p.position,Some((100,600)));
+        p.drag_origin=Some((100,600));p.moved((120,500));assert!(!p.placement((100,600)));assert_eq!(p.position,Some((120,500)));
+        p.finish(Some((120,500)));p.acknowledge((120,500));assert!(p.position.is_none());
+    }
+
 }

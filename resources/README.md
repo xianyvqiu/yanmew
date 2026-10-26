@@ -28,7 +28,7 @@
 
 ## 自带小游戏资源
 
-plugins/包含剪刀石头布、骰子、接星星、我的家的.yanmew-game与bundled-games.json。由 `npm run plugins:build` 从标准插件源码生成并逐包校验；Tauri开发/构建自动调用。开发加载项目目录，发布加载exe旁resources/plugins。便携版还需运行 `./scripts/copy-plugin-resources.ps1 -Destination <便携版暂存目录>`，与上面的Embedding复制步骤一起执行。四个游戏没有单独权威余额或初始币，存档和权限由主程序SQLite保存；程序资源不进入用户备份。
+plugins/包含剪刀石头布、骰子、接星星、我的家、扫雷、2048的.yanmew-game与bundled-games.json。由 `npm run plugins:build` 从标准插件源码生成并逐包校验；Tauri开发/构建自动调用。开发加载项目目录，发布加载exe旁resources/plugins。便携版还需运行 `./scripts/copy-plugin-resources.ps1 -Destination <便携版暂存目录>`，与上面的Embedding复制步骤一起执行。六个游戏没有单独权威余额或初始币，存档和权限由主程序SQLite保存；程序资源不进入用户备份。
 
 ## 内置日历与许可声明
 
@@ -36,8 +36,14 @@ plugins/包含剪刀石头布、骰子、接星星、我的家的.yanmew-game与
 
 ## 预置图片人设资源
 
-personas/ 含 GPT、Claude、Gemini、DeepSeek 的初始图和独立基础互动图，详情及生成提示见 [资源说明](personas/README.md)。完整便携版/安装版必须带齐四套100张透明PNG；build-portable.ps1 校验并复制。首次运行发布到本机受管图片目录，之后以用户修改为准，不覆盖已删除角色。程序资源不需要生图 Key，用户自定义创作继续使用其配置的服务。
+personas/ 含 GPT、Claude、Gemini、DeepSeek 的初始图和独立基础互动图，详情及生成提示见 [资源说明](personas/README.md)。完整便携版/安装版必须带齐四套104张透明PNG；build-portable.ps1 校验并复制。首次运行发布到本机受管图片目录，之后以用户修改为准，不覆盖已删除角色。程序资源不需要生图 Key，用户自定义创作继续使用其配置的服务。
 
 ## 食品图
 
 foods/包含免费Token小点心和五种付费食物的256×256透明PNG。由前端静态导入并随构建内嵌，不需要另外下载、不从用户备份覆盖；角色咀嚼图不画食物。来源与生成提示见foods/README.md及generation-prompts.json。
+
+## 本地抠图资源
+
+`models/background-removal/` 保存通用 U²-Net（175,997,641 字节）、固定来源/SHA-256 清单及上游许可。`model.onnx` 使用 Git LFS；从 GitHub 克隆源码前安装 Git LFS，克隆后执行 `git lfs pull` 取回完整模型。LFS 指针文件不能用作模型，发布脚本会核对 SHA-256 并在资源缺失或不完整时停止。
+
+便携版通过 `scripts/copy-background-resources.ps1` 复制模型和许可，沿用随包 ONNX Runtime；运行时不下载模型、不需要抠图 API Key。仅透明资产生成结果缺乏透明度时自动兜底；普通聊天绘图保留原始背景，按用户需要再通过工具检测或抠图。

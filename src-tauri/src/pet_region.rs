@@ -23,6 +23,27 @@ unsafe extern "system" fn pet_frame_proc(
         tauri::async_runtime::spawn_blocking(move || { if let Err(error) = crate::show_pet_window(&app) { eprintln!("唤出已有宠窗失败：{error}"); } });
         return LRESULT(0);
     }
+    if reference != 0 && message == windows::Win32::UI::WindowsAndMessaging::WM_MOVING && lparam.0!=0 {
+        let app=unsafe { &*(reference as *const tauri::AppHandle) };
+        if let Some(cursor)=crate::pet_desktop::toss::cursor() {
+            if let Some(point)=app.state::<crate::pet_desktop::Desktop>().drag_position(cursor) {
+                let rect=unsafe { &mut *(lparam.0 as *mut windows::Win32::Foundation::RECT) };
+                let width=rect.right-rect.left;let height=rect.bottom-rect.top;
+                rect.left=point.0;rect.top=point.1;rect.right=point.0+width;rect.bottom=point.1+height;
+                return LRESULT(1);
+            }
+        }
+    }
+    if reference != 0 && message == windows::Win32::UI::WindowsAndMessaging::WM_WINDOWPOSCHANGING && lparam.0 != 0 {
+        // 系统/窗口框架可能在WM_MOVING之后再次夹紧坐标；保留默认尺寸处理后纠正最终拖动位置。
+        let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
+        let app = unsafe { &*(reference as *const tauri::AppHandle) };
+        let point = crate::pet_desktop::toss::cursor()
+            .and_then(|cursor| app.state::<crate::pet_desktop::Desktop>().drag_position(cursor));
+        let position = unsafe { &mut *(lparam.0 as *mut windows::Win32::UI::WindowsAndMessaging::WINDOWPOS) };
+        apply_drag_position(position, point);
+        return result;
+    }
     if reference != 0 && message == WM_EXITSIZEMOVE {
         let app = unsafe { &*(reference as *const tauri::AppHandle) }.clone();
         if let Some(window) = app.get_webview_window("main") {
@@ -44,6 +65,13 @@ unsafe extern "system" fn pet_frame_proc(
             DefSubclassProc(hwnd, message, wparam, lparam)
         },
     }
+}
+
+#[cfg(windows)]
+fn apply_drag_position(position: &mut windows::Win32::UI::WindowsAndMessaging::WINDOWPOS, point: Option<(i32, i32)>) {
+    use windows::Win32::UI::WindowsAndMessaging::SWP_NOMOVE;
+    if position.flags.contains(SWP_NOMOVE) { return; }
+    if let Some((x, y)) = point { position.x = x; position.y = y; }
 }
 
 #[cfg(windows)]
@@ -251,6 +279,23 @@ pub fn apply(_: &tauri::WebviewWindow, _: Option<&[[i32; 4]]>) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn final_drag_position_allows_top_overflow_without_changing_size_or_non_drag_moves() {
+        use windows::Win32::UI::WindowsAndMessaging::{WINDOWPOS, SWP_NOMOVE, SWP_NOZORDER};
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let mut position=WINDOWPOS{x:100,y:0,cx:320,cy:500,flags:SWP_NOZORDER,..Default::default()};
+            let target=Some(((-1920.0*scale) as i32,(-240.0*scale) as i32));
+            apply_drag_position(&mut position,target);
+            assert_eq!((position.x,position.y),target.unwrap());
+            assert_eq!((position.cx,position.cy,position.flags),(320,500,SWP_NOZORDER));
+            apply_drag_position(&mut position,None);
+            assert_eq!((position.x,position.y),target.unwrap());
+            position.flags|=SWP_NOMOVE;
+            apply_drag_position(&mut position,Some((10,20)));
+            assert_eq!((position.x,position.y),target.unwrap());
+        }
+    }
     #[cfg(windows)]
     #[test]
     fn frameless_style_removes_only_native_frame_bits() {

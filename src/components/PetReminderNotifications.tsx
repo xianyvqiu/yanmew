@@ -21,6 +21,14 @@ export default function PetReminderNotifications({ hidden, ready, unobscured, st
   const [documentVisible, setDocumentVisible] = useState(document.visibilityState !== "hidden");
   const visible = ready && !hidden && unobscured && documentVisible;
   const key = noticeKey(notice);
+  const dismissRef=useRef(notifications.dismiss);dismissRef.current=notifications.dismiss;
+  useEffect(()=>{
+    if(!visible||!key||notice?.kind!=="due")return;
+    let stopped=false;let timer:number;
+    const dismiss=async()=>{const closed=await dismissRef.current(key);if(!closed&&!stopped)timer=window.setTimeout(()=>void dismiss(),1000);};
+    timer=window.setTimeout(()=>void dismiss(),60_000);
+    return()=>{stopped=true;window.clearTimeout(timer);};
+  },[visible,key,notice?.kind]);
   useEffect(() => {
     const update = () => setDocumentVisible(document.visibilityState !== "hidden");
     document.addEventListener("visibilitychange", update);
@@ -62,7 +70,7 @@ export default function PetReminderNotifications({ hidden, ready, unobscured, st
     {/* 提醒优先；提示组件被卸载后丢弃内容，不在提醒收起后重放。 */}
     {!notice && !error && stateBubble}
     {notice?.kind === "due" && <ReminderBubble occurrence={notice.item} context={context} busy={busy || openingPage} error={error}
-      onComplete={() => { void notifications.complete(key); }} onDismiss={() => { void notifications.dismiss(key); }} onOpenReminders={() => { void open(); }} />}
+      onDismiss={() => { void notifications.dismiss(key); }} onOpenReminders={() => { void open(); }} />}
     {notice?.kind === "missed" && <MissedReminderSummaryDialog occurrences={notice.items} busy={busy || openingPage} error={error}
       onDismiss={() => { void notifications.dismiss(key); }} onOpenReminders={() => { void open(); }} />}
     {error && <button className="ym-button pet-reminder-retry" data-pet-interactive disabled={busy} onClick={retry} title={error}>重试提醒{!notice && `：${error}`}</button>}

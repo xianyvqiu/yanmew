@@ -36,11 +36,12 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $portable
     Copy-Item -LiteralPath (Join-Path $projectRoot 'resources/portable-README.md') -Destination (Join-Path $portable '使用说明.md')
     & (Join-Path $PSScriptRoot 'copy-embedding-resources.ps1') -Destination $portable
+    & (Join-Path $PSScriptRoot 'copy-background-resources.ps1') -Destination $portable
     & (Join-Path $PSScriptRoot 'copy-plugin-resources.ps1') -Destination $portable
     # 缺图时拒绝分发；四个预置人设及全部基础状态均须随包提供。
     $personaResources = Join-Path $projectRoot 'resources/personas'
     foreach ($persona in @('gpt','claude','gemini','deepseek')) {
-        foreach ($pose in @('base','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','emotion_happy','emotion_angry','emotion_sad','emotion_shy','emotion_afraid','emotion_speechless','lifted')) {
+        foreach ($pose in @('base','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','emotion_happy','emotion_angry','emotion_sad','emotion_shy','emotion_afraid','emotion_speechless','emotion_surprised','lifted','error','toss_up','toss_down','landing','wait_pet')) {
             if (-not (Test-Path -LiteralPath (Join-Path $personaResources "$persona/$pose.png") -PathType Leaf)) {
                 throw "预置人设图片缺失：$persona/$pose.png"
             }

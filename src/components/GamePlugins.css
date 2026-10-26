@@ -11,3 +11,20 @@
 .ym-game-check { display: flex; gap: 8px; align-items: center; }
 .ym-game-check input { width: auto; }
 .ym-game-plugin-id { overflow-wrap: anywhere; color: var(--ym-text-secondary); font-size: var(--ym-font-caption); }
+
+.ym-game-maintenance { margin-block:20px; padding-block:14px; border-block:1px solid var(--ym-border); }
+.ym-game-maintenance>summary { cursor:pointer; font-size:13px; color:var(--ym-text-secondary); }
+.ym-game-tools>.ym-button:first-child[aria-label^="打开 "] { background:var(--ym-accent-soft); color:var(--ym-accent-strong); border-color:var(--ym-focus); }
+
+.ym-game-save-heading { display:flex; align-items:center; gap:12px; }
+.ym-game-save-heading>svg { flex:none; width:32px; height:32px; color:var(--ym-accent-strong); }
+.ym-game-save-heading>div { min-width:0; }
+.ym-game-save-heading strong { font-size:15px; }
+.ym-window-shell .ym-game-save-heading p { margin:3px 0 0; font-size:13px; color:var(--ym-text-secondary); }
+.ym-game-save-highlights { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr)); gap:16px; margin:20px 0 0; padding-top:16px; border-top:1px solid var(--ym-border); }
+.ym-game-save-highlights>div { min-width:0; }
+.ym-game-save-highlights dt { font-size:12px; color:var(--ym-text-secondary); }
+.ym-game-save-highlights dd { margin:5px 0 0; font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.ym-game-save-empty { color:var(--ym-text-secondary); margin:0; }
+.ym-game-save-settings { margin-top:20px; padding-top:14px; border-top:1px solid var(--ym-border); }
+.ym-game-save-settings>summary { cursor:pointer; font-size:13px; color:var(--ym-text-secondary); }

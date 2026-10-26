@@ -1,3 +1,4 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, webSearchApi } from "../../api";
 import type { AppError, WebSearchKind, WebSearchProvider, WebSearchProviderInput, WebSearchSettings } from "../../types";
@@ -5,12 +6,13 @@ import type { AppError, WebSearchKind, WebSearchProvider, WebSearchProviderInput
 const endpoints = { tavily: "https://api.tavily.com", bocha: "https://api.bocha.cn", custom: "" };
 const serviceNames = { tavily: "Tavily", bocha: "博查", custom: "自定义（Tavily 兼容）" };
 function SearchForm({ provider, busy, error, save, cancel }: { provider: WebSearchProvider | null; busy: boolean; error: AppError | null; save: (input: WebSearchProviderInput) => Promise<void>; cancel: () => void }) {
+  const form=useRevealForm();
   const [name, setName] = useState(provider?.name ?? "");
   const [kind, setKind] = useState<WebSearchKind>(provider?.kind ?? "tavily");
   const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? endpoints.tavily);
   const [key, setKey] = useState("");
   const [clear, setClear] = useState(false);
-  return <form aria-label="搜索提供商表单" className="ym-provider-form" onSubmit={event => {
+  return <form ref={form} aria-label="搜索提供商表单" className="ym-provider-form" onSubmit={event => {
     event.preventDefault();
     void save({ name, kind, baseUrl, apiKey: clear ? { action: "clear" } : key ? { action: "set", value: key } : { action: "keep" } });
   }}>
@@ -73,6 +75,7 @@ export default function WebSearchProvidersPanel() {
     {!data && !error && <p role="status">正在读取搜索配置…</p>}
     {error && editing === undefined && <p role="alert" className="ym-page-error">{error.message}<button className="ym-button" disabled={busy} onClick={() => { setError(null); void refresh().catch(showError); }}>重新加载</button></p>}
     {notice && <p role="status">{notice}</p>}
+    {editing !== undefined && <SearchForm key={editing?.id ?? "new"} provider={editing ?? null} busy={busy} error={error} save={save} cancel={() => { setEditing(undefined); setError(null); }} />}
     {data && <>
       <label><input type="checkbox" disabled={disabled || editing !== undefined} checked={data.enabled} onChange={e => { void run(() => webSearchApi.enable(e.target.checked), e.target.checked ? "联网搜索已开启" : "联网搜索已关闭"); }} />允许正常聊天联网搜索</label>
       <label className="ym-field">当前搜索服务<select disabled={disabled || editing !== undefined || !data.providers.length} value={data.providers.find(p => p.isActive)?.id ?? ""} onChange={e => { void run(() => webSearchApi.select(e.target.value), "搜索服务已切换"); }}>
@@ -89,7 +92,7 @@ export default function WebSearchProvidersPanel() {
         </div>
       </li>)}</ul>
     </>}
-    {editing !== undefined && <SearchForm key={editing?.id ?? "new"} provider={editing ?? null} busy={busy} error={error} save={save} cancel={() => { setEditing(undefined); setError(null); }} />}
+
     <dialog ref={dialog} className="ym-provider-dialog" aria-labelledby="search-delete-title" onCancel={e => { if (busy) e.preventDefault(); else setDeleting(null); }}>
       <h2 id="search-delete-title">{deleting?.isActive ? "此搜索服务正在使用" : "删除搜索配置"}</h2>
       <p>{deleting?.isActive ? "当前搜索服务不能删除，请先切换当前项。" : `删除“${deleting?.name ?? ""}”的配置和 Key？已保存的聊天保留。`}</p>

@@ -149,7 +149,7 @@ fn once_reschedule_keeps_history_and_old_completion_does_not_finish_new_plan() {
     let later = time("2026-09-28T04:00:00Z");
     assert_eq!(dispatch(&mut db, later, &Utc, false).unwrap(), 1);
     update_occurrence_status(&mut db, 1, ReminderStatus::Expired, later).unwrap();
-    assert_eq!(get_rule(&db, 1).unwrap().status, ReminderStatus::Pending);
+    assert_eq!(get_rule(&db, 1).unwrap().status, ReminderStatus::Done);
     assert!(get_rule(&db, 1).unwrap().fire_at.is_none());
     delete_rule(&db, 1).unwrap();
     assert!(list_occurrences(&db, Some(1), None, None, 50)

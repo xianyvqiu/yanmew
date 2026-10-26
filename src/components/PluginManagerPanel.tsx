@@ -1,3 +1,5 @@
+import MotionDetails from "./MotionDetails";
+import GameSaveSummary from "./GameSaveSummary";
 import CardBrowserControls from "./CardBrowserControls";
 import {useCardBrowser} from "../hooks/useCardBrowser";
 import { useEffect, useRef, useState } from "react";
@@ -19,7 +21,7 @@ function SettingField({ setting, value, disabled, onSave }: {
   const savedValue = JSON.stringify(value);
   useEffect(() => { setDraft(JSON.parse(savedValue) as PluginJson); setInvalid(false); }, [savedValue]);
   return <div className="ym-inline-form"><label className="ym-field">{setting.title}
-    {setting.type === "boolean" ? <select value={String(draft)} disabled={disabled} onChange={event => setDraft(event.target.value === "true")}><option value="true">开启</option><option value="false">关闭</option></select>
+    {setting.type === "boolean" ? <input type="checkbox" role="switch" checked={draft===true} disabled={disabled} onChange={event=>setDraft(event.target.checked)}/>
       : setting.type === "enum" ? <select value={JSON.stringify(draft)} disabled={disabled} onChange={event => setDraft(JSON.parse(event.target.value) as PluginJson)}>{setting.options.map((option, index) => <option key={index} value={JSON.stringify(option.value)}>{option.label}</option>)}</select>
         : <input type={setting.type === "string" ? "text" : "number"} value={String(draft ?? "")} disabled={disabled} min={setting.minimum ?? undefined} max={setting.maximum ?? undefined} step={setting.type === "integer" ? 1 : "any"} onChange={event => {
           const input = event.target.value;
@@ -51,6 +53,7 @@ export default function PluginManagerPanel() {
   const [notice, setNotice] = useState("");
   const [runs, setRuns] = useState<GameRun[]>([]);
   const [ledger, setLedger] = useState<GamePluginLedger[]>([]);
+  const [runsPage,setRunsPage]=useState(1), [ledgerPage,setLedgerPage]=useState(1);
   const [runsMore, setRunsMore] = useState(false);
   const [ledgerMore, setLedgerMore] = useState(false);
   const lock = useRef(false);
@@ -96,7 +99,7 @@ export default function PluginManagerPanel() {
   useEffect(() => {
     if (previousSelected.current !== selected) {
       generation.current++;
-      historyDepth.current = { runs: 1, ledger: 1 };
+      historyDepth.current = { runs: 1, ledger: 1 }; setRunsPage(1);setLedgerPage(1);
       previousSelected.current = selected; choicesDirty.current = false;
       if (resetPluginId && resetPluginId !== selected) setResetPluginId("");
       setDetail(null); setError(""); setRuns([]); setLedger([]); setConfirmation(null);
@@ -171,21 +174,25 @@ export default function PluginManagerPanel() {
     await gamePluginsApi.open(value.plugin.pluginId);
     setResetPluginId("");
   }, "小游戏已用全新进度打开。");
-  const pageHistory = (kind: "runs" | "ledger") => run(async () => {
+  const pageHistory = async (kind: "runs" | "ledger") => {
+    let advanced=false;
+    await run(async () => {
     if (!detail) return;
     const token = ++generation.current;
     if (kind === "runs") {
       const rows = await gamePluginsApi.history(detail.plugin.pluginId, runs[runs.length - 1]?.id ?? null);
       if (!mounted.current || token !== generation.current) return;
-      historyDepth.current.runs++;
+      historyDepth.current.runs++; advanced=rows.length>0;
       setRuns(previous => [...previous, ...rows.filter(row => !previous.some(old => old.id === row.id))]); setRunsMore(rows.length === 30);
     } else {
       const rows = await gamePluginsApi.ledger(detail.plugin.pluginId, ledger[ledger.length - 1]?.id ?? null);
       if (!mounted.current || token !== generation.current) return;
-      historyDepth.current.ledger++;
+      historyDepth.current.ledger++; advanced=rows.length>0;
       setLedger(previous => [...previous, ...rows.filter(row => !previous.some(old => old.id === row.id))]); setLedgerMore(rows.length === 30);
     }
-  });
+ });
+    return advanced;
+  };
   const sourceLink = (url: string | null, title: string) => url && <button className="ym-button" disabled={busy} onClick={() => void run(() => webSearchApi.open(url))}>{title}</button>;
   return <>
     <section className="ym-page-card"><div className="ym-page-heading"><h2>小游戏插件</h2><span className="ym-page-note">全局喵币 · {wallet?.coins ?? "读取中…"}</span><button className="ym-button" disabled={busy || !!preview} onClick={() => fileInput.current?.click()}>{busy ? "正在处理…" : "安装 / 更新本地小游戏插件"}</button><input ref={fileInput} hidden type="file" accept=".yanmew-game,.zip" disabled={busy || !!preview} aria-label="安装本地小游戏插件包" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void previewFile(file); }} /></div>
@@ -195,8 +202,8 @@ export default function PluginManagerPanel() {
       {!selected&&<><CardBrowserControls browser={browser} label="小游戏插件" timeLabel="安装时间" disabled={busy}/><div className="ym-object-grid">{browser.items.map(plugin=><article className="ym-object-card" key={plugin.pluginId} onClick={event=>{if(!busy&&!(event.target as HTMLElement).closest("button"))setSelected(plugin.pluginId);}}>
         <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={busy} onClick={()=>setSelected(plugin.pluginId)}>{plugin.name}</button></h3><span className="ym-page-note">{plugin.isBundled?"自带":"已安装"}</span></div>
         <p className="ym-card-summary">{plugin.description}</p><p className="ym-page-note">{plugin.author} · v{plugin.installedVersion}</p><p className="ym-page-note">{plugin.packageStatus==="missing_package"?"程序包缺失 · 使用数据保留":plugin.isEnabled?"已启用":"已停用"}</p>
-        <div className="ym-inline-form"><button className="ym-button" disabled={busy||!plugin.isEnabled||plugin.packageStatus!=="available"} onClick={()=>void open(plugin)}>打开 {plugin.name}</button><button className="ym-button" disabled={busy||plugin.isBundled} title={plugin.isBundled?"随应用提供，不能卸载":"卸载插件程序"} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"uninstall"};setSelected(plugin.pluginId);}}>卸载</button>
-          <button className="ym-button" disabled={busy||plugin.packageStatus!=="available"} onClick={()=>void run(async()=>{await gamePluginsApi.enable(plugin.pluginId,plugin.installedVersion,!plugin.isEnabled);await refresh();},"插件状态已保存。")}>{plugin.isEnabled?"停用":"启用"}</button>
+        <div className="ym-inline-form"><button className="ym-button" disabled={busy||!plugin.isEnabled||plugin.packageStatus!=="available"} onClick={()=>void open(plugin)} aria-label={`打开 ${plugin.name}`}>打开</button><button className="ym-button" disabled={busy||plugin.isBundled} title={plugin.isBundled?"随应用提供，不能卸载":"卸载插件程序"} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"uninstall"};setSelected(plugin.pluginId);}}>卸载</button>
+          <button className="ym-button" role="switch" aria-label={`启用 ${plugin.name}`} aria-checked={plugin.isEnabled} disabled={busy||plugin.packageStatus!=="available"} onClick={()=>void run(async()=>{await gamePluginsApi.enable(plugin.pluginId,plugin.installedVersion,!plugin.isEnabled);await refresh();},"插件状态已保存。")}>启用小游戏</button>
           <button className="ym-button" disabled={busy} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"clear"};setSelected(plugin.pluginId);}}>清除数据并重载</button></div>
         {plugin.isBundled&&<p className="ym-page-note">自带小游戏不可卸载，可停用或恢复初始数据。</p>}
       </article>)}</div>{!loading&&!browser.total&&<p className="ym-page-empty">{plugins.length?"没有匹配的小游戏。":"暂无小游戏，可使用上方按钮安装本地小游戏插件包。"}</p>}</>}
@@ -205,12 +212,14 @@ export default function PluginManagerPanel() {
     {selected && !detail && <p className="ym-page-note">正在读取插件详情…</p>}
     {detail && <>
       <section className="ym-page-card"><div className="ym-page-heading"><h2>{detail.plugin.name}</h2><span>{detail.plugin.isBundled ? "随应用提供" : "本地安装"}</span></div>
-        <p>{detail.plugin.description}</p><p className="ym-game-plugin-id">{detail.plugin.pluginId} · {detail.plugin.author} · v{detail.plugin.installedVersion} · 存档版本 {detail.usage.storage_version}</p>
-        <div className="ym-game-tools"><button className="ym-button" disabled={busy||!detail.plugin.isEnabled||detail.plugin.packageStatus!=="available"||resetPluginId===detail.plugin.pluginId} onClick={()=>void open(detail.plugin)}>打开 {detail.plugin.name}</button>{sourceLink(detail.plugin.repository, "GitHub 源码")}{sourceLink(detail.plugin.releasePage, "下载页面")}{sourceLink(detail.plugin.homepage, "作者主页")}
-          <button className="ym-button" disabled={busy || detail.plugin.packageStatus !== "available"} onClick={() => void actOnDetail(value => gamePluginsApi.enable(value.plugin.pluginId, value.plugin.installedVersion, !value.plugin.isEnabled), "插件状态已保存。")}>{detail.plugin.isEnabled ? "停用" : "启用"}</button>
-          <button className="ym-button" disabled={busy} onClick={() => { setConfirmation("clear"); setError(""); }}>清除数据并重载</button>
-          <button className="ym-button" disabled={busy || detail.plugin.isBundled} onClick={() => { setClearOnUninstall(false); setConfirmation("uninstall"); setError(""); }}>卸载程序</button>
+        <p>{detail.plugin.description}</p><p className="ym-game-plugin-id">{detail.plugin.author} · v{detail.plugin.installedVersion}</p>
+        <div className="ym-game-tools"><button className="ym-button" disabled={busy||!detail.plugin.isEnabled||detail.plugin.packageStatus!=="available"||resetPluginId===detail.plugin.pluginId} onClick={()=>void open(detail.plugin)} aria-label={`打开 ${detail.plugin.name}`}>打开</button>{sourceLink(detail.plugin.repository, "GitHub 源码")}{sourceLink(detail.plugin.releasePage, "下载页面")}{sourceLink(detail.plugin.homepage, "作者主页")}
+          <button className="ym-button" role="switch" aria-label={`启用 ${detail.plugin.name}`} aria-checked={detail.plugin.isEnabled} disabled={busy || detail.plugin.packageStatus !== "available"} onClick={() => void actOnDetail(value => gamePluginsApi.enable(value.plugin.pluginId, value.plugin.installedVersion, !value.plugin.isEnabled), "插件状态已保存。")}>启用小游戏</button>
         </div>
+        <MotionDetails className="ym-game-maintenance"><summary>维护与版本信息</summary><p className="ym-game-plugin-id">插件 ID：{detail.plugin.pluginId} · 存档版本 {detail.usage.storage_version}</p><div className="ym-game-tools">
+          <button className="ym-button" data-variant="danger" disabled={busy} onClick={() => { setConfirmation("clear"); setError(""); }}>清除数据并重载</button>
+          <button className="ym-button" data-variant="danger" disabled={busy || detail.plugin.isBundled} onClick={() => { setClearOnUninstall(false); setConfirmation("uninstall"); setError(""); }}>卸载程序</button>
+        </div></MotionDetails>
         {detail.plugin.packageStatus === "missing_package" && <p className="ym-page-note">数据仍在，但程序包缺失。可从来源页找到相同插件 ID 的包并重新安装。</p>}
         {!detail.plugin.repository && !detail.plugin.releasePage && !detail.plugin.homepage && <p className="ym-page-note">作者未提供来源链接，可用插件 ID 查找程序包。</p>}
         <h3>权限</h3><GamePermissions choices={choices} disabled={busy} onChange={values => { choicesDirty.current = true; setChoices(values); }} />
@@ -218,18 +227,19 @@ export default function PluginManagerPanel() {
         {resetPluginId===detail.plugin.pluginId&&<><p className="ym-page-note">已恢复初始数据。选择钱包和联网权限后，重新打开这个小游戏。</p><button className="ym-button" disabled={busy||!detail.plugin.isEnabled||detail.plugin.packageStatus!=="available"||choices.some(item=>item.decision==="pending")||detail.plugin.pluginId==="com.yanmew.game.my-home"&&!choices.some(item=>item.permission==="wallet.modify"&&item.decision==="allowed")} onClick={()=>void reopenAfterReset()}>重新授权并打开</button></>}
         <p className="ym-page-note">拒绝钱包权限时可纯玩；“我的家”需要钱包权限才能玩。插件不能访问颜喵的聊天、记忆或提供商密钥。</p>
       </section>
-      <section className="ym-page-card"><h2>游戏存档</h2>
-        {detail.manifest?.settings_schema.length ? detail.manifest.settings_schema.map(setting => <SettingField key={`${detail.plugin.pluginId}:${detail.plugin.installedVersion}:${setting.key}`} setting={setting} value={Object.prototype.hasOwnProperty.call(detail.usage.settings, setting.key) ? detail.usage.settings[setting.key] : setting.default} disabled={busy} onSave={value => actOnDetail(item => gamePluginsApi.setting(item.plugin.pluginId, item.plugin.installedVersion, setting.key, value), "插件设置已保存。重新打开游戏使用新设置。")} />) : null}
-        <p className="ym-page-note">已保存 {Object.keys(detail.usage.data).length} 个存档键；这些是插件自己的使用数据。</p>
-        <details><summary>查看存档内容</summary><pre className="ym-game-data">{JSON.stringify(detail.usage.data, null, 2)}</pre></details>
+      <section className="ym-page-card ym-game-save-section"><h2>游戏存档</h2>
+        <GameSaveSummary data={detail.usage.data} pluginId={detail.plugin.pluginId}/>
+        {!!detail.manifest?.settings_schema.length&&<MotionDetails className="ym-game-save-settings"><summary>游戏设置</summary>{detail.manifest.settings_schema.map(setting => <SettingField key={`${detail.plugin.pluginId}:${detail.plugin.installedVersion}:${setting.key}`} setting={setting} value={Object.prototype.hasOwnProperty.call(detail.usage.settings, setting.key) ? detail.usage.settings[setting.key] : setting.default} disabled={busy} onSave={value => actOnDetail(item => gamePluginsApi.setting(item.plugin.pluginId, item.plugin.installedVersion, setting.key, value), "插件设置已保存。重新打开游戏使用新设置。")} />)}</MotionDetails>}
       </section>
-      <section className="ym-page-card"><h2>运行历史</h2><p className="ym-page-note">一条记录是一次打开到关闭，不代表游戏的一局。游戏战绩由插件自己保存。</p>
-        <ol className="ym-game-history">{runs.map(item => <li key={item.id}>{({running:"进行中",completed:"已完成",cancelled:"已关闭",error:"异常结束"})[item.status]} · 喵币变化 {item.coinDelta}<small>{item.startedAt} · 运行 ID {item.id} · v{item.pluginVersion}{item.outcome && ` · ${item.outcome}`}</small></li>)}</ol>
-        {!runs.length && <p className="ym-page-note">暂无运行记录。</p>}{runsMore && <button className="ym-button" disabled={busy} onClick={() => void pageHistory("runs")}>加载更早的运行</button>}
-      </section>
-      <section className="ym-page-card"><h2>喵币账单</h2><ol className="ym-game-history">{ledger.map(item => <li key={item.id}>{BigInt(item.delta) > 0n ? "+" : ""}{item.delta} · {item.reason}<small>{item.createdAt} · 运行 ID {item.gameRunId} · 请求 ID {item.requestId}</small></li>)}</ol>
-        {!ledger.length && <p className="ym-page-note">暂无喵币账单。</p>}{ledgerMore && <button className="ym-button" disabled={busy} onClick={() => void pageHistory("ledger")}>加载更早的账单</button>}
-      </section>
+      <MotionDetails className="ym-page-card ym-feature-module"><summary>运行历史</summary><p className="ym-page-note">一条记录是一次打开到关闭，不代表游戏的一局。游戏战绩由插件自己保存。</p>
+        <ol className="ym-game-history">{runs.slice((runsPage-1)*5,runsPage*5).map(item => <li key={item.id}>{({running:"进行中",completed:"已完成",cancelled:"已关闭",error:"异常结束"})[item.status]} · 喵币变化 {item.coinDelta}<small>{new Date(item.startedAt).toLocaleString("zh-CN")} · v{item.pluginVersion}{item.outcome && ` · ${item.outcome}`}</small></li>)}</ol>
+        {!runs.length && <p className="ym-page-note">暂无运行记录。</p>}
+        <nav className="ym-browser-pages" aria-label="运行历史分页"><button className="ym-button" disabled={busy||runsPage<=1} onClick={()=>setRunsPage(v=>v-1)}>上一页</button><span>第{runsPage}页</span><button className="ym-button" disabled={busy||(!runsMore&&runsPage*5>=runs.length)} onClick={()=>{if(runsPage*5>=runs.length)void pageHistory("runs").then(ok=>{if(ok)setRunsPage(v=>v+1);});else setRunsPage(v=>v+1);}}>下一页</button></nav>
+      </MotionDetails>
+      <MotionDetails className="ym-page-card ym-feature-module"><summary>喵币账单</summary><ol className="ym-game-history">{ledger.slice((ledgerPage-1)*5,ledgerPage*5).map(item => <li key={item.id}>{BigInt(item.delta) > 0n ? "+" : ""}{item.delta} · {item.reason}<small>{new Date(item.createdAt).toLocaleString("zh-CN")}</small></li>)}</ol>
+        {!ledger.length && <p className="ym-page-note">暂无喵币账单。</p>}
+        <nav className="ym-browser-pages" aria-label="游戏喵币账单分页"><button className="ym-button" disabled={busy||ledgerPage<=1} onClick={()=>setLedgerPage(v=>v-1)}>上一页</button><span>第{ledgerPage}页</span><button className="ym-button" disabled={busy||(!ledgerMore&&ledgerPage*5>=ledger.length)} onClick={()=>{if(ledgerPage*5>=ledger.length)void pageHistory("ledger").then(ok=>{if(ok)setLedgerPage(v=>v+1);});else setLedgerPage(v=>v+1);}}>下一页</button></nav>
+      </MotionDetails>
     </>}
     <dialog ref={launchDialog} className="ym-session-dialog" aria-labelledby="game-permission-title" onCancel={event => { if (busy) event.preventDefault(); else setLaunchDetail(null); }}>
       {launchDetail && <><h2 id="game-permission-title">{launchDetail.plugin.name} · 权限确认</h2><div className="ym-session-dialog-body">
@@ -251,7 +261,7 @@ export default function PluginManagerPanel() {
     <dialog ref={confirmDialog} className="ym-session-dialog" aria-labelledby="game-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       {confirmation && detail && <><h2 id="game-delete-title">{confirmation === "clear" ? "清除数据并重载" : "卸载插件程序"} · {detail.plugin.name}</h2><div className="ym-session-dialog-body">
         <p>{confirmation === "clear" ? "将关闭这个小游戏，清空它的进度和自有设置，钱包与联网权限重置为待确认。安装包、全局喵币、已有账单和运行历史保留。清除后重新选择权限，再以初始进度打开。" : "程序卸载后不能打开游戏。默认保留设置、存档、来源和历史账单，方便以后重装。"}</p>
-        {confirmation === "uninstall" && <label className="ym-game-check"><input type="checkbox" checked={clearOnUninstall} disabled={busy} onChange={event => setClearOnUninstall(event.target.checked)} />同时清除插件设置和私有存档（钱包和账单保留）</label>}
+        {confirmation === "uninstall" && <label className="ym-game-check"><input className="ym-selection-checkbox" type="checkbox" checked={clearOnUninstall} disabled={busy} onChange={event => setClearOnUninstall(event.target.checked)} />同时清除插件设置和私有存档（钱包和账单保留）</label>}
         {error && <p role="alert" className="ym-page-error">{error}</p>}
       </div><div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy} onClick={() => setConfirmation(null)}>取消</button><button className="ym-button" disabled={busy} onClick={() => void confirm()}>确认{confirmation === "clear" ? "清除" : "卸载"}</button></div></>}
     </dialog>

@@ -1,10 +1,20 @@
-//! 随包图片人设的一次性安装；不替换默认人设或用户已有内容。
+//! 随包图片人设安装及已知内置资源更新；保留用户自定义内容。
+mod toss_refresh;
 use crate::{error::{AppError, AppResult}, platform::contracts::AppPaths};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use std::{fs, io::Read, path::Path};
 
 /// 本机初始化标记，不是用户配置；不导出，恢复备份时保留。
 pub(crate) const SEED_KEY: &str = "preset_personas_seeded_v1";
+pub(crate) const WAIT_PET_SEED_KEY:&str="preset_personas_wait_pet_seeded_v1";
+const WAIT_PET_ARTWORKS:&[(&str,&str,&str)]=&[("wait_pet","等摸摸","追到鼠标后期待摸摸五秒，不用于普通聊天")];
+pub(crate) const TOSS_PROPORTIONS_SEED_KEY:&str="preset_personas_toss_proportions_v2";
+pub(crate) const SURPRISE_SEED_KEY:&str="preset_personas_surprise_seeded_v1";
+const SURPRISE_ARTWORKS:&[(&str,&str,&str)]=&[("emotion_surprised","惊讶","被轻轻点击后出乎意料的惊讶反应，区别于开心和害羞；聊天出现惊讶语境时也可使用")];
+pub(crate) const TOSS_SEED_KEY:&str="preset_personas_toss_seeded_v1";
+const TOSS_ARTWORKS:&[(&str,&str,&str)]=&[("toss_up","往上抛","快速上甩松手后的上升阶段，不用于普通聊天"),("toss_down","往下掉","抛起后受重力下落，等待用户接住，不用于普通聊天"),("landing","落地","未被接住落地后缓神三秒，再切换底部停靠")];
+pub(crate) const ERROR_SEED_KEY:&str="preset_personas_error_seeded_v1";
+const ERROR_ARTWORKS:&[(&str,&str,&str)]=&[("error","报错超载","实际出现错误提示时使用，超载或蔫掉的反应；问题解除后恢复原动作，不用于普通聊天")];
 pub(crate) const LIFT_SEED_KEY:&str="preset_personas_lift_seeded_v1";
 pub(crate) const EMOTION_SEED_KEY:&str="preset_personas_emotions_seeded_v1";
 pub(crate) const WALK_SEED_KEY: &str = "preset_personas_walking_seeded_v1";
@@ -70,7 +80,7 @@ fn installed(c: &Connection) -> AppResult<bool> {
 }
 
 pub(crate) fn install(c: &mut Connection, paths: &AppPaths) -> AppResult<bool> {
-    if installed(c)? { initialize_existing_food_preferences(c,paths)?; install_docking(c,paths)?; install_walking(c,paths)?;install_emotions(c,paths)?;install_lifted(c,paths)?; return Ok(false); }
+    if installed(c)? { initialize_existing_food_preferences(c,paths)?; install_docking(c,paths)?; install_walking(c,paths)?;install_emotions(c,paths)?;install_lifted(c,paths)?;install_errors(c,paths)?;install_toss(c,paths)?;install_wait_pet(c,paths)?;toss_refresh::install(c,paths)?;install_surprise(c,paths)?; return Ok(false); }
     install_from(c, paths, &paths.persona_resources()?)
 }
 
@@ -98,6 +108,22 @@ fn install_docking(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
     if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[DOCK_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
     let Ok(resources)=paths.persona_resources()else{return Ok(())};
     install_docking_from(c,paths,&resources)
+}
+fn install_surprise(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
+ if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[SURPRISE_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
+ let Ok(resources)=paths.persona_resources()else{return Ok(())};install_categories_from(c,paths,&resources,SURPRISE_SEED_KEY,SURPRISE_ARTWORKS)
+}
+fn install_wait_pet(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
+ if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[WAIT_PET_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
+ let Ok(resources)=paths.persona_resources()else{return Ok(())};install_categories_from(c,paths,&resources,WAIT_PET_SEED_KEY,WAIT_PET_ARTWORKS)
+}
+fn install_toss(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
+ if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[TOSS_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
+ let Ok(resources)=paths.persona_resources()else{return Ok(())};install_categories_from(c,paths,&resources,TOSS_SEED_KEY,TOSS_ARTWORKS)
+}
+fn install_errors(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
+ if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[ERROR_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
+ let Ok(resources)=paths.persona_resources()else{return Ok(())};install_categories_from(c,paths,&resources,ERROR_SEED_KEY,ERROR_ARTWORKS)
 }
 fn install_lifted(c:&mut Connection,paths:&AppPaths)->AppResult<()> {
  if c.query_row("SELECT EXISTS(SELECT 1 FROM settings WHERE key=?1)",[LIFT_SEED_KEY],|r|r.get::<_,bool>(0))?{return Ok(())}
@@ -157,7 +183,7 @@ fn install_from(c: &mut Connection, paths: &AppPaths, resources: &Path) -> AppRe
     let mut prepared = Vec::new();
     for preset in PRESETS {
         let mut images = Vec::new();
-        for &(category, name, description) in ARTWORKS.iter().chain(CHAT_EMOTIONS.iter()).chain(LIFT_ARTWORKS.iter()) {
+        for &(category, name, description) in ARTWORKS.iter().chain(CHAT_EMOTIONS.iter()).chain(LIFT_ARTWORKS.iter()).chain(ERROR_ARTWORKS.iter()).chain(TOSS_ARTWORKS.iter()).chain(WAIT_PET_ARTWORKS.iter()).chain(SURPRISE_ARTWORKS.iter()) {
             let read = || -> AppResult<Vec<u8>> {
                 let mut bytes = Vec::new();
                 fs::File::open(resources.join(preset.key).join(format!("{category}.png")))
@@ -197,6 +223,10 @@ fn install_from(c: &mut Connection, paths: &AppPaths, resources: &Path) -> AppRe
         tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [WALK_SEED_KEY])?;
         tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [EMOTION_SEED_KEY])?;
         tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [LIFT_SEED_KEY])?;
+        tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [ERROR_SEED_KEY])?;
+        tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [TOSS_SEED_KEY])?;
+        tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [WAIT_PET_SEED_KEY])?;
+        tx.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,'1')", [SURPRISE_SEED_KEY])?;
         tx.commit()?;
         Ok(true)
     })();

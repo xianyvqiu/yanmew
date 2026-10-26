@@ -1,5 +1,6 @@
 //! 天气是带时效的外部资料；失败不改变聊天、钱包或桌宠状态。
 mod parse;
+pub(crate) mod information;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -50,12 +51,14 @@ pub struct WeatherView {
     pub availability: Availability,
     pub data: Option<WeatherData>,
     pub error: Option<AppError>,
+    pub information: Option<information::Dashboard>,
 }
 /// 运行期派生缓存不属于用户历史；重新启动后重新定位，配置仍存于 SQLite。
 #[derive(Default)]
 pub struct Cache {
     data: Option<WeatherData>,
     error: Option<AppError>,
+    pub(crate) information: Option<information::Dashboard>,
 }
 impl Cache {
     pub fn view(&self, revision: u64, now: DateTime<Utc>) -> WeatherView {
@@ -70,6 +73,7 @@ impl Cache {
             availability,
             data: self.data.clone(),
             error: self.error.clone(),
+            information: self.information.as_ref().filter(|info|self.data.as_ref().is_none_or(|data|information::same_place(info,&data.position))).cloned(),
         }
     }
     fn finish(&mut self, result: AppResult<WeatherData>) {
@@ -139,6 +143,19 @@ impl Client {
         })
     }
     async fn json(
+        &self, request: reqwest::RequestBuilder, cancel: &Cancellation,
+    ) -> AppResult<serde_json::Value> {
+        let retry = request.try_clone();
+        let result = self.json_once(request, cancel).await;
+        if result.as_ref().is_err_and(|e| matches!(e.code, "WEATHER_NETWORK" | "WEATHER_TIMEOUT")) {
+            if let Some(request) = retry {
+                cancel.wait(Duration::from_secs(1), async { tokio::time::sleep(Duration::from_millis(300)).await; Ok(()) }).await?;
+                return self.json_once(request, cancel).await;
+            }
+        }
+        result
+    }
+    async fn json_once(
         &self,
         request: reqwest::RequestBuilder,
         cancel: &Cancellation,
@@ -249,7 +266,7 @@ impl Client {
     }
 }
 
-/// 天气页面进入或手动刷新时访问定位/网络；聊天只读缓存，不等待本函数。
+/// 启动、每小时后台更新或手动刷新访问定位/网络；页面与聊天只读缓存。
 pub async fn refresh(
     runtime: Runtime,
     revision: u64,
@@ -300,4 +317,58 @@ fn require_revision(store: &crate::runtime::Store, revision: u64) -> AppResult<(
         ));
     }
     Ok(())
+}
+
+const REFRESH_INTERVAL: Duration = Duration::from_secs(3600);
+
+/// 由唯一 jobs 循环驱动；定位和联网独立执行，不阻塞桌宠、提醒和记忆任务。
+#[derive(Default)]
+pub struct Worker {
+    last_started: Option<std::time::Instant>,
+    task: Option<tauri::async_runtime::JoinHandle<()>>,
+    retry_network: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+impl Worker {
+    fn interval(&self) -> Duration {
+        if self.retry_network.load(std::sync::atomic::Ordering::Relaxed) {Duration::from_secs(60)} else {REFRESH_INTERVAL}
+    }
+    pub fn tick(
+        &mut self,
+        runtime: &Runtime,
+        source: std::sync::Arc<dyn LocationSource>,
+        events: std::sync::Arc<dyn crate::events::PetEventSink>,
+    ) {
+        let now = std::time::Instant::now();
+        let cached_network_failure=runtime.read(|store,_|Ok(store.weather.error.as_ref().is_some_and(|e|matches!(e.code,"WEATHER_NETWORK"|"WEATHER_TIMEOUT"|"WEATHER_SERVICE_ERROR")))).unwrap_or(false);
+        let interval=if cached_network_failure {Duration::from_secs(60)}else{self.interval()};
+        if runtime.jobs_cancel.check().is_err()
+            || self
+                .task
+                .as_ref()
+                .is_some_and(|task| !task.inner().is_finished())
+            || self
+                .last_started
+                .is_some_and(|last| now.duration_since(last) < interval)
+        {
+            return;
+        }
+        self.last_started = Some(now);
+        let runtime = runtime.clone();
+        let retry_network = self.retry_network.clone();
+        self.task = Some(tauri::async_runtime::spawn(async move {
+            let prepare = runtime.clone();
+            let revision = tauri::async_runtime::spawn_blocking(move || {
+                prepare.read(|store, _| Ok(store.context_revision))
+            })
+            .await;
+            if let Ok(Ok(revision)) = revision {
+                let result = refresh(runtime.clone(), revision, source.as_ref()).await;
+                let network_error = result.as_ref().ok().and_then(|v|v.error.as_ref()).or_else(||result.as_ref().err());
+                retry_network.store(network_error.is_some_and(|e|matches!(e.code,"WEATHER_NETWORK"|"WEATHER_TIMEOUT"|"WEATHER_SERVICE_ERROR"|"STALE_CONTEXT"|"CANCELLED")), std::sync::atomic::Ordering::Relaxed);
+                if runtime.jobs_cancel.check().is_ok() {
+                    events.weather_changed();
+                }
+            }
+        }));
+    }
 }

@@ -94,6 +94,7 @@ pub const DEFAULTS: &[(&str, i64)] = &[
     ("hungry_minutes", 120),
     ("standby_minutes", 10),
     ("pet_chat_autocollapse_minutes", 3),
+    ("pet_chase_cooldown_minutes", 10),
     ("idle_event_minutes", 45),
     ("sleep_min_minutes", 60),
     ("sleep_max_minutes", 120),
@@ -106,7 +107,7 @@ pub const DEFAULTS: &[(&str, i64)] = &[
     ("recent_long_memory_count", 30),
     ("travel_journal_min_chars", 250),
     ("travel_journal_max_chars", 350),
-    ("tool_call_rounds", 3),
+    ("tool_call_rounds", 30),
     ("notebook_max_chars", 4000),
     ("intimacy_threshold_1", 10),
     ("intimacy_threshold_2", 50),
@@ -118,8 +119,8 @@ pub const DEFAULTS: &[(&str, i64)] = &[
     ("accessory_cost_4", 300),
     ("sign_in_min_coins", 1),
     ("sign_in_max_coins", 10),
-    ("travel_min_online_hours", 2),
-    ("travel_max_online_hours", 4),
+    ("travel_min_online_hours", 4),
+    ("travel_max_online_hours", 8),
     ("travel_min_duration_minutes", 60),
     ("travel_max_duration_minutes", 180),
     ("travel_accessory_chance_percent", 10),
@@ -364,7 +365,7 @@ mod tests {
             ("long_memory_min_chars", "150"), ("long_memory_max_chars", "250"),
             ("travel_journal_min_chars", "250"), ("travel_journal_max_chars", "350"),
             ("memory_merge_count", "20"), ("recent_message_count", "30"),
-            ("recent_long_memory_count", "30"), ("tool_call_rounds", "3"),
+            ("recent_long_memory_count", "30"), ("tool_call_rounds", "30"),
             ("notebook_max_chars", "4000"),
         ] { assert_eq!(original[key], expected); }
         let changed = [
@@ -485,4 +486,13 @@ mod tests {
             .has_api_key
         );
     }
+}
+
+/// 本机引导标记不属于可导入的用户设置，旧资料缺省为已使用。
+pub fn onboarding_pending(c: &Connection) -> AppResult<bool> {
+    Ok(c.query_row("SELECT value FROM settings WHERE key='onboarding_pending'", [], |r| r.get::<_, String>(0)).optional()?.as_deref() == Some("true"))
+}
+pub fn finish_onboarding(c: &Connection) -> AppResult<()> {
+    c.execute("INSERT INTO settings(key,value) VALUES ('onboarding_pending','false') ON CONFLICT(key) DO UPDATE SET value='false'", [])?;
+    Ok(())
 }

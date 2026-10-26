@@ -206,6 +206,7 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
     for (table, column, background) in [
         ("personas", "chat_bg_file", true),
         ("accessories", "image_file", false),
+        ("souvenirs", "image_file", false),
         ("pet_artworks", "image_file", false),
         ("pet_artworks", "preview_file", false),
         ("message_images", "image_file", false),
@@ -427,7 +428,7 @@ pub(super) fn project(
     if table=="pet_artworks" {for column in ["image_file","preview_file"] {if let Some(name)=row.get(column).and_then(Value::as_str){let reference=assets.get(&(false,name.to_owned())).ok_or_else(invalid)?.clone();if reference.is_none(){warn(warnings,"MISSING_IMAGE",table,value(&row,"id")?,"创作图片缺失，备份副本仅清空失效图片引用，条目要求、其他图片和原库保留。");}row.insert(column.into(),reference.map(Value::String).unwrap_or(Value::Null));}}}
     if let Some((column, background)) = match table {
         "personas" => Some(("chat_bg_file", true)),
-        "accessories" => Some(("image_file", false)),
+        "accessories" | "souvenirs" => Some(("image_file", false)),
         "message_images" => Some(("image_file", false)),
         _ => None,
     } {
@@ -447,6 +448,8 @@ pub(super) fn project(
                     value(&row, "id")?,
                     if background {
                         "背景图片缺失，备份副本恢复默认背景，原库不修改。"
+                    } else if table=="souvenirs" {
+                        "伴手礼图片缺失，备份副本仅保留文字，原库不修改。"
                     } else {
                         "饰品图片缺失，备份副本使用图标、Emoji、颜文字或符号组合兜底，原库不修改。"
                     },

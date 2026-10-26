@@ -5,7 +5,7 @@ type PersonaFormProps = {
   persona: Persona | null;
   busy: boolean;
   error: AppError | null;
-  onSave: (input: PersonaInput) => Promise<void>;
+  onSave: (input: PersonaInput, imageMode?:boolean) => Promise<void>;
   onCancel: () => void;
 };
 
@@ -23,6 +23,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
   const [initialPrompt, setInitialPrompt] = useState(persona?.initialPrompt ?? "");
   const [color, setColor] = useState(persona?.color ?? "#ffb6c1");
   const [selfEvolveEnabled, setSelfEvolveEnabled] = useState(persona?.selfEvolveEnabled ?? true);
+  const [imageMode,setImageMode]=useState(false);
   const [validationErrors, setValidationErrors] = useState<Partial<Record<"name" | "prompt" | "color", string>>>({});
 
   const errorFor = (field: "name" | "prompt" | "color") =>
@@ -44,7 +45,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
     if (Object.keys(nextErrors).length > 0) return;
     if (persona && !initialPrompt.trim()) return;
 
-    await onSave({
+    const input:PersonaInput={
       name: name.trim(),
       prompt,
       selfEvolveEnabled,
@@ -53,7 +54,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
       chatBgBlur: persona?.chatBgBlur ?? 0,
       saveAsInitial: false,
       initialPrompt: persona ? initialPrompt : prompt,
-    });
+    };if(imageMode&&!persona)await onSave(input,true);else await onSave(input);
   };
 
   return <form ref={form} className="ym-persona-form" onSubmit={submit}>
@@ -142,6 +143,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
         <span className="ym-page-note">仅在重要且明确的问题需要修正时小幅调整，日常小事不修改；完整回复成功后保存，初始设定保留。</span>
       </div>
 
+      {!persona&&<div className="ym-field"><label>图片模式<input type="checkbox" role="switch" checked={imageMode} onChange={event=>setImageMode(event.target.checked)}/></label><span className="ym-page-note">保存后上传透明初始图，自动生成基础表情预览；生成使用已配置的生图服务，可能产生额度费用，检查并接受后启用。</span></div>}
       <div className="ym-inline-form">
         <button className="ym-button" type="submit">{busy ? "正在保存…" : "保存人设"}</button>
         <button className="ym-button" type="button" onClick={onCancel}>取消</button>

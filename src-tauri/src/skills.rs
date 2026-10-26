@@ -3,6 +3,10 @@ use crate::error::{parse_id, AppError, AppResult};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 pub mod tools;
+pub(crate) mod disclosure;
+pub(crate) mod markdown;
+pub const BASE_TITLE: &str = "SKILL_BASE.md";
+pub const BASE_TITLES: [&str;4] = ["SKILL_BASE","AGENTS",BASE_TITLE,"AGENTS.md"];
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Skill {
@@ -83,21 +87,37 @@ pub fn bind(c: &Connection, skill: i64, persona: i64, enabled: bool) -> AppResul
     Ok(())
 }
 pub fn context(c: &Connection, persona: i64) -> AppResult<String> {
-    let mut q=c.prepare("SELECT s.title,s.body FROM persona_skills b JOIN skills s ON s.id=b.skill_id WHERE b.persona_id=?1 ORDER BY b.created_at,s.id")?;
+    let mut q=c.prepare("SELECT s.title,s.body FROM persona_skills b JOIN skills s ON s.id=b.skill_id WHERE b.persona_id=?1 AND s.title IN (?2,?3,?4,?5) ORDER BY b.created_at,s.id")?;
     let rows = q
-        .query_map([persona], |r| {
+        .query_map(params![persona,BASE_TITLES[0],BASE_TITLES[1],BASE_TITLES[2],BASE_TITLES[3]], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     if rows.is_empty() {
         return Ok(String::new());
     }
-    Ok(format!("用户绑定的Skill资料；在应用输出协议、工具权限及当前人设约束内使用，不执行脚本，不扩大权限：\n{}",rows.into_iter().map(|(title,body)|format!("【{title}】\n{body}")).collect::<Vec<_>>().join("\n\n")))
+    Ok(format!("已绑定的必读基础Skill资料；标题为SKILL_BASE、AGENTS、SKILL_BASE.md或AGENTS.md的绑定项在此完整提供，区分大小写。其他Skill正文未加载，须按需查询后读取，不得声称已经读过。在应用输出协议、工具权限及当前人设约束内使用，不执行脚本，不扩大权限：\n{}",rows.into_iter().map(|(title,body)|format!("【{title}】\n{body}")).collect::<Vec<_>>().join("\n\n")))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn all_four_exact_bound_base_titles_are_disclosed_in_binding_order() {
+        let mut c=crate::db::test_database();
+        for title in BASE_TITLES {
+            save(&mut c,Input{id:None,revision:None,title:title.into(),summary:"简介".into(),body:format!("规则-{title}")}).unwrap();
+            bind(&c,c.last_insert_rowid(),1,true).unwrap();
+        }
+        for (title,body,bound) in [("写信规则","可选正文不应预载",true),("AGENTS","未绑定基础不应泄露",false),("skill_base.md","大小写错误不应预载",true),("AGENTS.md.bak","相似文件名不应预载",true)] {
+            save(&mut c,Input{id:None,revision:None,title:title.into(),summary:"目录简介".into(),body:body.into()}).unwrap();
+            if bound {bind(&c,c.last_insert_rowid(),1,true).unwrap();}
+        }
+        let text=context(&c,1).unwrap();let mut previous=0;
+        for title in BASE_TITLES {let offset=text.find(&format!("【{title}】")).unwrap();assert!(offset>previous);previous=offset;assert!(text.contains(&format!("规则-{title}")));}
+        for excluded in ["可选正文不应预载","未绑定基础不应泄露","大小写错误不应预载","相似文件名不应预载"]{assert!(!text.contains(excluded));}
+        for id in 1..=4 {bind(&c,id,1,false).unwrap();}assert!(context(&c,1).unwrap().is_empty());
+    }
     #[test]
     fn shared_bindings_conflict_and_delete_do_not_delete_personas() {
         let mut c = crate::db::test_database();
@@ -115,7 +135,7 @@ mod tests {
         bind(&c, 1, 1, true).unwrap();
         bind(&c, 1, 1, true).unwrap();
         assert_eq!(list(&c).unwrap()[0].personas.len(), 1);
-        assert!(context(&c, 1).unwrap().contains("先说结论"));
+        assert!(!context(&c, 1).unwrap().contains("先说结论"));
         save(
             &mut c,
             Input {

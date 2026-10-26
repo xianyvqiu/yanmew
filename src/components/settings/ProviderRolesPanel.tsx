@@ -1,3 +1,4 @@
+import {useRevealForm} from "../../hooks/useRevealForm";
 import {useEffect,useRef,useState} from "react";
 import {configurationApi,errorMessage} from "../../api";
 import type {Provider,ProviderRole,ProviderRoles} from "../../types";
@@ -7,6 +8,7 @@ const names={chat:"聊天",memory:"记忆",image:"生图",vision:"识图"};
 export default function ProviderRolesPanel({providers}:{providers:Provider[]}) {
   const [config,setConfig]=useState<ProviderRoles|null>(null);
   const [editing,setEditing]=useState<ProviderRole["purpose"]|null>(null);
+  const form=useRevealForm(editing!==null,editing??undefined);
   const [id,setId]=useState("");const [model,setModel]=useState("");const [enabled,setEnabled]=useState(false);
   const [output,setOutput]=useState("32768");const [capacity,setCapacity]=useState("");
   const [expected,setExpected]=useState(0);const [busy,setBusy]=useState(false);const [error,setError]=useState("");
@@ -40,14 +42,14 @@ export default function ProviderRolesPanel({providers}:{providers:Provider[]}) {
   };
   return <section className="ym-page-card" aria-label="模型用途配置"><h2>模型用途</h2><p className="ym-page-note">连接只添加一次，各用途分别选择模型。一个连接或模型可以用于多个用途。</p>
     {error&&<p role="alert" className="ym-page-error">{error}</p>}
-    <div className="ym-object-grid">{purposes.map(purpose=>{
+    <div className="ym-object-grid ym-provider-roles">{purposes.map(purpose=>{
       const role=config?.roles.find(r=>r.purpose===purpose);
       const provider=providers.find(p=>p.id===role?.providerId)||providers.find(p=>purpose==="chat"?p.isActive:purpose==="memory"&&p.memoryIsActive);
       return <article className="ym-object-card" key={purpose}><div className="ym-page-heading"><h3>{names[purpose]}</h3><button className="ym-button" disabled={!config||busy||editing!==null} onClick={()=>edit(purpose)}>配置{names[purpose]}</button></div>
         <p>{provider?.name??(purpose==="memory"||purpose==="vision"?"跟随聊天":"尚未配置")}</p><p className="ym-page-note">{role?.model??provider?.model??""}</p>
         {purpose==="image"&&<p className="ym-page-note">{role?.enabled?"已开启":"已关闭"} · 饰品失败保留图标、Emoji、颜文字或符号组合；创作失败保留旧图</p>}
         {purpose==="vision"&&<p className="ym-page-note">独立模型先理解图片，再交聊天模型回答。</p>}
-        {editing===purpose&&<form onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={busy} className="ym-role-fields"><label className="ym-field">提供商<select value={id} onChange={event=>{const next=event.target.value;setId(next);const p=providers.find(p=>p.id===next);const stored=config?.models?.find(m=>m.purpose===purpose&&m.providerId===next);setModel(stored?.model??(p?.model==="未配置"?"":p?.model??""));setOutput(String(stored?.maxOutputTokens??p?.maxOutputTokens??32768));const savedCapacity=stored?stored.contextWindowOverride:p?.contextWindowOverride;setCapacity(savedCapacity==null?"":String(savedCapacity));}}><option value="">{purpose==="memory"||purpose==="vision"?"跟随聊天":purpose==="image"?"不配置":"请选择"}</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        {editing===purpose&&<form ref={form} onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={busy} className="ym-role-fields"><label className="ym-field">提供商<select value={id} onChange={event=>{const next=event.target.value;setId(next);const p=providers.find(p=>p.id===next);const stored=config?.models?.find(m=>m.purpose===purpose&&m.providerId===next);setModel(stored?.model??(p?.model==="未配置"?"":p?.model??""));setOutput(String(stored?.maxOutputTokens??p?.maxOutputTokens??32768));const savedCapacity=stored?stored.contextWindowOverride:p?.contextWindowOverride;setCapacity(savedCapacity==null?"":String(savedCapacity));}}><option value="">{purpose==="memory"||purpose==="vision"?"跟随聊天":purpose==="image"?"不配置":"请选择"}</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           {id&&<label className="ym-field">{names[purpose]}模型<input required value={model} onChange={event=>setModel(event.target.value)}/></label>}
           {purpose==="image"&&id&&<label><input type="checkbox" checked={enabled} onChange={event=>setEnabled(event.target.checked)}/>开启图片生成（饰品 / 桌宠创作）</label>}
           {purpose!=="image"&&id&&<details><summary>高级设置</summary><label className="ym-field">最大输出（tokens）<input type="number" required min={1} value={output} onChange={e=>setOutput(e.target.value)}/></label><label className="ym-field">上下文容量（自动时留空）<input type="number" min={1} value={capacity} onChange={e=>setCapacity(e.target.value)}/></label><p className="ym-page-note">默认最大输出32768，包含模型可能使用的思考内容；实际服务商或剩余容量更小时采用其允许值。表情、标题等短内容由提示词和校验约束，不会要求模型凑满上限。</p></details>}

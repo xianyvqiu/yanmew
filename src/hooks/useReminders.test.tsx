@@ -107,3 +107,26 @@ it("卸载时释放事件监听并移除 focus 监听", async () => {
   expect(stopError).toHaveBeenCalledTimes(1);
   expect(remove).toHaveBeenCalledWith("focus", expect.any(Function));
 });
+
+
+it("完整管理列表自动读完50条以后的规则和记录，不需点击加载更多",async()=>{
+ const first=Array.from({length:50},(_,i)=>rule(String(i+1),`提醒${i+1}`));
+ api.list.mockImplementation(async(after:string|null)=>after===null?first:[rule("51","末页保险")]);
+ api.listOccurrences.mockImplementation(async(options:{afterId?:string})=>options.afterId?{items:[occurrence("o51","51","末页保险")],nextAfterId:null}:{items:[occurrence("o1","1","喝水")],nextAfterId:"o1"});
+ const view=renderHook(()=>useReminders({complete:true}));
+ await waitFor(()=>expect(view.result.current.loading).toBe(false));
+ expect(view.result.current.rules).toHaveLength(51);
+ expect(view.result.current.occurrences.map(item=>item.id)).toEqual(["o1","o51"]);
+ expect(view.result.current.hasMoreRules).toBe(false);expect(view.result.current.hasMoreOccurrences).toBe(false);
+ expect(api.list).toHaveBeenLastCalledWith("50",50);
+ expect(api.listOccurrences).toHaveBeenLastCalledWith({reminderId:undefined,afterId:"o1",limit:50});
+});
+
+it("完整读取遇到重复游标时停止并提示，不把部分数据当成全部",async()=>{
+ const first=Array.from({length:50},(_,i)=>rule(String(i+1),`提醒${i+1}`));
+ api.list.mockResolvedValue(first);
+ const view=renderHook(()=>useReminders({complete:true}));
+ await waitFor(()=>expect(view.result.current.loading).toBe(false));
+ expect(view.result.current.error).toBe("提醒规则分页未前进，请重新读取。");
+ expect(api.list).toHaveBeenCalledTimes(2);expect(view.result.current.rules).toEqual([]);
+});

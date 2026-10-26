@@ -5,6 +5,7 @@ import ReminderEmailPanel from "./ReminderEmailPanel";
 import AutostartPanel from "./AutostartPanel";
 import BackupPanel from "./BackupPanel";
 import AppInfoPanel from "./AppInfoPanel";
+import ChatToolSettings from "./ChatToolSettings";
 
 export default function GeneralPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -36,5 +37,5 @@ export default function GeneralPanel() {
       <div className="ym-inline-form"><button className="ym-button" disabled={saving} type="submit">{saving ? "正在保存…" : "保存主题"}</button>{saved && <span role="status">主题已保存</span>}</div>
     </form> : !error && <p role="status">正在读取设置…</p>}
     {error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={() => setAttempt(value => value + 1)}>重新读取</button></div>}
-  </section><ReminderEmailPanel /><AutostartPanel /><BackupPanel /><AppInfoPanel /></>;
+  </section><ChatToolSettings /><ReminderEmailPanel /><AutostartPanel /><BackupPanel /><AppInfoPanel /></>;
 }

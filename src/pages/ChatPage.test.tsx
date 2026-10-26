@@ -162,44 +162,12 @@ describe("ChatPage", () => {
     expect(refresh).not.toHaveBeenCalled();
     expect(screen.getByText("正在回复")).not.toBeNull();
   });
-  it("回复进行中仍可修改绑定，由后端先中断；失败保留选择并可重试", async () => {
-    const current = snapshot("session-1");
-    current.userProfiles = [{ id: "7", name: "背景", content: "内容", createdAt: "2026-10-06", updatedAt: "2026-10-06" }];
-    const round = completedRound();
-    api.current.mockResolvedValue({ requestId: "1", personaId: persona.id, sessionId: "session-1", contextRevision: 1,
-      roundId: "10", seq: 1, partialContent: "正在回复", expression: null, notice: null, budget: null, regenerating: false,
-      round: { ...round, round: { ...round.round, status: "pending" }, assistantMessage: null } } satisfies ChatRequestSnapshot);
-    api.setUserProfile.mockRejectedValueOnce(new Error("保存失败，原绑定保留")).mockResolvedValueOnce({ ...firstSession, userProfileId: "7" });
-    const refresh = vi.fn();
-    render(<ChatPage snapshot={current} onRefresh={refresh} />);
-    openSettings();
-    await screen.findByText("正在回复");
-    fireEvent.change(screen.getByLabelText("当前会话的用户设定"), { target: { value: "7" } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "修改绑定" })).toHaveProperty("disabled", false));
-    fireEvent.click(screen.getByRole("button", { name: "修改绑定" }));
-    await screen.findByText("保存失败，原绑定保留");
-    expect(screen.getByLabelText("当前会话的用户设定")).toHaveProperty("value", "7");
-    expect(api.cancel).not.toHaveBeenCalled();
-    expect(refresh).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "修改绑定" }));
-    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
-    expect(api.setUserProfile).toHaveBeenLastCalledWith(current.context, "session-1", "7");
+  it("回复中通过绑定面板修改，失败后可重试且不预先清除回复",async()=>{
+    const current=snapshot("session-1");current.userProfiles=[{id:"7",name:"背景",content:"内容",createdAt:"2026-10-06",updatedAt:"2026-10-06"}];api.setUserProfile.mockRejectedValueOnce(new Error("保存失败，原绑定保留")).mockResolvedValueOnce({...firstSession,userProfileId:"7"});const refresh=vi.fn();render(<ChatPage snapshot={current} onRefresh={refresh}/>);await waitFor(()=>expect(screen.getByRole("button",{name:"绑定用户设定"})).toHaveProperty("disabled",false));fireEvent.click(screen.getByRole("button",{name:"绑定用户设定"}));fireEvent.click(screen.getByRole("button",{name:"绑定 背景"}));await screen.findByText("保存失败，原绑定保留");expect(api.cancel).not.toHaveBeenCalled();expect(refresh).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"绑定 背景"}));await waitFor(()=>expect(refresh).toHaveBeenCalledOnce());expect(api.setUserProfile).toHaveBeenLastCalledWith(current.context,"session-1","7");
   });
 
-  it("切换会话清除旧绑定草稿，并按目标会话展示绑定名称", async () => {
-    const current = snapshot("session-1");
-    current.userProfiles = [{ id: "7", name: "背景", content: "内容", createdAt: "2026-10-06", updatedAt: "2026-10-06" }];
-    const view = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
-    openSettings();
-    await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeTruthy());
-    fireEvent.change(screen.getByLabelText("当前会话的用户设定"), { target: { value: "7" } });
-    const next = { ...current, context: { ...current.context, sessionId: "session-2", contextRevision: 2 } };
-    view.rerender(<ChatPage snapshot={next} onRefresh={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText("当前会话的用户设定")).toHaveProperty("value", ""));
-    expect(api.setUserProfile).not.toHaveBeenCalled();
-    view.rerender(<ChatPage snapshot={{ ...next, sessions: [firstSession, { ...secondSession, userProfileId: "7" }] }} onRefresh={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText("当前会话的用户设定")).toHaveProperty("value", "7"));
-    expect(screen.getByRole("button", { name: "第二段对话 · 用户设定：背景" })).toBeTruthy();
+  it("切换会话关闭绑定面板并显示目标会话绑定名称",async()=>{
+    const current=snapshot("session-1");current.userProfiles=[{id:"7",name:"背景",content:"内容",createdAt:"2026-10-06",updatedAt:"2026-10-06"}];const view=render(<ChatPage snapshot={current} onRefresh={vi.fn()}/>);await waitFor(()=>expect(screen.getByRole("button",{name:"绑定用户设定"})).toHaveProperty("disabled",false));fireEvent.click(screen.getByRole("button",{name:"绑定用户设定"}));const next={...current,context:{...current.context,sessionId:"session-2",contextRevision:2},sessions:[firstSession,{...secondSession,userProfileId:"7"}]};view.rerender(<ChatPage snapshot={next} onRefresh={vi.fn()}/>);await waitFor(()=>expect(screen.queryByRole("dialog",{name:"绑定用户设定"})).toBeNull());expect(api.setUserProfile).not.toHaveBeenCalled();expect(screen.getByRole("button",{name:"第二段对话 · 用户设定：背景"})).toBeTruthy();
   });
 
   it("新会话可选择全局设定，列表展示绑定名称且设定删除后恢复未绑定", async () => {
@@ -209,17 +177,17 @@ describe("ChatPage", () => {
     const refresh = vi.fn();
     api.create.mockResolvedValue({ ...firstSession, id: "new-session", userProfileId: "7" });
     const view = render(<ChatPage snapshot={current} onRefresh={refresh} />);
-    openSettings();
+    await waitFor(()=>expect(screen.getByRole("button",{name:"绑定用户设定"})).toHaveProperty("disabled",false));fireEvent.click(screen.getByRole("button",{name:"绑定用户设定"}));
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeTruthy());
     expect(screen.getByRole("button", { name: "第一段对话 · 用户设定：我的背景" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("新会话的用户设定"), { target: { value: "7" } });
-    if (screen.queryByRole("dialog", { name: "会话设置" })) fireEvent.click(screen.getByRole("button", { name: "关闭会话设置" }));
+    fireEvent.click(within(screen.getByRole("dialog",{name:"绑定用户设定"})).getByRole("button",{name:"关闭"}));
     fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(current.context, "7"));
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
     view.rerender(<ChatPage snapshot={{ ...current, userProfiles: [], sessions: [firstSession, secondSession] }} onRefresh={refresh} />);
     expect(screen.getByRole("button", { name: "第一段对话 · 用户设定：未绑定" })).toBeTruthy();
-    openSettings();
+    fireEvent.click(screen.getByRole("button",{name:"绑定用户设定"}));
     await waitFor(() => expect(screen.getByLabelText("新会话的用户设定")).toHaveProperty("value", ""));
   });
 
@@ -271,17 +239,17 @@ describe("ChatPage", () => {
     expect(api.edit).not.toHaveBeenCalled();
   });
 
-  it.each(["completed", "interrupted"] as const)("尚有后续分页时 %s 回合不显示删除、重说或继续", async status => {
+  it.each(["completed", "interrupted"] as const)("尚有更早分页时 %s 最新回合仍可按状态操作", async status => {
     const complete = completedRound();
     const round = { ...complete, round: { ...complete.round, status, stopReason: status === "interrupted" ? "length_limit" : null } };
     api.lastRound.mockResolvedValue(round);
     api.messages.mockResolvedValue({ items: [round.userMessage, round.assistantMessage!], nextAfterId: "21" });
     render(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()} />);
     await screen.findByText("原完整回复");
-    expect(screen.getByRole("button", { name: "加载后续消息" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "删除本轮" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "重说" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "继续生成" })).toBeNull();
+    expect(screen.getByRole("button", { name: "加载更早消息" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "删除本轮" })).toBeTruthy();
+    if(status==="completed"){expect(screen.getByRole("button",{name:"重说"})).toBeTruthy();expect(screen.queryByRole("button",{name:"继续生成"})).toBeNull();}
+    else{expect(screen.getByRole("button",{name:"继续生成"})).toBeTruthy();expect(screen.queryByRole("button",{name:"重说"})).toBeNull();}
   });
 
   it("初始教程按一条真实消息展示，沿用底部删除且不显示回合操作", async () => {
@@ -390,36 +358,8 @@ describe("ChatPage", () => {
     expect(screen.queryByRole("button", { name: "重说" })).toBeNull();
   });
 
-  it("自动标题刷新不覆盖未保存名称，保存失败后仍保留草稿", async () => {
-    const current = snapshot("session-1");
-    const { rerender } = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
-    openSettings();
-    await waitFor(() => expect(screen.getByLabelText("聊天消息")).toHaveProperty("disabled", false));
-    const input = screen.getByLabelText("会话名称");
-    fireEvent.change(input, { target: { value: "我的名称草稿" } });
-    const updated = { ...current, sessions: current.sessions.map(item => item.id === "session-1" ? { ...item, title: "AI 自动标题" } : item) };
-    rerender(<ChatPage snapshot={updated} onRefresh={vi.fn()} />);
-    expect(input).toHaveProperty("value", "我的名称草稿");
-    api.rename.mockRejectedValue(new Error("保存失败"));
-    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
-    await screen.findByText("保存失败");
-    expect(input).toHaveProperty("value", "我的名称草稿");
-  });
-
-  it("未编辑时同步自动标题，保存名称后允许继续同步权威名称", async () => {
-    const current = snapshot("session-1");
-    const { rerender } = render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
-    openSettings();
-    await waitFor(() => expect(screen.getByLabelText("聊天消息")).toHaveProperty("disabled", false));
-    const updated = { ...current, sessions: current.sessions.map(item => item.id === "session-1" ? { ...item, title: "AI 自动标题" } : item) };
-    rerender(<ChatPage snapshot={updated} onRefresh={vi.fn()} />);
-    expect(screen.getByLabelText("会话名称")).toHaveProperty("value", "AI 自动标题");
-    fireEvent.change(screen.getByLabelText("会话名称"), { target: { value: "我的新名称" } });
-    api.rename.mockResolvedValue({ ...firstSession, title: "我的新名称" });
-    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "保存名称" })).toHaveProperty("disabled", false));
-    rerender(<ChatPage snapshot={{ ...updated, sessions: updated.sessions.map(item => item.id === "session-1" ? { ...item, title: "权威已保存名称" } : item) }} onRefresh={vi.fn()} />);
-    expect(screen.getByLabelText("会话名称")).toHaveProperty("value", "权威已保存名称");
+  it("会话设置不重复显示绑定与名称表单，自动标题仍同步列表",async()=>{
+    const current=snapshot("session-1");const view=render(<ChatPage snapshot={current} onRefresh={vi.fn()}/>);openSettings();expect(screen.queryByLabelText("会话名称")).toBeNull();expect(screen.queryByLabelText("当前会话的用户设定")).toBeNull();expect(screen.queryByLabelText("新会话的用户设定")).toBeNull();view.rerender(<ChatPage snapshot={{...current,sessions:current.sessions.map(item=>item.id==="session-1"?{...item,title:"AI 自动标题"}:item)}} onRefresh={vi.fn()}/>);expect(screen.getByRole("button",{name:/AI 自动标题/})).toBeTruthy();
   });
 
   it("删除会话确认说明级联与保留范围，取消不调用删除接口", async () => {
@@ -668,27 +608,29 @@ describe("ChatPage", () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
   });
 
-  it("加载后续消息时追加新记录且不重复显示重叠项", async () => {
+  it("先读最近页，加载更早消息后按时间排序且不重复显示重叠项", async () => {
     const current = snapshot("session-1");
     api.messages
       .mockResolvedValueOnce({
-        items: [message("message-1", "session-1", "第一条"), message("message-2", "session-1", "第二条")],
-        nextAfterId: "message-2",
+        items: [message("2", "session-1", "第二条"), message("3", "session-1", "第三条")],
+        nextAfterId: "2",
       } satisfies MessagePage)
       .mockResolvedValueOnce({
-        items: [message("message-2", "session-1", "第二条"), message("message-3", "session-1", "第三条")],
+        items: [message("1", "session-1", "第一条"), message("2", "session-1", "第二条")],
         nextAfterId: null,
       } satisfies MessagePage);
     render(<ChatPage snapshot={current} onRefresh={vi.fn()} />);
 
-    await screen.findByText("第一条");
-    fireEvent.click(screen.getByRole("button", { name: "加载后续消息" }));
     await screen.findByText("第三条");
+    expect(screen.queryByText("第一条")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "加载更早消息" }));
+    await screen.findByText("第一条");
 
-    expect(api.messages).toHaveBeenNthCalledWith(1, current.context);
-    expect(api.messages).toHaveBeenNthCalledWith(2, current.context, "message-2");
+    expect(api.messages).toHaveBeenNthCalledWith(1, current.context,null,100,true);
+    expect(api.messages).toHaveBeenNthCalledWith(2, current.context, "2",100,true);
     expect(screen.getAllByText("第二条")).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "加载后续消息" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "加载更早消息" })).toBeNull();
+    expect(screen.getAllByRole("listitem").filter(item=>item.hasAttribute("data-role")).map(item=>item.textContent)).toEqual([expect.stringContaining("第一条"),expect.stringContaining("第二条"),expect.stringContaining("第三条")]);
   });
 
   it("卸载后迟到的消息和新建结果不影响后续页面，也不触发旧刷新", async () => {
@@ -732,13 +674,14 @@ it("出门时禁止普通聊天并按当前出行打开写信", async () => {
 
 it("聊天详情使用会话侧栏，管理表单通过弹窗显示",async()=>{
   renderReact(<ChatPage snapshot={snapshot("session-1")} onRefresh={vi.fn()}/>);
+  await waitFor(()=>expect(screen.getByRole("textbox",{name:"聊天消息"})).toHaveProperty("disabled",false));
   expect(screen.queryByRole("dialog",{name:"会话设置"})).toBeNull();
   expect(screen.queryByRole("button",{name:"保存名称"})).toBeNull();
   expect(screen.queryByRole("button",{name:"删除会话"})).toBeNull();
   expect(screen.queryByRole("combobox",{name:"当前会话"})).toBeNull();
   expect(screen.getByRole("navigation",{name:"会话列表"})).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:"会话设置"}));
-  expect(screen.getByRole("button",{name:"保存名称"})).toBeTruthy();
+  expect(screen.queryByRole("button",{name:"保存名称"})).toBeNull();
   expect(screen.getByRole("button",{name:"删除会话"})).toBeTruthy();
 });
 

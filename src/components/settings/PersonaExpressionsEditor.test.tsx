@@ -4,7 +4,7 @@ import PersonaExpressionsEditor from "./PersonaExpressionsEditor";
 import type { Persona } from "../../types";
 const save = vi.hoisted(() => vi.fn());
 vi.mock("../../api", () => ({ configurationApi: { saveExpressions: save }, errorMessage: (e: Error) => e.message }));
-const library: Record<string, unknown> = Object.fromEntries(["normal","lifted","walk_left","walk_right","peek_left","peek_right","rest_sit","rest_lie","standby","hungry","craving","craving_favorite","eating","eating_favorite","sleepy","bored","thinking"].map(key => [key,["(^_^)"]]));
+const library: Record<string, unknown> = Object.fromEntries(["normal","error","lifted","walk_left","walk_right","peek_left","peek_right","rest_sit","rest_lie","standby","hungry","craving","craving_favorite","eating","eating_favorite","sleepy","bored","thinking"].map(key => [key,["(^_^)"]]));
 library.click = {happy:["(^_^)"],surprised:["(O_O)"],shy:["(>_<)"]};
 const persona = { id:"1", expressions:null, effectiveExpressions:library } as Persona;
 afterEach(cleanup);

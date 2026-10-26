@@ -390,7 +390,7 @@ fn real_money_v18_upgrade_preserves_old_wallet() {
     assert_eq!(
         c.pragma_query_value::<i64, _>(None, "user_version", |r| r.get(0))
             .unwrap(),
-        19
+        20
     );
     assert_eq!(crate::currency::get_balance(&c).unwrap(), 123);
     assert_eq!(

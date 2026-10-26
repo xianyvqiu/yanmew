@@ -5,6 +5,7 @@ import ChatBackgroundSettings from "./ChatBackgroundSettings";
 import ChatBackground from "./ChatBackground";
 import { DEFAULT_CHAT_APPEARANCE } from "./chatAppearance";
 
+vi.mock("./BackgroundCropDialog",()=>({default:({onSave,onCancel}:{onSave:(base64:string)=>void;onCancel:()=>void})=><div role="dialog" aria-label="裁剪聊天背景"><button onClick={()=>onSave("cG5n")}>保存裁剪</button><button onClick={onCancel}>取消裁剪</button></div>}));
 const api = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
 vi.mock("../api", () => ({ backgroundApi: api, errorMessage: (cause: { message: string }) => cause.message }));
 const persona: Persona = {
@@ -83,11 +84,12 @@ it("读取文件后显示预览，保存失败保留图片和滑块，不通知�
   render(<ChatBackgroundSettings persona={persona} onSaved={saved} />);
   await open();
   fireEvent.change(screen.getByLabelText("选择背景图片"), { target: { files: [new File(["png"], "cat.png", { type: "image/png" })] } });
+  fireEvent.click(await screen.findByRole("button",{name:"保存裁剪"}));
   await waitFor(() => expect(screen.getByLabelText("聊天背景预览").querySelector("img")?.src).toBe("data:image/png;base64,cG5n"));
   fireEvent.change(screen.getByLabelText("背景模糊度：0px"), { target: { value: "9" } });
   fireEvent.click(screen.getByRole("button", { name: "保存外观" }));
   await screen.findByText("图片损坏");
-  expect(api.save).toHaveBeenCalledWith("1", { expected: record, opacity: 85, blur: 9, image: { fileName: "cat.png", base64: "cG5n" }, reset: false, appearance: DEFAULT_CHAT_APPEARANCE }, undefined);
+  expect(api.save).toHaveBeenCalledWith("1", { expected: record, opacity: 85, blur: 9, image: { fileName: "chat-background.png", base64: "cG5n" }, reset: false, appearance: DEFAULT_CHAT_APPEARANCE }, undefined);
   expect(screen.getByLabelText("背景模糊度：9px")).toHaveProperty("value", "9");
   expect(screen.getByLabelText("聊天背景预览").querySelector("img")).not.toBeNull();
   expect(saved).not.toHaveBeenCalled();

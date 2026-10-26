@@ -95,16 +95,16 @@ describe("useReminderNotifications", () => {
     expect(view.result.current.notice).toEqual({ kind: "due", item: second });
   });
 
-  it("complete 只向 API 提交当前 occurrence ID", async () => {
-    const current = occurrence("queued-to-complete");
+  it("在线自动完成的提醒正常展示，知道了只确认投递", async () => {
+    const current = {...occurrence("queued-to-complete"),status:"done" as const,autoCompleted:true};
     api.listOccurrences.mockResolvedValue(queuedPage([current]));
     const view = renderHook(() => useReminderNotifications());
 
     await waitFor(() => expect(view.result.current.notice?.kind === "due" && view.result.current.notice.item.id).toBe(current.id));
-    await act(async () => { await view.result.current.complete(); });
+    await act(async () => { await view.result.current.dismiss(); });
 
-    expect(api.complete).toHaveBeenCalledTimes(1);
-    expect(api.complete).toHaveBeenCalledWith(current.id);
+    expect(api.complete).not.toHaveBeenCalled();
+    expect(api.acknowledge).toHaveBeenCalledWith([current.id],"queued");
   });
 
   it("missed 205 条按 200/5 确认，并在刷新后保留原汇总快照", async () => {

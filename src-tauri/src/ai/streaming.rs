@@ -72,6 +72,7 @@ struct PartialChoice {
 #[derive(Default)]
 pub struct StreamAccumulator {
     choices: BTreeMap<u32, PartialChoice>,
+    usage: Option<super::usage::TokenUsage>,
     done: bool,
     progress: bool,
 }
@@ -95,6 +96,7 @@ impl StreamAccumulator {
                 "提供商在流式回复中报告错误",
             ));
         }
+        if let Some(usage) = super::usage::parse(&value) { self.usage = Some(usage); }
         let choices = value
             .get("choices")
             .and_then(Value::as_array)
@@ -234,6 +236,7 @@ impl StreamAccumulator {
                     return Err(protocol());
                 }
                 Ok(Choice {
+                    usage: self.usage.clone(),
                     index,
                     content: choice.content,
                     tools,
@@ -243,4 +246,19 @@ impl StreamAccumulator {
             })
             .collect()
     }
+}
+
+#[cfg(test)]
+mod usage_tests {
+ use super::*;use serde_json::json;
+ #[test]fn final_usage_frame_is_not_counted_twice_and_does_not_change_text(){
+  let mut stream=StreamAccumulator::default();
+  stream.push(&json!({"choices":[{"index":0,"delta":{"content":"你好"},"finish_reason":"stop"}],"usage":null}).to_string()).unwrap();
+  let usage=json!({"choices":[],"usage":{"prompt_tokens":120,"prompt_tokens_details":{"cached_tokens":80}}}).to_string();
+  stream.push(&usage).unwrap();stream.push(&usage).unwrap();stream.push("[DONE]").unwrap();
+  let choice=stream.finish().unwrap().remove(0);assert_eq!(choice.content,"你好");assert_eq!(choice.usage.unwrap().cached_tokens,Some(80));
+ }
+ #[test]fn malformed_usage_does_not_fail_valid_reply(){
+  let mut stream=StreamAccumulator::default();stream.push(&json!({"choices":[{"index":0,"delta":{"content":"回复"},"finish_reason":"stop"}],"usage":{"prompt_tokens":"invalid"}}).to_string()).unwrap();stream.push("[DONE]").unwrap();assert!(stream.finish().unwrap()[0].usage.is_none());
+ }
 }

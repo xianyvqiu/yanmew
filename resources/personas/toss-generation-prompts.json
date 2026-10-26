@@ -1,0 +1,121 @@
+{
+  "generator": "imagegen",
+  "transparentBackground": true,
+  "assets": [
+    {
+      "persona": "gpt",
+      "category": "landing",
+      "reference": "resources/personas/gpt/base.png",
+      "output": "resources/personas/gpt/landing.png",
+      "prompt": "Use case: illustration-story. Single isolated full-body transparent desktop pet expression. The provided base is the sole identity/style reference: keep exactly the same adult chibi anime character, face, hair color, accessories, species, ornate outfit and shoes, detailed delicate linework. Full body centered, similar character scale to reference with transparent margin; no cropped limbs/hair/tail. Real alpha transparency, no background, no text, no borders or arrows, no second person, no generic template reaction, no upskirt view, keep clothing modest and unchanged. One pose only, not a sheet. Action: Just landed safely on her bottom, knees bent and feet resting forward, tail curled beside her. An embarrassed annoyed pout and a small blush, one hand steadying herself and the other clenched indignantly. A comedic soft landing, no injury, no floor plane."
+    },
+    {
+      "persona": "claude",
+      "category": "landing",
+      "reference": "resources/personas/claude/base.png",
+      "output": "resources/personas/claude/landing.png",
+      "prompt": "Use case: illustration-story. Asset: single transparent desktop-pet action sprite. Input base image is identity/style reference only. Preserve exactly the same adult chibi anime character, detailed delicate linework, facial identity, hair/eye colors, species, accessories, original ornate outfit and shoes. Keep the entire full-body character centered at similar scale to base with generous transparent margin and no cropped parts. Real alpha transparent background, no text, no border, no arrows, no extra person/hand, no scene or ground plane. Keep clothes modest and unchanged, no upskirt view. One pose only, not a sheet. Action: Safely landed sitting on the ground with knees folded to one side, clutching her closed book, slightly mussed long hair and an embarrassed dignified blush. One hand straightens her skirt hem, trying to look composed after a soft comic landing; no ground plane or injury."
+    },
+    {
+      "persona": "gemini",
+      "category": "landing",
+      "reference": "resources/personas/gemini/base.png",
+      "output": "resources/personas/gemini/landing.png",
+      "prompt": "Use case: illustration-story. Asset: single transparent desktop-pet action sprite. Input base image is identity/style reference only. Preserve exactly the same adult chibi anime character, detailed delicate linework, facial identity, hair/eye colors, species, accessories, original ornate outfit and shoes. Keep the entire full-body character centered at similar scale to base with generous transparent margin and no cropped parts. Real alpha transparent background, no text, no border, no arrows, no extra person/hand, no scene or ground plane. Keep clothes modest and unchanged, no upskirt view. One pose only, not a sheet. Action: A safe catlike landing in a compact crouch, both feet on imaginary ground, one hand lightly touching down and the other raised like a cat paw, tail curled proudly, mischievous triumphant grin and perked cat ears. Full outfit preserved modestly, no floor plane."
+    },
+    {
+      "persona": "deepseek",
+      "category": "landing",
+      "reference": "resources/personas/deepseek/base.png",
+      "output": "resources/personas/deepseek/landing.png",
+      "prompt": "Use case: illustration-story. Asset: single transparent desktop-pet action sprite. Input base image is identity/style reference only. Preserve exactly the same adult chibi anime character, detailed delicate linework, facial identity, hair/eye colors, species, accessories, original ornate outfit and shoes. Keep the entire full-body character centered at similar scale to base with generous transparent margin and no cropped parts. Real alpha transparent background, no text, no border, no arrows, no extra person/hand, no scene or ground plane. Keep clothes modest and unchanged, no upskirt view. One pose only, not a sheet. Action: Just safely landed on her bottom, legs forward together, huge whale tail curled beside her like a soft cushion; checklist resting safely in her lap, pen still held, slightly dazed spirally soft eyes and puffed cheeks, a tiny sheepish tired smile. A comical confused whale girl's recovery, no injury or ground plane."
+    },
+    {
+      "persona": "gpt",
+      "category": "toss_up",
+      "reference": "resources/personas/gpt/base.png",
+      "output": "resources/personas/gpt/toss_up.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. GPT白龙娘：白色长发、淡紫眼、两只白色龙角、小龙翼与白鳞龙尾、参考图的白色花纹连衣裙和短靴，傲娇自信。\n请从这张默认图直接制作动作差分：被用户向屏幕上方轻轻抛起，角色正面直立离地。身体保持参考图的大头短身Q版，短腿自然垂下、双手因惊讶稍张开；头发衣摆略向下延伸表示向上运动。GPT故作镇定微睁眼，Claude护住书而有点紧张，Gemini新奇兴奋。不要画手，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "7ab23cf8e6ce85399e46933d61c05b460810ed60c2855ae1398167f34160394e",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "gpt",
+      "category": "toss_down",
+      "reference": "resources/personas/gpt/base.png",
+      "output": "resources/personas/gpt/toss_down.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. GPT白龙娘：白色长发、淡紫眼、两只白色龙角、小龙翼与白鳞龙尾、参考图的白色花纹连衣裙和短靴，傲娇自信。\n请从这张默认图直接制作动作差分：从抛起的最高点朝屏幕下方掉落，角色正面直立，脚朝下头朝上。保留参考图的大头短身Q版，短腿略收、手本能向两侧平衡；发梢和衣摆轻轻向上飘表示下落。GPT嘴硬却有点慌，Claude抱紧书蹙眉，Gemini惊讶又期待被接住。不要背面坠落，不要透视朝观众跌落，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "19c0236739ea5c8f3e68b552cf790c9dd4e762f501d5734789af43cb5d12aed7",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "claude",
+      "category": "toss_up",
+      "reference": "resources/personas/claude/base.png",
+      "output": "resources/personas/claude/toss_up.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. Claude大小姐：橙色长发、金棕眼、橙花发饰、黑白橙学者长裙、参考图中的精装书，优雅克制。\n请从这张默认图直接制作动作差分：被用户向屏幕上方轻轻抛起，角色正面直立离地。身体保持参考图的大头短身Q版，短腿自然垂下、双手因惊讶稍张开；头发衣摆略向下延伸表示向上运动。GPT故作镇定微睁眼，Claude护住书而有点紧张，Gemini新奇兴奋。不要画手，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "aec5b874844510af8718e05373169263fec3b21bb7093977d6c5e6bb25457b7f",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "claude",
+      "category": "toss_down",
+      "reference": "resources/personas/claude/base.png",
+      "output": "resources/personas/claude/toss_down.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. Claude大小姐：橙色长发、金棕眼、橙花发饰、黑白橙学者长裙、参考图中的精装书，优雅克制。\n请从这张默认图直接制作动作差分：从抛起的最高点朝屏幕下方掉落，角色正面直立，脚朝下头朝上。保留参考图的大头短身Q版，短腿略收、手本能向两侧平衡；发梢和衣摆轻轻向上飘表示下落。GPT嘴硬却有点慌，Claude抱紧书蹙眉，Gemini惊讶又期待被接住。不要背面坠落，不要透视朝观众跌落，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "0b37c77cc3b9e0f45b2c79bd272e86313670ad7ee5d70d469be4083e6753a180",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "gemini",
+      "category": "toss_up",
+      "reference": "resources/personas/gemini/base.png",
+      "output": "resources/personas/gemini/toss_up.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. Gemini猫娘：紫色渐变长发、猫耳猫尾、左侧玫红右侧金色异瞳、星形饰物、紫白金服饰，活泼俏皮。\n请从这张默认图直接制作动作差分：被用户向屏幕上方轻轻抛起，角色正面直立离地。身体保持参考图的大头短身Q版，短腿自然垂下、双手因惊讶稍张开；头发衣摆略向下延伸表示向上运动。GPT故作镇定微睁眼，Claude护住书而有点紧张，Gemini新奇兴奋。不要画手，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "2c25edb49506b52cf8e2adc54de9d5dc6daa2d74eea0375ece7446d49f86c0ab",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "gemini",
+      "category": "toss_down",
+      "reference": "resources/personas/gemini/base.png",
+      "output": "resources/personas/gemini/toss_down.png",
+      "prompt": "Use case: illustration-story. Asset type: YanMew desktop pet alternate pose, a single transparent PNG sprite.\nReference image is the canonical character design AND exact chibi body proportions. Gemini猫娘：紫色渐变长发、猫耳猫尾、左侧玫红右侧金色异瞳、星形饰物、紫白金服饰，活泼俏皮。\n请从这张默认图直接制作动作差分：从抛起的最高点朝屏幕下方掉落，角色正面直立，脚朝下头朝上。保留参考图的大头短身Q版，短腿略收、手本能向两侧平衡；发梢和衣摆轻轻向上飘表示下落。GPT嘴硬却有点慌，Claude抱紧书蹙眉，Gemini惊讶又期待被接住。不要背面坠落，不要透视朝观众跌落，不要坐姿或长腿成人比例。\nComposition: square 1:1 canvas; full character centered; same head size relative to full canvas as reference, same 2.5-to-3-head-tall chibi proportion as reference, same character visual height (about 94% canvas); hair, tail and accessories stay inside frame. Retain outfit, face, colors, silhouette, fine clean anime illustration rendering. Only change pose and expression. No distant small subject.\nTransparent background with true alpha; crisp cutout, absolutely no backdrop, aura, colored glow, shadow ellipse, speed lines, particles, words, labels, border, watermark. Return only one full-body character. Do not redesign.",
+      "sha256": "db1d2e75c85923db5101a10e9d333edcd4e44bb994049f37db745ca47bd7c9fc",
+      "dimensions": [
+        1254,
+        1254
+      ]
+    },
+    {
+      "persona": "deepseek",
+      "category": "toss_up",
+      "prompt": "Use case: illustration-story. Asset type: single transparent full-body desktop pet sprite, NOT a scene or sprite sheet. Reference image is the character identity/style reference. Preserve her exact character design, clothing, colors, accessories, chibi proportions and polished anime rendering. Character: blue-haired whale-tailed maid girl, blue eyes, navy white maid outfit, braid and notebook. Earnest helpful surprised reaction. Action: UPWARD TOSS: body upright, head highest, both legs extending downward below hips, arms slightly down and out, hair and fabric trailing downward. Face reacts to rising suddenly. Looking forward or slightly upward. Fixed FRONT ORTHOGRAPHIC camera, motion entirely VERTICAL in the 2D SCREEN PLANE. HEAD ABOVE CHEST ABOVE HIPS ABOVE FEET in that order, always. Do NOT recline, sit, lie on back, somersault, fall backward into depth, point soles at camera, rotate the body or exaggerate perspective. Full figure including feet, hair, ears/horns/tail fits with small transparent margin. Genuine transparent alpha background, no ground, no shadow platform, no text, arrows or motion-line backdrop. Only one character.",
+      "output": "resources/personas/deepseek/toss_up.png",
+      "reference": "resources/personas/deepseek/base.png"
+    },
+    {
+      "persona": "deepseek",
+      "category": "toss_down",
+      "prompt": "Use case: illustration-story. Asset type: single transparent full-body desktop pet sprite, NOT a scene or sprite sheet. Reference image is the character identity/style reference. Preserve her exact character design, clothing, colors, accessories, chibi proportions and polished anime rendering. Character: blue-haired whale-tailed maid girl, blue eyes, navy white maid outfit, braid and notebook. Earnest helpful surprised reaction. Action: DOWNWARD FALL: body upright, head highest, both feet dangling downward below hips, arms reaching slightly outward for balance. Hair tips and ribbons float upward due downward motion. Face reacts to descending. Looking forward/slightly down. Fixed FRONT ORTHOGRAPHIC camera, motion entirely VERTICAL in the 2D SCREEN PLANE. HEAD ABOVE CHEST ABOVE HIPS ABOVE FEET in that order, always. Do NOT recline, sit, lie on back, somersault, fall backward into depth, point soles at camera, rotate the body or exaggerate perspective. Full figure including feet, hair, ears/horns/tail fits with small transparent margin. Genuine transparent alpha background, no ground, no shadow platform, no text, arrows or motion-line backdrop. Only one character.",
+      "output": "resources/personas/deepseek/toss_down.png",
+      "reference": "resources/personas/deepseek/base.png"
+    }
+  ],
+  "updated": "2026-10-22"
+}

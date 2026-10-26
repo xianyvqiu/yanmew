@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS messages (
 --   recent_long_memory_count           直接进入上下文的最近长期记忆数 m，默认 30
 --   travel_journal_min_chars           旅行游记最小字数，默认 250
 --   travel_journal_max_chars           旅行游记最大字数，默认 350
---   tool_call_rounds                  AI 单次回复最多工具调用轮数，默认 3
+--   tool_call_rounds                  AI 单次回复最多工具调用轮数，默认 30
 --   notebook_max_chars                记事本建议最大字数，默认 4000；只约束 AI 维护，不设数据库硬限制
 --   intimacy_threshold_1              第一档亲密度，默认 10；四档均为 1–999 整数且严格递增
 --   intimacy_threshold_2              第二档亲密度，默认 50；范围及排序同上
@@ -461,13 +461,20 @@ CREATE TABLE IF NOT EXISTS reminder_occurrences (
     id             INTEGER PRIMARY KEY AUTOINCREMENT, -- 单次提醒触发记录自增主键
     reminder_id    INTEGER NOT NULL,                  -- 所属提醒规则 -> reminders.id
     scheduled_at   TEXT NOT NULL,                 -- 本次原定触发时间 UTC RFC3339
-    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'expired')), -- pending=本次未处理；done=用户完成本次；expired=本次已过期；pending 仅为新触发记录默认值
+    status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'done', 'expired')), -- pending=本次未处理；done=本次在线提醒已触发完成；expired=本次已过期；pending 仅为新触发记录默认值
     delivery_state TEXT NOT NULL CHECK (delivery_state IN ('missed', 'queued', 'shown')), -- missed=关机期间错过待汇总；queued=在线到期待展示；shown=已展示或已纳入离线汇总
     completed_at   TEXT,                            -- 本次进入 done/expired 的时间；pending 时为 NULL
     created_at     TEXT NOT NULL,                   -- 触发记录创建时间 UTC RFC3339
+    presentation_state TEXT NOT NULL DEFAULT 'legacy' CHECK (presentation_state IN ('legacy','pending','generating','ready')), -- legacy=旧流程；其余为新触发的持久文案任务
+    presentation_persona_id INTEGER REFERENCES personas(id) ON DELETE SET NULL, -- 触发时的人设
+    presentation_session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL, -- 触发时的会话，删除后不另建或转移
+    presentation_input TEXT CHECK (presentation_input IS NULL OR json_valid(presentation_input)), -- 原提醒及触发时人设的固定快照，不含服务密钥
+    presentation_text TEXT, -- AI或默认提醒的最终文本
+    presentation_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL, -- 同事务保存的聊天消息，删除后不重建
     UNIQUE (reminder_id, scheduled_at),
     FOREIGN KEY (reminder_id) REFERENCES reminders(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_reminder_presentation_pending ON reminder_occurrences(presentation_state,id);
 
 -- ------------------------------------------------------------
 -- 10. 用户全局状态
@@ -753,17 +760,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_letters_reply_to_unique
 
 -- ------------------------------------------------------------
 -- 17. 伴手礼
--- 只保存普通文字礼物；旅行带回的可佩戴饰品存 accessories 表。
+-- 普通旅行礼物可带透明图片；可佩戴饰品存 accessories 表。
 -- 不做背包、数量、容量或使用机制。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS souvenirs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,   -- 自增主键
     session_id  INTEGER NOT NULL,                    -- 所属会话 -> sessions.id
     travel_id   INTEGER,                             -- 来源旅行 -> travels.id，可空
+    title       TEXT CHECK(title IS NULL OR length(trim(title)) BETWEEN 1 AND 60), -- 礼物名称；旧资料可空
     content     TEXT    NOT NULL,                    -- 文字礼物内容
     note        TEXT    NOT NULL,                    -- AI 按人设口吻写的备注
     is_favorite INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),          -- 是否收藏：1 收藏，0 未收藏
     created_at  TEXT    NOT NULL,                    -- 创建时间 RFC3339
+    image_file  TEXT,                                -- 受管透明图片，可空
     FOREIGN KEY (travel_id, session_id) REFERENCES travels(id, session_id) ON DELETE NO ACTION,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY (travel_id)  REFERENCES travels(id)  ON DELETE SET NULL
@@ -948,7 +957,7 @@ CREATE TABLE IF NOT EXISTS pet_artworks (
  name TEXT NOT NULL CHECK(length(trim(name))>0), -- 用户可编辑名称
  prompt TEXT NOT NULL DEFAULT '', -- 用户自由填写的图像生成要求
  description TEXT NOT NULL DEFAULT '', -- 给AI参考的使用时机，不作为指令
- category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','lifted')), -- normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天，craving=等待投喂，craving_favorite=期待最爱，eating_favorite=喜欢地品尝，peek_left=左侧探头，peek_right=右侧探头，rest_sit=底部坐下，rest_lie=底部趴下，walk_left=向左行走，walk_right=向右行走，lifted=被拎后颈
+ category TEXT NOT NULL DEFAULT 'normal' CHECK(category IN ('normal','standby','click','hungry','eating','sleepy','bored','thinking','chat','craving','craving_favorite','eating_favorite','peek_left','peek_right','rest_sit','rest_lie','walk_left','walk_right','lifted','error','toss_up','toss_down','landing','wait_pet')), -- normal=默认，standby=待机，click=点击，hungry=饥饿，eating=进食，sleepy=困倦，bored=无聊，thinking=思考，chat=聊天，craving=等待投喂，craving_favorite=期待最爱，eating_favorite=喜欢地品尝，peek_left=左侧探头，peek_right=右侧探头，rest_sit=底部坐下，rest_lie=底部趴下，walk_left=向左行走，walk_right=向右行走，lifted=被拎后颈，error=报错超载
  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)), -- 0不参与表情选择/1允许选择
  image_file TEXT, -- 已接受正式透明PNG受管相对路径，NULL尚无正式图
  preview_file TEXT, -- 尚待用户接受的透明PNG；重新生成失败保留旧预览

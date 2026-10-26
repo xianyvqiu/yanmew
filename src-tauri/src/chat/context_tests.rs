@@ -267,6 +267,8 @@ fn quick_recall_prefetch_adds_older_memory_without_extra_chat_model_call() {
                     "UPDATE settings SET value='1' WHERE key='recent_long_memory_count'",
                     [],
                 )?;
+                // 只保留一条历史assistant，且无短期／游记，覆盖旧版插入点误判。
+                s.connection.execute("UPDATE settings SET value='2' WHERE key='recent_message_count'",[])?;
                 Ok(())
             })
             .unwrap();
@@ -277,6 +279,12 @@ fn quick_recall_prefetch_adds_older_memory_without_extra_chat_model_call() {
         assert!(requests[1]["messages"]
             .to_string()
             .contains(&format!("混合检索旧长期记忆 {old}")));
+        let messages=requests[1]["messages"].as_array().unwrap();
+        let retrieved=messages.iter().position(|m|m["content"].as_str().is_some_and(|t|t.starts_with(&format!("混合检索旧长期记忆 {old}")))).unwrap();
+        let recent=messages.iter().position(|m|m["content"].as_str().is_some_and(|t|t.starts_with("长期记忆 ")&&t.contains("最近记忆"))).unwrap();
+        let historical=messages.iter().position(|m|m["role"]=="assistant").unwrap();
+        assert!(retrieved<recent&&recent<historical);
+        assert_eq!(messages.iter().filter(|m|m["content"].as_str().is_some_and(|t|t.starts_with(&format!("混合检索旧长期记忆 {old}")))).count(),1);
         assert!(requests[1]["tools"]
             .as_array()
             .unwrap()
@@ -412,4 +420,35 @@ fn length_limit_continues_same_round_and_same_messages_without_tools_or_new_expr
         drop(requests);
         server.finish();
     });
+}
+
+#[test]
+fn stable_settings_and_rules_precede_live_environment_without_losing_context(){
+ let runtime=runtime("http://127.0.0.1:9/v1");
+ runtime.read(|s,_|{
+  let mut context=super::context::Context::snapshot(s,&runtime,1,1,"完整人设","现在下雨吗",None,None)?;
+  context.add_stable_rules(vec![crate::ai::provider::Message::new("system","固定工具规则")]);
+  let request=context.request(vec![],&[])?.0;
+  let contents=request.messages.iter().map(|m|m.content.as_str()).collect::<Vec<_>>();
+  let environment=contents.iter().position(|m|m.starts_with("当前本地时间：")).unwrap();
+  assert!(contents.iter().position(|m|*m=="完整人设").unwrap()<environment);
+  assert!(contents.iter().position(|m|*m=="固定工具规则").unwrap()<environment);
+  assert_eq!(contents.last(),Some(&"现在下雨吗"));
+  assert!(contents[environment].contains("环境："));assert!(contents[environment].contains("当前记忆参数："));
+  Ok(())
+ }).unwrap();
+}
+#[test]
+fn usage_totals_survive_tool_rounds_and_report_unknown_requests(){
+ tauri::async_runtime::block_on(async{
+  let mut tool=tool_response("read_notebook",json!({}));
+  // 独立用量帧位于DONE之前，模拟服务商真实SSE结构。
+  let frames=event(json!({"choices":[],"usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":70}}));
+  let raw=String::from_utf8(tool.chunks[0].1.clone()).unwrap().replace("data: [DONE]",&(frames+"data: [DONE]"));tool.chunks[0].1=raw.into_bytes();
+  let server=Server::new(vec![Response::json(json!({"expression":"(^_^)"})),tool,Response::sse(&(text_event("已查看记事本。")+&finish_event("stop")))]);
+  let runtime=runtime(&server.url);let(prepared,_)=submit(&runtime,1,1,0,"看看记事本".into()).unwrap();let mut totals=None;
+  run_persisted(&client(),prepared,|e|{if let ReplyEventKind::ContextNotice{budget,..}=e.event.kind{totals=budget.provider_usage;}}).await.unwrap();
+  let totals=totals.unwrap();assert_eq!((totals.requests,totals.input_requests,totals.cached_requests,totals.input_tokens,totals.cached_tokens),(2,1,1,100,70));
+  let requests=server.requests.lock().unwrap();let first=requests[1]["messages"].as_array().unwrap();let second=requests[2]["messages"].as_array().unwrap();assert_eq!(&second[..first.len()],first.as_slice());drop(requests);server.finish();
+ });
 }

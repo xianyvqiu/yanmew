@@ -5,7 +5,7 @@ import type { Reminder, ReminderOccurrence } from "../types";
 
 const pageSize = 50;
 
-export default function useReminders() {
+export default function useReminders({ complete = false }: { complete?: boolean } = {}) {
   const [rules, setRules] = useState<Reminder[]>([]);
   const [occurrences, setOccurrences] = useState<ReminderOccurrence[]>([]);
   const [missed, setMissed] = useState<ReminderOccurrence[]>([]);
@@ -25,17 +25,20 @@ export default function useReminders() {
     const filter = selection.current;
     setLoading(true);
     try {
-      // 重查已展开页数，事件刷新不会折叠用户已经加载的历史。
+      // 管理页读取完整摘要后本地筛选分页；其他调用方仍保留原按需加载。
       const readRules = async () => {
         const items: Reminder[] = [];
         let after: string | null = null;
         let more = false;
-        for (let page = 0; page < rulePages.current; page++) {
+        for (let page = 0; complete || page < rulePages.current; page++) {
           const batch = await reminderApi.list(after, pageSize);
+          if (!mounted.current || version.current !== token) return { items: [], more: false };
           items.push(...batch);
           more = batch.length === pageSize;
           if (!more) break;
-          after = batch[batch.length - 1].id;
+          const next = batch[batch.length - 1].id;
+          if (next === after) throw new Error("提醒规则分页未前进，请重新读取。");
+          after = next;
         }
         return { items, more };
       };
@@ -43,11 +46,13 @@ export default function useReminders() {
         const items: ReminderOccurrence[] = [];
         let after: string | undefined;
         let more = false;
-        for (let page = 0; page < occurrencePages.current; page++) {
+        for (let page = 0; complete || page < occurrencePages.current; page++) {
           const batch = await reminderApi.listOccurrences({ reminderId: filter || undefined, afterId: after, limit: pageSize });
+          if (!mounted.current || version.current !== token) return { items: [], more: false };
           items.push(...batch.items);
           more = batch.nextAfterId !== null;
           if (!more) break;
+          if (batch.nextAfterId === after) throw new Error("提醒记录分页未前进，请重新读取。");
           after = batch.nextAfterId!;
         }
         return { items, more };
@@ -62,7 +67,7 @@ export default function useReminders() {
     } finally {
       if (mounted.current && version.current === token) setLoading(false);
     }
-  }, []);
+  }, [complete]);
 
   useEffect(() => {
     mounted.current = true;

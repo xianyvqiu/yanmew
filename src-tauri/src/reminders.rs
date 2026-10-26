@@ -1,6 +1,7 @@
 //! 全局提醒业务；展示确认与用户完成状态独立保存。
 mod rules;
 pub(crate) mod polish;
+pub(crate) mod presentation;
 pub mod schedule;
 use crate::{
     error::{AppError, AppResult},
@@ -10,8 +11,8 @@ use chrono::{DateTime, SecondsFormat, Utc};
 pub use rules::*;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-const SELECT_OCCURRENCE: &str = "SELECT o.id,o.reminder_id,r.name,r.content,o.scheduled_at,
-    o.status,o.delivery_state,o.completed_at,o.created_at
+const SELECT_OCCURRENCE: &str = "SELECT o.id,o.reminder_id,COALESCE(json_extract(o.presentation_input,'$.name'),r.name),COALESCE(json_extract(o.presentation_input,'$.content'),r.content),o.scheduled_at,
+    o.status,o.delivery_state,o.completed_at,o.created_at,(o.presentation_state<>'legacy')
     FROM reminder_occurrences o JOIN reminders r ON r.id=o.reminder_id";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<ReminderOccurrence> {
@@ -44,6 +45,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<ReminderOccurrence> {
         },
         completed_at: row.get(7)?,
         created_at: row.get(8)?,
+        auto_completed: row.get(9)?,
     })
 }
 

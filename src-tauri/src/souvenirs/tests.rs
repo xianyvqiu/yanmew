@@ -16,6 +16,7 @@ fn db() -> Connection {
 }
 fn text() -> Gift {
     Gift::Text {
+        title:Some("湖边明信片".into()),
         content: "湖边的明信片".into(),
         note: "给你挑了一张。".into(),
     }

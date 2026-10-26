@@ -3,8 +3,9 @@ import { configurationApi, errorMessage, weatherApi } from "../../api";
 import type { AppError, SecretUpdate, WeatherInput, WeatherSettings, WeatherView } from "../../types";
 import "./WeatherPanel.css";
 import WeatherCard from "./WeatherCard";
+import WeatherInformation from "./WeatherInformation";
 
-type WeatherPanelProps = { contextRevision: number };
+type WeatherPanelProps = { contextRevision: number; personaId?:string };
 
 const availabilityLabels: Record<WeatherView["availability"], string> = {
   available: "最新天气",
@@ -32,7 +33,7 @@ function validWeatherHost(value: string) {
   } catch { return false; }
 }
 
-export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
+export default function WeatherPanel({ contextRevision, personaId }: WeatherPanelProps) {
   const [weather, setWeather] = useState<WeatherView | null>(null);
   const [settings, setSettings] = useState<WeatherSettings | null>(null);
   const [apiHost, setApiHost] = useState("");
@@ -131,23 +132,27 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
 
   useEffect(() => {
     mounted.current = true;
-    const entry = ++operation.current;
-    // 缓存先展示，再刷新一次；手动操作、离页或 StrictMode 清理使旧初始化失效。
-    void readCache().then(() => {
-      if (mounted.current && entry === operation.current) void refreshWeather();
-    });
+    operation.current++;
+    // 打开页面只读缓存；启动和每小时联网刷新由后台任务负责。
     void loadSettings();
 
-    const refreshCache = () => { void readCache(); };
+    let disposed = false;
+    const refreshCache = () => { if (!disposed) void readCache(); };
+    let stopWeather: (() => void) | undefined;
+    void weatherApi.listen(refreshCache).then(stop => {
+      if (!disposed) { stopWeather = stop; refreshCache(); } else stop();
+    }).catch(refreshCache);
     window.addEventListener("focus", refreshCache);
     const timer = window.setInterval(refreshCache, 60_000);
     return () => {
+      disposed = true;
       mounted.current = false;
       cacheGeneration.current++;
       operation.current++;
       settingsGeneration.current++;
       window.removeEventListener("focus", refreshCache);
       window.clearInterval(timer);
+      stopWeather?.();
       if (refreshActive.current) {
         refreshActive.current = false;
         void weatherApi.cancel().catch(() => {});
@@ -235,10 +240,11 @@ export default function WeatherPanel({ contextRevision }: WeatherPanelProps) {
   const fieldError = settingsError?.field === "apiHost" ? settingsError.message : "";
   return <section className="ym-page-card" aria-label="时间与天气">
     <div className="ym-page-heading"><h2>时间与天气</h2></div>
-    <p className="ym-page-note">打开页面会先显示已有天气，再自动获取当前位置并刷新一次；也可手动刷新。刷新失败会保留已有天气。</p>
+    <p className="ym-page-note">启动颜喵时自动获取天气，之后每小时后台更新。这里直接显示已有结果，也可手动刷新；刷新失败会保留上次成功的天气。</p>
     {loading && <p role="status">正在读取天气缓存…</p>}
     {weatherError && <div className="ym-page-error" role="alert">{weatherError}</div>}
     {weather && <WeatherCard weather={weather} />}
+    <WeatherInformation information={weather?.information} personaId={personaId} contextRevision={contextRevision} onRefresh={readCache} disabled={weatherBusy}/>
     {weather && <details><summary>天气数据详情</summary><section aria-label="天气结果">
       <p role="status">状态：{availabilityLabels[weather.availability]}</p>
       {weather.data ? <dl>

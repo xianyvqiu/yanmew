@@ -8,13 +8,39 @@
 .ym-background-image::after { content: ""; position: absolute; inset: 0; background: var(--ym-canvas); opacity: .25; }
 .ym-chat-background-host > :is(.ym-chat-page,.ym-chat-layout), .ym-background-error { position: relative; z-index: 1; }
 .ym-chat-background-host:has(> .ym-background-image) .ym-chat-history { background: transparent; }
+/* 有背景图时，只让常驻面板透出背景；正文和操作按钮保持清晰。 */
+.ym-chat-background-host:has(> .ym-background-image) :is(
+  .ym-chat-sidebar,
+  .ym-chat-page > .chat-composer,
+  .ym-chat-page > .ym-page-card:not(.ym-chat-history)
+) {
+  background: color-mix(in srgb, var(--ym-surface) 28%, transparent);
+  border-color: var(--ym-border-strong);
+  backdrop-filter: blur(12px);
+}
+.ym-chat-background-host:has(> .ym-background-image) .chat-composer__input {
+  background: color-mix(in srgb, var(--ym-surface-muted) 16%, transparent);
+}
+.ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar > .ym-chat-sidebar__action {
+  background: color-mix(in srgb, var(--ym-accent-subtle) 24%, transparent);
+}
+.ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar__session[aria-current="page"] {
+  background: color-mix(in srgb, var(--ym-accent-soft) 38%, transparent);
+}
+.ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar :is(
+  .ym-chat-sidebar__action,
+  .ym-chat-sidebar__toggle,
+  .ym-chat-sidebar__session
+):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ym-accent-soft) 28%, transparent);
+}
 .ym-background-settings { min-width: 0; padding: 12px 0; container-type: inline-size; }
 .ym-background-settings > .ym-button { white-space: normal; }
 .ym-background-settings fieldset { border: 0; min-width: 0; max-width: 100%; padding: 14px 0 0; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .ym-background-settings legend { max-width: 100%; overflow-wrap: anywhere; }
 .ym-background-settings .ym-background-preview { min-width: 0; width: 100%; }
 .ym-background-preview { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); background: var(--ym-canvas); display: grid; place-items: center; }
-.ym-background-preview .ym-background-preview-messages { position: relative; z-index: 1; width: 100%; padding: 14px; gap: 8px; }
+.ym-background-preview .ym-background-preview-messages { position:absolute;inset:0;z-index:1;width:100%;padding:14px;gap:8px;display:flex;flex-direction:column;justify-content:center;box-sizing:border-box; }
 .ym-background-settings input[type="file"] { width: 100%; min-width: 0; font: inherit; }
 .ym-background-settings input[type="range"] { display: block; width: 100%; margin: 0; }
 .ym-background-settings .ym-inline-form { flex-wrap: wrap; margin-top: 0; }

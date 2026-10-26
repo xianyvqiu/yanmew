@@ -24,6 +24,8 @@ mod tests;
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum Gift {
     Text {
+        #[serde(default, skip_serializing_if="Option::is_none")]
+        title: Option<String>,
         content: String,
         note: String,
     },
@@ -45,9 +47,10 @@ impl Gift {
             return Err(invalid());
         }
         match self {
-            Self::Text { content, note } if content.trim().is_empty() || note.trim().is_empty() => {
+            Self::Text { content, note, .. } if content.trim().is_empty() || note.trim().is_empty() => {
                 Err(invalid())
             }
+            Self::Text {title:Some(title),..} if title.trim().is_empty() || title.chars().count()>60 => Err(invalid()),
             Self::Text { .. } => Ok(()),
             Self::Accessory {
                 name,
@@ -75,6 +78,7 @@ pub(super) fn parse(choice: &Choice, kind: &str) -> AppResult<Gift> {
     }
     let gift: Gift = serde_json::from_str(&choice.content).map_err(|_| invalid())?;
     gift.validate(kind)?;
+    if matches!(&gift,Gift::Text{title:None,..}) {return Err(invalid());}
     Ok(gift)
 }
 /// 读取不可变礼物事实，供游记复用已发放结果，不查询仍存在的展示行。
@@ -328,7 +332,7 @@ impl Worker {
         lease: &RequestLease,
     ) -> AppResult<Prepared> {
         let instruction = if s.kind == "text" {
-            "只输出JSON：kind为text，content为具体普通文字伴手礼，note为人设口吻备注，二者非空。"
+            "只输出JSON：kind为text，title为1–60字的具体礼物名称，content为礼物描述，note为人设口吻备注，三者非空。"
         } else {
             "只输出JSON：kind为accessory，name为1–80字符名称，display_text为1–40字符的真实图标、Emoji、颜文字或符号组合，不可使用普通名称代替，description为人设口吻非空简介（最多1000字符）。"
         };
@@ -346,10 +350,12 @@ impl Worker {
             image_revision: None,
             notice: None,
         };
-        if let Gift::Accessory {
-            name, description, ..
-        } = &prepared.gift
-        {
+        let enabled=runtime.read(|store,_|super::images_enabled(&store.connection))?;
+        if matches!(&prepared.gift,Gift::Accessory{..}) || enabled {
+            let (name,description)=match &prepared.gift {
+                Gift::Accessory{name,description,..}=>(name.clone(),description.clone()),
+                Gift::Text{content,note,..}=>(content.chars().take(80).collect(),format!("单件旅行伴手礼物品，独立透明底，无场景、无文字、无人物；依据礼物描述：{content}。备注：{note}")),
+            };
             let allowed = self.take_image_permission(s.id)?;
             if allowed {
                 let image = runtime.read(|store, secrets| {
@@ -362,16 +368,18 @@ impl Worker {
                 if let Ok(Some(image)) = image {
                     prepared.image_revision = Some(image.revision);
                     let result = async {
-                        let bytes = crate::image_generation::openai_compatible::generate(
-                            runtime.ai.as_ref().map_err(Clone::clone)?,
-                            &image,
-                            name,
-                            description,
-                            &lease.cancel,
-                        )
-                        .await?;
+                        lease.cancel.check()?;
+                        if s.kind=="text" && !runtime.read(|store,_|super::images_enabled(&store.connection))? {return Err(AppError::new("IMAGE_DISABLED","伴手礼生图已关闭"));}
+                        let client=runtime.ai.as_ref().map_err(Clone::clone)?;
+                        let bytes=if s.kind=="text" {crate::image_generation::openai_compatible::generate_souvenir(client,&image,&name,&description,&lease.cancel).await?}else{crate::image_generation::openai_compatible::generate(client,&image,&name,&description,&lease.cancel).await?};
+                        let cutout_paths = runtime.paths.clone()?; let cutout_cancel = lease.cancel.clone();
                         tauri::async_runtime::spawn_blocking(move || {
-                            crate::accessories::images::normalize(&bytes)
+                            let bytes = crate::background_removal::ensure(&cutout_paths, &bytes, &cutout_cancel, true)?;
+                            crate::accessories::images::normalize(&bytes).map_err(|error| {
+                                if error.code=="INVALID_ACCESSORY_IMAGE" {
+                                    AppError::new("INVALID_SOUVENIR_IMAGE","生图服务已返回图片，但图片不符合透明伴手礼要求：须为静态PNG/WebP、含真实透明像素且四边透明；仅在提示词中写透明背景不保证模型支持")
+                                } else {error}
+                            })
                         })
                         .await
                         .map_err(|_| AppError::storage())?
@@ -381,15 +389,15 @@ impl Worker {
                         Ok(png) => prepared.png = Some(png),
                         Err(error) => {
                             lease.cancel.check()?;
-                            prepared.notice=Some(format!("旅行饰品图片未生成：{}。已使用图标、Emoji、颜文字或符号组合；不会自动再次生图。",error.message));
+                            prepared.notice=Some(format!("旅行礼物图片未生成：{}。已保留文字或符号外观；不会自动再次生图。",error.message));
                         }
                     }
                 } else {
-                    prepared.notice=Some("生图未开启、配置不可用或未选择有效提供商，旅行饰品使用图标、Emoji、颜文字或符号组合。".into());
+                    prepared.notice=Some("生图未开启、配置不可用或未选择有效提供商，旅行礼物使用文字或符号外观。".into());
                 }
             } else {
                 prepared.notice = Some(
-                    "恢复或重试的旅行饰品使用图标、Emoji、颜文字或符号组合，不再次付费生图。"
+                    "恢复或重试的旅行礼物保留文字或符号外观，不再次付费生图。"
                         .into(),
                 );
             }
@@ -493,7 +501,7 @@ fn commit(runtime: &Runtime, s: &Snapshot, lease: &RequestLease, p: &Prepared) -
         if let Some(png) = p
             .png
             .as_ref()
-            .filter(|_| p.image_revision == current_revision && current_revision.is_some())
+            .filter(|_| p.image_revision == current_revision && current_revision.is_some() && (s.kind!="text" || super::images_enabled(&store.connection).unwrap_or(false)))
         {
             // 文件先发布，再提交引用；锁内发布防止未提交图被其他清理任务提前移除。
             match runtime
@@ -511,7 +519,7 @@ fn commit(runtime: &Runtime, s: &Snapshot, lease: &RequestLease, p: &Prepared) -
         }
         if p.png.is_some() && published.is_none() && image_notice.is_none() {
             image_notice =
-                Some("生图配置已改变，旅行饰品使用原图标、Emoji、颜文字或符号组合。".into());
+                Some("旅行礼物生图配置或开关已改变，已保留文字或符号外观。".into());
         }
         let tx = store.connection.transaction()?;
         save(
@@ -566,8 +574,8 @@ pub(super) fn save(
     }
     let now = crate::travel::time(now);
     match gift {
-        Gift::Text { content, note } => {
-            c.execute("INSERT INTO souvenirs(session_id,travel_id,content,note,created_at) VALUES(?1,?2,?3,?4,?5)",params![session,id,content,note,now])?;
+        Gift::Text { title, content, note } => {
+            c.execute("INSERT INTO souvenirs(session_id,travel_id,content,note,created_at,image_file,title) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![session,id,content,note,now,image_file,title])?;
         }
         Gift::Accessory {
             name,

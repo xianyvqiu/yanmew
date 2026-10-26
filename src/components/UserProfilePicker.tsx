@@ -4,8 +4,8 @@ import CardBrowserControls from "./CardBrowserControls";
 import { useCardBrowser } from "../hooks/useCardBrowser";
 
 /** 选择只绑定已有设定，详情跳转使用原设置窗口，不复制编辑表单。 */
-export default function UserProfilePicker({ profiles, selectedId, busy, error, onSelect, onDetails, onClose }: {
-  profiles: UserProfile[]; selectedId: string | null; busy: boolean; error: string;
+export default function UserProfilePicker({ profiles, selectedId, defaultProfileId, onDefaultChange, busy, error, onSelect, onDetails, onClose }: {
+  defaultProfileId?:string; onDefaultChange?:(id:string)=>void; profiles: UserProfile[]; selectedId: string | null; busy: boolean; error: string;
   onSelect: (id: string | null) => void; onDetails: (id: string) => void; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -15,6 +15,7 @@ export default function UserProfilePicker({ profiles, selectedId, busy, error, o
     <div className="ym-page-heading"><h2 id="profile-picker-title">绑定用户设定</h2><button className="ym-button" disabled={busy} onClick={onClose}>关闭</button></div>
     <div className="ym-session-dialog-body">
     <p className="ym-page-note">点击卡片绑定到当前会话；修改绑定会中断正在生成的回复，已有聊天和记忆保留。</p>
+    {onDefaultChange && <section className="ym-profile-default"><label className="ym-field">新会话默认用户设定<select aria-label="新会话的用户设定" value={defaultProfileId??""} disabled={busy} onChange={event=>onDefaultChange(event.target.value)}><option value="">未绑定</option>{profiles.map(profile=><option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><p className="ym-page-note">用于此聊天窗口接下来创建的新会话，不改变已有会话的绑定。</p></section>}
     {error && <p className="ym-page-error" role="alert">{error}</p>}
     {profiles.length > 0 ? <>
       <CardBrowserControls browser={browser} label="用户设定" timeLabel="更新时间" disabled={busy} />

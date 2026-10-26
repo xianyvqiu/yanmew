@@ -28,3 +28,18 @@
   .ym-pet-level-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .ym-pet-level-label { grid-column: 1 / -1; padding-top: 0; }
 }
+
+.ym-pet-timing-panel { container-type:inline-size; }
+.ym-pet-timing-toolbar { position:sticky; top:0; z-index:3; padding:12px; border:1px solid var(--ym-border-strong); border-radius:14px; background:var(--ym-surface-raised); box-shadow:var(--ym-shadow-sm); }
+.ym-pet-timing-actions { justify-content:flex-end; }
+.ym-pet-timing-status { margin-right:auto; color:var(--ym-text-secondary); font-size:13px; }
+.ym-pet-timing-toolbar :is(.ym-page-error,.ym-pet-timing-notice) { margin:10px 0 0; }
+.ym-pet-timing-group>.ym-page-note:first-of-type { margin-bottom:16px; }
+@container (min-width:500px) {
+  .ym-pet-level-row .ym-field>span:first-child { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+}
+@container (max-width:499px) {
+  .ym-pet-level-head { display:none; }
+  .ym-pet-level-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .ym-pet-level-label { grid-column:1/-1; padding-top:0; }
+}

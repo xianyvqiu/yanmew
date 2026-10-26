@@ -152,10 +152,17 @@ pub(crate) async fn generate(
     cancel: &Cancellation,
 ) -> AppResult<Vec<u8>> {
     let prompt=format!("绘制一个用于颜文字桌宠头顶的单独饰品。名称：{name}。设计细节：{description}。真正透明背景，四边留透明空间，只有饰品本身，主体居中，清晰小尺寸可读；不要绘制宠物、人物、脸或整个场景，不要文字、水印、棋盘格、阴影底板。输出透明PNG。");
+    generate_transparent(client,snapshot,&prompt,cancel).await
+}
+pub(crate) async fn generate_souvenir(client:&AiClient,snapshot:&Snapshot,name:&str,description:&str,cancel:&Cancellation)->AppResult<Vec<u8>>{
+    let prompt=format!("绘制一件旅行带回的单独纪念物：{name}。细节：{description}。真实透明背景，主体居中，四边留透明空间；不要宠物、人物、佩戴场景、文字、水印、棋盘格或底板。输出透明PNG。");
+    generate_transparent(client,snapshot,&prompt,cancel).await
+}
+async fn generate_transparent(client:&AiClient,snapshot:&Snapshot,prompt:&str,cancel:&Cancellation)->AppResult<Vec<u8>>{
     cancel.wait(TIMEOUT,async {
         cancel.check()?;
         let response=client.search_http().post(endpoint(&snapshot.provider.base_url,"generations")).bearer_auth(&snapshot.key)
-            .json(&generation_body(snapshot,&prompt,true))
+            .json(&generation_body(snapshot,prompt,true))
             .send().await.map_err(network)?;
         if !response.status().is_success(){return Err(failed("生图服务拒绝或未完成请求，请检查模型、Key、额度及透明输出支持；本次不自动重试"));}
         let value=serde_json::from_slice(&body(response,MAX_RESPONSE).await?).map_err(|_|failed("生图响应格式无效"))?;

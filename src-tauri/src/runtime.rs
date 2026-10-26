@@ -134,16 +134,20 @@ impl Runtime {
         &self,
         input: crate::pet::controller::InteractionInput,
     ) -> AppResult<crate::pet::controller::View> {
+        self.pet_interact_with_petting(input,false)
+    }
+    pub(crate) fn pet_interact_with_petting(&self,input:crate::pet::controller::InteractionInput,petted:bool)->AppResult<crate::pet::controller::View> {
         self.read(|store, secrets| {
             self.settle_pet(store, secrets)?;
             let proactive_key = format!("proactive:{}", input.session_id);
             let sample = self.clock.sample()?;
             {
                 let mut random = self.random.lock().map_err(|_| AppError::storage())?;
-                store.pet.interact(
+                store.pet.interact_with_petting(
                     &mut store.connection,
                     store.context_revision,
                     input,
+                    petted,
                     sample,
                     random.as_mut(),
                 )?;

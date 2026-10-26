@@ -270,3 +270,48 @@ fn regeneration_hides_and_rejects_festival_mutation_tools() {
         drop(requests);server.finish();
     });
 }
+
+#[test]
+fn normal_chat_can_query_global_meow_ledger_without_writing_wallet() {
+    tauri::async_runtime::block_on(async {
+        let query=json!({"start":null,"end":null,"direction":"all","reason":"","pluginId":"","search":"","ascending":false,"page":1});
+        let server=Server::new(vec![Response::json(json!({"expression":"(^_^)"})),Response::sse(&calls(&[("meow-query","query_meow_ledger",query)])),Response::sse(&(text_event("已查询喵币账单。")+&finish_event("stop")))]);
+        let runtime=crate::runtime::test_runtime(&server.url);
+        let(prepared,_)=submit(&runtime,1,1,0,"查看全局喵币余额和账单".into()).unwrap();
+        let mut events=Vec::new();
+        let saved=run_persisted(&client(),prepared,|event|events.push(format!("{event:?}"))).await.unwrap();
+        assert_eq!(saved.round.status,crate::models::ChatRoundStatus::Completed,"{events:?}");
+        runtime.read(|s,_|{assert_eq!(crate::currency::get_balance(&s.connection)?,0);assert_eq!(s.connection.query_row("SELECT count(*) FROM currency_ledger",[],|row|row.get::<_,i64>(0))?,0);Ok(())}).unwrap();
+        let requests=server.requests.lock().unwrap();
+        assert!(requests[1]["tools"].as_array().unwrap().iter().any(|tool|tool["function"]["name"]=="query_meow_ledger"));
+        let result=requests[2]["messages"].as_array().unwrap().iter().find(|message|message["tool_call_id"]=="meow-query").unwrap();
+        let result:Value=serde_json::from_str(result["content"].as_str().unwrap()).unwrap();
+        assert_eq!(result["result"]["balance"],"0");
+    });
+}
+
+#[test]
+fn proactive_progressively_reads_own_skills_but_cannot_create_or_bind() {
+    tauri::async_runtime::block_on(async {
+        let server=Server::new(vec![Response::sse(&calls(&[("catalog","list_skills",json!({"query":"旅行"}))])),Response::sse(&calls(&[("read","get_skill",json!({"skill_id":"2"}))])),Response::sse(&calls(&[("write","create_skill",json!({"title":"禁止","summary":"","body":"不能写入"}))])),Response::sse(&(text_event("按读取的资料聊起旅行。")+&finish_event("stop")))]);
+        let runtime=crate::runtime::test_runtime(&server.url);
+        runtime.read(|s,_| {
+            for (title,body) in [(crate::skills::BASE_TITLE,"基础必读提示"),("旅行话题","读取后才知道的表达要求")] {
+                crate::skills::save(&mut s.connection,crate::skills::Input{id:None,revision:None,title:title.into(),summary:"简介".into(),body:body.into()})?;
+                crate::skills::bind(&s.connection,s.connection.last_insert_rowid(),1,true)?;
+            }
+            crate::config::save(&mut s.connection,[("tool_call_rounds".into(),"4".into())].into_iter().collect())
+        }).unwrap();
+        let lease=Arc::new(runtime.requests.start("proactive:1".into(),1).unwrap());
+        let prepared=runtime.read(|s,secrets|super::proactive::prepare_proactive(&runtime,s,secrets,1,1,lease)).unwrap();
+        let result=tools::run(&client(),&prepared,&mut |_|Ok(())).await.unwrap();assert_eq!(result.finish,Finish::Stop);
+        let requests=server.requests.lock().unwrap();
+        assert!(requests[0]["messages"].to_string().contains("基础必读提示"));
+        assert!(!requests[0]["messages"].to_string().contains("读取后才知道的表达要求"));
+        assert!(requests[2]["messages"].to_string().contains("读取后才知道的表达要求"));
+        assert!(!requests[0]["tools"].as_array().unwrap().iter().any(|v|matches!(v["function"]["name"].as_str(),Some("create_skill"|"update_skill"|"set_skill_binding"|"preview_shared_skill_update"))));
+        let denied=requests[3]["messages"].as_array().unwrap().iter().find(|m|m["tool_call_id"]=="write").unwrap();
+        let denied:Value=serde_json::from_str(denied["content"].as_str().unwrap()).unwrap();assert_eq!(denied["error"]["code"],"PERMISSION_DENIED");
+        drop(requests);assert_eq!(runtime.read(|s,_|Ok(crate::skills::list(&s.connection)?.len())).unwrap(),2);server.finish();
+    });
+}

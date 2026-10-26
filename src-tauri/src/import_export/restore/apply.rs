@@ -205,6 +205,7 @@ fn assets(
     for (table, key, role) in [
         ("personas", "chat_bg_file", "background"),
         ("accessories", "image_file", "accessory"),
+        ("souvenirs", "image_file", "accessory"),
         ("pet_artworks", "image_file", "accessory"),
         ("pet_artworks", "preview_file", "accessory"),
         ("message_images", "image_file", "chat"),
@@ -281,6 +282,9 @@ fn foreign(source: &Connection, r: &mut Record) -> AppResult<()> {
         ("travel_id", "travels"),
         ("reply_to_id", "letters"),
         ("reminder_id", "reminders"),
+        ("presentation_persona_id", "personas"),
+        ("presentation_session_id", "sessions"),
+        ("presentation_message_id", "messages"),
         ("game_run_id", "game_runs"),
     ] {
         map_field(source, r, key, table)?;
@@ -579,7 +583,7 @@ pub(super) fn commit(
         ] {
             if table == "settings" {
                 // 本机的一次性安装标记不随备份替换，避免删除过的角色重新出现。
-                tx.execute("DELETE FROM settings WHERE key NOT IN (?1,?2,?3,?4,?5,?6)", [crate::preset_personas::SEED_KEY,crate::preset_personas::DOCK_SEED_KEY,crate::preset_personas::WALK_SEED_KEY,crate::preset_personas::EMOTION_SEED_KEY,crate::preset_personas::LIFT_SEED_KEY,"pet_desktop_preferences"])?;
+                tx.execute("DELETE FROM settings WHERE key NOT IN (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)", [crate::preset_personas::SEED_KEY,crate::preset_personas::DOCK_SEED_KEY,crate::preset_personas::WALK_SEED_KEY,crate::preset_personas::EMOTION_SEED_KEY,crate::preset_personas::LIFT_SEED_KEY,crate::preset_personas::ERROR_SEED_KEY,crate::preset_personas::TOSS_SEED_KEY,crate::preset_personas::WAIT_PET_SEED_KEY,crate::preset_personas::TOSS_PROPORTIONS_SEED_KEY,crate::preset_personas::SURPRISE_SEED_KEY,"pet_desktop_preferences"])?;
             } else {
                 tx.execute(&format!("DELETE FROM {table}"), [])?;
             }
@@ -666,7 +670,7 @@ pub(super) fn commit(
                 );
             }
             if table == "message_images" {resource(source,&mut r,"image_file","chat")?;}
-            if table == "accessories" {
+            if table == "accessories" || table == "souvenirs" {
                 resource(source, &mut r, "image_file", "accessory")?;
             }
             put(&tx, table, &r, table == "session_pet_states")?;
@@ -718,6 +722,9 @@ pub(super) fn commit(
                     map_field(source, &mut r, "id", table)?;
                 }
                 foreign(source, &mut r)?;
+                if table=="reminder_occurrences" && matches!(r.get("presentation_state").and_then(Value::as_str),Some("pending"|"generating")) {
+                    r.insert("presentation_state".into(),Value::from("legacy"));
+                }
                 if table=="provider_roles" && r.get("purpose")==Some(&Value::String("image".into())){r.insert("enabled".into(),Value::from(0));}
                 if table == "currency_ledger" && r.get("ref_id").is_some_and(|v| !v.is_null()) {
                     map_field(source, &mut r, "ref_id", "accessories")?;

@@ -34,6 +34,8 @@ export default function FestivalPanel({ context }: { context: CurrentContext }) 
   const alive = useRef(false);
   const locked = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => { if (draft) formRef.current?.scrollIntoView?.({behavior:window.matchMedia?.("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}); }, [!!draft]);
   useEffect(() => {
     alive.current = true;
     return () => { alive.current = false; };
@@ -89,7 +91,7 @@ export default function FestivalPanel({ context }: { context: CurrentContext }) 
         </li>)}</ul>
 
       </>
-      {draft && <form className="ym-festival-form" aria-label={editing ? "编辑日期" : "新增日期"} onSubmit={event => { event.preventDefault(); save(); }}>
+      {draft && <form ref={formRef} className="ym-festival-form" aria-label={editing ? "编辑日期" : "新增日期"} onSubmit={event => { event.preventDefault(); save(); }}>
         <h3>{editing ? `编辑：${editing.name}` : "新增固定日期"}</h3>
         {error && <p role="alert" className="ym-page-error">{error}</p>}
         <fieldset disabled={busy}>

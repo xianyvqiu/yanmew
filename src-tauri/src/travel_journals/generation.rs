@@ -153,7 +153,7 @@ fn capture(runtime: &Runtime, id: i64) -> AppResult<(Snapshot, RequestLease)> {
         let reserved_output=source.maximum.saturating_mul(3).saturating_add(512).min(maximum_output as usize);
         let request=loop {
             let messages=vec![Message::new("system",format!("{system}\n{skill}")),Message::new("user",json!({"persona":source.prompt,"started_at":source.started,"started_at_local":start.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string(),"actual_return_at":source.actual,"duration_seconds":duration.as_secs(),"destination":source.facts.destination,"activities_happened":source.facts.happened(duration),"gift":gift,"letters":letters}).to_string())];
-            let input=crate::chat_capacity::estimate(&messages,&[])?;
+            let input=crate::chat_capacity::estimate(&messages,&crate::skills::tools::read_definitions())?;
             let mut output=maximum_output;
             if let Some(window)=capacity.context_window {
                 let remaining=(window as usize).saturating_sub(input.saturating_add(crate::chat_capacity::SAFETY));
@@ -380,11 +380,7 @@ impl Worker {
         let (snapshot, lease) = tauri::async_runtime::spawn_blocking(move || capture(&rt, id))
             .await
             .map_err(|_| AppError::storage())??;
-        let choice = runtime
-            .ai
-            .as_ref()
-            .map_err(Clone::clone)?
-            .complete(&snapshot.target, &snapshot.request, &lease.cancel)
+        let choice = crate::skills::disclosure::complete(runtime,runtime.ai.as_ref().map_err(Clone::clone)?,&snapshot.target,&snapshot.request,&lease,snapshot.source.persona,|store,secrets|require_snapshot(runtime,store,secrets,&snapshot,&lease))
             .await?;
         let output = parse(&choice, snapshot.source.minimum, snapshot.source.maximum)?;
         let session = snapshot.source.session;

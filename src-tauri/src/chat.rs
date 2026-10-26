@@ -16,7 +16,10 @@ use std::sync::{Arc, Mutex};
 mod coordinator;
 mod media;
 mod tools;
+mod weather_tools;
 mod visual_tools;
+mod self_image;
+mod image_tools;
 #[cfg(test)]
 mod visual_tests;
 mod guards;

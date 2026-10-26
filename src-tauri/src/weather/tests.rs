@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::AtomicUsize;
 use crate::platform::contracts::LocationSource;
 use std::{
     io::{Read, Write},
@@ -296,5 +297,111 @@ fn cancelled_and_switched_requests_cannot_update_cache() {
                 })
                 .unwrap();
         }
+    });
+}
+
+
+struct DeniedSource(AtomicUsize);
+impl LocationSource for DeniedSource {
+    fn locate(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<Position>> + Send + '_>> {
+        Box::pin(async move {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(AppError::new("LOCATION_DENIED", "定位权限未开启"))
+        })
+    }
+}
+#[derive(Default)]
+struct WeatherEvents(AtomicUsize);
+impl crate::events::PetEventSink for WeatherEvents {
+    fn changed(&self, _: &crate::pet::controller::View) {}
+    fn failed(&self, _: &AppError) {}
+    fn weather_changed(&self) { self.0.fetch_add(1, Ordering::SeqCst); }
+}
+#[test]
+fn background_refreshes_on_start_and_hourly_preserving_cache_on_failure() {
+    tauri::async_runtime::block_on(async {
+        let runtime = crate::runtime::test_runtime("http://localhost");
+        let now = runtime.clock.sample().unwrap().utc;
+        runtime.read(|store, _| { store.weather.finish(Ok(data(now))); Ok(()) }).unwrap();
+        let source = Arc::new(DeniedSource(AtomicUsize::new(0)));
+        let events = Arc::new(WeatherEvents::default());
+        let mut worker = Worker::default();
+        worker.tick(&runtime, source.clone(), events.clone());
+        worker.task.take().unwrap().await.unwrap();
+        assert_eq!(source.0.load(Ordering::SeqCst), 1);
+        assert_eq!(events.0.load(Ordering::SeqCst), 1);
+        runtime.read(|store, _| {
+            let view = store.weather.view(0, now);
+            assert!(view.data.is_some());
+            assert_eq!(view.error.unwrap().code, "LOCATION_DENIED");
+            Ok(())
+        }).unwrap();
+        worker.tick(&runtime, source.clone(), events.clone());
+        assert!(worker.task.is_none());
+        worker.last_started = Some(std::time::Instant::now() - REFRESH_INTERVAL);
+        worker.tick(&runtime, source.clone(), events.clone());
+        worker.task.take().unwrap().await.unwrap();
+        assert_eq!(source.0.load(Ordering::SeqCst), 2);
+        assert_eq!(events.0.load(Ordering::SeqCst), 2);
+        runtime.jobs_cancel.cancel();
+        worker.last_started = None;
+        worker.tick(&runtime, source, events);
+        assert!(worker.task.is_none());
+    });
+}
+#[test]
+fn background_does_not_overlap_an_inflight_refresh() {
+    tauri::async_runtime::block_on(async {
+        let runtime = crate::runtime::test_runtime("http://localhost");
+        let source = Arc::new(Pending { started: Arc::new(AtomicBool::new(false)), dropped: Arc::new(AtomicBool::new(false)) });
+        let events = Arc::new(WeatherEvents::default());
+        let mut worker = Worker::default();
+        worker.tick(&runtime, source.clone(), events.clone());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !source.started.load(Ordering::SeqCst) { tokio::task::yield_now().await; }
+        }).await.unwrap();
+        let id = worker.task.as_ref().unwrap().inner().id();
+        worker.last_started = Some(std::time::Instant::now() - REFRESH_INTERVAL);
+        worker.tick(&runtime, source.clone(), events);
+        assert_eq!(worker.task.as_ref().unwrap().inner().id(), id);
+        runtime.requests.cancel_key("weather");
+        worker.task.take().unwrap().await.unwrap();
+        assert!(source.dropped.load(Ordering::SeqCst));
+    });
+}
+
+#[test]
+fn disconnected_weather_request_retries_once_then_recovers() {
+    tauri::async_runtime::block_on(async {
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+        let handle=std::thread::spawn(move||{
+            let (first,_)=listener.accept().unwrap();drop(first);
+            let (mut second,_)=listener.accept().unwrap();let mut request=[0;4096];second.read(&mut request).unwrap();
+            let body=r#"{"current":{"time":1725235200,"weather_code":0,"temperature_2m":20}}"#;
+            write!(second,"HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        });
+        let client=Client::new().unwrap();let result=client.json(client.http.get(format!("http://{address}")),&Cancellation::default()).await.unwrap();
+        assert_eq!(result["current"]["temperature_2m"],20);handle.join().unwrap();
+    });
+}
+#[test]
+fn network_failure_uses_one_minute_retry_and_success_returns_to_hourly() {
+    let worker=Worker::default();assert_eq!(worker.interval(),REFRESH_INTERVAL);
+    worker.retry_network.store(true,Ordering::Relaxed);assert_eq!(worker.interval(),Duration::from_secs(60));
+    worker.retry_network.store(false,Ordering::Relaxed);assert_eq!(worker.interval(),REFRESH_INTERVAL);
+}
+#[test]
+#[ignore = "手动检查公开免费天气接口；默认测试不访问互联网"]
+fn manual_public_weather_connection() {
+    tauri::async_runtime::block_on(async {let result=Client::new().unwrap().fetch(&position(),Ok(None),&Cancellation::default()).await;assert!(result.is_ok(),"{result:?}");});
+}
+
+#[test]
+fn manual_refresh_network_failure_also_schedules_background_recovery() {
+    tauri::async_runtime::block_on(async {
+        let runtime=crate::runtime::test_runtime("http://localhost");runtime.read(|s,_|{s.weather.finish(Err(AppError::new("WEATHER_NETWORK","模拟断线")));Ok(())}).unwrap();
+        let source=Arc::new(DeniedSource(AtomicUsize::new(0)));let events=Arc::new(WeatherEvents::default());let mut worker=Worker::default();
+        worker.last_started=Some(std::time::Instant::now()-Duration::from_secs(30));worker.tick(&runtime,source.clone(),events.clone());assert!(worker.task.is_none());
+        worker.last_started=Some(std::time::Instant::now()-Duration::from_secs(61));worker.tick(&runtime,source.clone(),events);worker.task.take().unwrap().await.unwrap();assert_eq!(source.0.load(Ordering::SeqCst),1);
     });
 }

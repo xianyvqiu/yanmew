@@ -1,4 +1,6 @@
+import MotionDetails from "../MotionDetails";
 import PetCreationPanel from "./PetCreationPanel";
+import PetImageSetup from "./PetImageSetup";
 import PersonaExpressionsEditor from "./PersonaExpressionsEditor";
 import PersonaCompanionSettings from "./PersonaCompanionSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,6 +20,7 @@ const inputFor = (persona: Persona): PersonaInput => ({ name: persona.name, prom
   chatBgBlur: persona.chatBgBlur, saveAsInitial: false });
 
 export default function PersonasPanel({ detailRequest }: { detailRequest?: SettingsDetailRequest }) {
+  const [imageSetup,setImageSetup]=useState<Persona|null>(null);
   const [selected,setSelected]=useState<string|null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,11 +97,11 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
     } catch (cause) { showError(cause); return false; }
     finally { locked.current = false; if (mounted.current) setBusy(false); }
   };
-  const save = async (input: PersonaInput) => {
-    const target = editing;
-    if (await run(() => target ? configurationApi.updatePersona(target.id, input) : configurationApi.createPersona(input),
-      target ? "人设已保存" : "人设与默认会话已创建。有当前聊天提供商时，颜文字表情库会在后台自动生成。")) {
-      if (mounted.current) setEditing(undefined);
+  const save = async (input: PersonaInput, imageMode=false) => {
+    const target = editing;let created:Persona|undefined;
+    if (await run(async()=>{if(target)await configurationApi.updatePersona(target.id,input);else created=await configurationApi.createPersona(input);},
+      target ? "人设已保存" : imageMode ? "人设已创建，请上传初始图片。" : "人设与默认会话已创建。有当前聊天提供商时，颜文字表情库会在后台自动生成。")) {
+      if (mounted.current) {setEditing(undefined);if(imageMode&&created){setSelected(created.id);setImageSetup(created);}}
     }
   };
   const confirm = async () => {
@@ -128,6 +131,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
   const browser=useCardBrowser(personas,p=>`${p.name} ${p.prompt} ${p.initialPrompt}`,p=>p.updatedAt??"",p=>p.id);
   const disabled = busy || loading;
   return <>
+    {imageSetup&&<PetImageSetup key={imageSetup.id} personaId={imageSetup.id} personaName={imageSetup.name} onClose={()=>{setImageSetup(null);void refresh().catch(showError);}}/>}
     <section className="ym-page-card" aria-label="人设管理">
       <div className="ym-page-heading"><h2>人设</h2><button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(null); setError(null); }}>新建人设</button></div>
       <p className="ym-page-note">切换会中断当前回复，并取消已开始的旅行和待回信；目标人设的会话由系统恢复。修改当前设定也会中断该人设正在进行的请求。</p>
@@ -141,7 +145,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
       <div className="ym-persona-grid">{(selected?personas.filter(p=>p.id===selected):browser.items).map(persona => <article className="ym-persona-card ym-object-card" data-current={persona.isActive} key={persona.id} aria-label={persona.name} onClick={event=>{if(!selected&&editing===undefined&&!disabled&&!(event.target as HTMLElement).closest("button"))setSelected(persona.id);}}>
         <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(persona.id)}>{persona.name}</button></h3><button className={`ym-button ${persona.isActive?"ym-current-button":""}`} disabled={disabled||persona.isActive||editing!==undefined} onClick={()=>void run(()=>configurationApi.setPersona(persona.id),"当前人设已切换")}>{persona.isActive?"使用中":"切换"}</button></div>
         <p className="ym-page-note">{persona.isBuiltin?"系统默认人设":"自建人设"}{persona.isActive&&" · 当前使用"}</p>
-        {!selected&&<p className="ym-card-summary">{persona.prompt}</p>}
+        {!selected&&<p className="ym-card-summary">{persona.prompt.length > 140 ? persona.prompt.slice(0,140) + "…" : persona.prompt}</p>}
         <p className="ym-persona-color"><span style={{ backgroundColor: persona.color }} aria-hidden="true" />人设标记颜色 {persona.color}</p>
         {!selected&&<p className="ym-page-note">人设自调：{persona.selfEvolveEnabled ? "开启" : "关闭"}</p>}
         {selected===persona.id&&<>
@@ -152,15 +156,15 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
         <PersonaPromptDiff initialPrompt={persona.initialPrompt} currentPrompt={persona.prompt} />
         <ChatBackgroundSettings persona={persona} disabled={disabled || editing !== undefined || Boolean(confirmation)} onSaved={() => { void refresh().catch(showError); }} />
         <PersonaCompanionSettings key={persona.id} personaId={persona.id}/>
-        <details><summary>表情库</summary><PersonaExpressionsEditor key={persona.id} persona={persona} disabled={disabled || editing !== undefined || Boolean(generating)} onSaved={() => { void refresh().catch(showError); }} /><PetCreationPanel personaId={persona.id} personaName={persona.name}/></details>
+        <MotionDetails className="ym-feature-module"><summary><span>表情库</span><small>颜文字与图片互动动作</small></summary><PersonaExpressionsEditor key={persona.id} persona={persona} disabled={disabled || editing !== undefined || Boolean(generating)} onSaved={() => { void refresh().catch(showError); }} /><PetCreationPanel personaId={persona.id} personaName={persona.name} onStartSetup={()=>setImageSetup(persona)}/><div className="ym-module-actions">          <button className="ym-button" aria-label={`重新生成 ${persona.name} 表情库`} disabled={disabled || editing !== undefined} onClick={() => { void generate(persona); }}>{generating === persona.id ? "正在生成表情库…" : "重新生成表情库"}</button>
+          {generating === persona.id && <button className="ym-button" disabled={cancelling} onClick={() => { void cancelGeneration(); }}>{cancelling ? "正在取消…" : "取消生成"}</button>}</div></MotionDetails>
         {failures[persona.id] && <p role="alert" className="ym-page-error">表情库生成未完成：{failures[persona.id]}。已有表情库保留。</p>}
-        <div className="ym-inline-form">
+        <h3 className="ym-section-heading">人设管理</h3><div className="ym-inline-form ym-persona-management">
           <button className="ym-button" disabled={disabled || persona.isActive || editing !== undefined} onClick={() => { void run(() => configurationApi.setPersona(persona.id), "当前人设已切换"); }}>切换为 {persona.name}</button>
           <button className="ym-button" aria-label={`编辑 ${persona.name}`} disabled={disabled || editing !== undefined} onClick={() => { setEditing(persona); setError(null); }}>编辑</button>
           <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setConfirmation({ persona, action: "baseline" }); setError(null); }}>保存为初始设定</button>
           <button className="ym-button" disabled={disabled || editing !== undefined || persona.prompt === persona.initialPrompt} onClick={() => { setConfirmation({ persona, action: "restore" }); setError(null); }}>从初始设定恢复</button>
-          <button className="ym-button" aria-label={`重新生成 ${persona.name} 表情库`} disabled={disabled || editing !== undefined} onClick={() => { void generate(persona); }}>{generating === persona.id ? "正在生成表情库…" : "重新生成表情库"}</button>
-          {generating === persona.id && <button className="ym-button" disabled={cancelling} onClick={() => { void cancelGeneration(); }}>{cancelling ? "正在取消…" : "取消生成"}</button>}
+
           {!persona.isBuiltin && <button className="ym-button ym-persona-danger" aria-label={`删除 ${persona.name}`} disabled={disabled || editing !== undefined} onClick={() => { setConfirmation({ persona, action: "delete" }); setError(null); }}>删除</button>}
         </div>
         {persona.isBuiltin && <p className="ym-page-note">系统默认人设不能删除。</p>}

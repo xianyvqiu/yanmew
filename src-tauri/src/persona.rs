@@ -172,16 +172,18 @@ pub fn context(c: &Connection, revision: u64) -> AppResult<Context> {
         context_revision: revision,
     })
 }
-fn select_in_transaction(c: &Connection, id: i64) -> AppResult<()> {
+fn select_in_transaction(c: &rusqlite::Transaction<'_>, id: i64, ensure_session: bool) -> AppResult<()> {
     let active = c
         .query_row("SELECT is_active FROM personas WHERE id=?1", [id], |r| {
             r.get::<_, bool>(0)
         })
         .optional()?
         .ok_or_else(AppError::not_found)?;
-    if active {
+    if active && (!ensure_session || c.query_row("SELECT EXISTS(SELECT 1 FROM sessions WHERE persona_id=?1)",[id],|r|r.get::<_,bool>(0))?) {
         return Ok(());
     }
+    // 主动切换时补齐空人设；复用普通会话写入，不创建教程消息，也不重复建会话。
+    if ensure_session { crate::sessions::create_default_in_transaction(c, id)?; }
     // 保留已生成的信件和事实，仅取消离开会话中尚未完成的旅行任务。
     crate::sessions::cancel_current_travel_and_replies(
         c,
@@ -195,7 +197,7 @@ fn select_in_transaction(c: &Connection, id: i64) -> AppResult<()> {
 }
 pub fn select(c: &mut Connection, id: i64) -> AppResult<()> {
     let tx = c.transaction()?;
-    select_in_transaction(&tx, id)?;
+    select_in_transaction(&tx, id, true)?;
     tx.commit()?;
     Ok(())
 }
@@ -217,7 +219,7 @@ pub fn delete(c: &mut Connection, id: i64) -> AppResult<()> {
         let fallback = tx.query_row("SELECT id FROM personas WHERE is_builtin=1", [], |r| {
             r.get(0)
         })?;
-        select_in_transaction(&tx, fallback)?;
+        select_in_transaction(&tx, fallback, false)?;
     }
     // 先解除来源 RESTRICT，再由外键级联清理人设及其会话。
     tx.execute("DELETE FROM long_memories WHERE session_id IN (SELECT id FROM sessions WHERE persona_id=?1)",[id])?;
@@ -229,6 +231,54 @@ pub fn delete(c: &mut Connection, id: i64) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selecting_empty_persona_creates_one_plain_session_and_restores_existing_sessions() {
+        let mut c = crate::db::test_database();
+        c.execute_batch("INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(2,'空人设','设定','设定');
+          INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'旧会话','a','a');
+          INSERT INTO settings(key,value) VALUES('current_session_id','1');
+          UPDATE user_state SET coins=57;").unwrap();
+        select(&mut c,2).unwrap();
+        let created=context(&c,0).unwrap().session_id.unwrap();
+        let session=crate::sessions::get(&c,2,created.parse().unwrap()).unwrap();
+        assert_eq!(session.title,"新会话");
+        assert_eq!(session.intimacy,0);
+        assert!(session.user_profile_id.is_none());
+        assert!(session.is_current);
+        select(&mut c,2).unwrap();
+        assert_eq!(crate::sessions::list(&c,2).unwrap().len(),1);
+        select(&mut c,1).unwrap();
+        select(&mut c,2).unwrap();
+        assert_eq!(context(&c,0).unwrap().session_id,Some(created));
+        assert_eq!(c.query_row("SELECT count(*) FROM messages",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(c.query_row("SELECT count(*) FROM chat_rounds",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(c.query_row("SELECT coins FROM user_state",[],|r|r.get::<_,i64>(0)).unwrap(),57);
+    }
+
+    #[test]
+    fn selecting_active_persona_after_its_sessions_were_deleted_repairs_empty_context() {
+        let mut c=crate::db::test_database();
+        select(&mut c,1).unwrap();
+        c.execute_batch("DELETE FROM settings WHERE key='current_session_id'; DELETE FROM sessions;").unwrap();
+        select(&mut c,1).unwrap();
+        assert!(context(&c,0).unwrap().session_id.is_some());
+        assert_eq!(crate::sessions::list(&c,1).unwrap().len(),1);
+    }
+
+    #[test]
+    fn failed_selection_rolls_back_created_session_and_old_travel_cancellation() {
+        let mut c=crate::db::test_database();
+        c.execute_batch("INSERT INTO personas(id,name,prompt,initial_prompt) VALUES(2,'空人设','设定','设定');
+          INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(1,1,'旧会话','a','a');
+          INSERT INTO settings(key,value) VALUES('current_session_id','1');
+          INSERT INTO travels(session_id,status,started_at,planned_return_at,midway_letter_at,created_at) VALUES(1,'away','a','b','c','a');
+          CREATE TRIGGER reject_selection BEFORE UPDATE OF is_active ON personas BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+        assert!(select(&mut c,2).is_err());
+        assert_eq!(context(&c,0).unwrap().persona_id,"1");
+        assert_eq!(context(&c,0).unwrap().session_id.as_deref(),Some("1"));
+        assert!(crate::sessions::list(&c,2).unwrap().is_empty());
+        assert_eq!(c.query_row("SELECT status FROM travels",[],|r|r.get::<_,String>(0)).unwrap(),"away");
+    }
     #[test]
     fn chat_colors_copy_on_creation_and_preserve_independent_edits() {
         let mut c = crate::db::test_database();

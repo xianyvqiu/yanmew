@@ -131,7 +131,7 @@
   }
 }
 
-@container (max-width: 519px) {
+@container (max-width: 679px) {
   .ym-window-shell__header {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px 12px;

@@ -176,6 +176,12 @@ class reminder_occurrences {
   TEXT delivery_state
   TEXT completed_at
   TEXT created_at
+  TEXT presentation_state
+  INTEGER presentation_persona_id FK
+  INTEGER presentation_session_id FK
+  TEXT presentation_input
+  TEXT presentation_text
+  INTEGER presentation_message_id FK
 }
 class user_state {
   <<table>>
@@ -329,10 +335,12 @@ class souvenirs {
   INTEGER id PK
   INTEGER session_id FK
   INTEGER travel_id FK
+  TEXT title
   TEXT content
   TEXT note
   INTEGER is_favorite
   TEXT created_at
+  TEXT image_file
 }
 class festival_catalog {
   <<table>>
@@ -591,50 +599,53 @@ long_memory_sources "0..1" --> "1" short_memories : R13 short_memory_id / RESTRI
 long_memory_sources "0..*" --> "1" long_memories : R14 long_memory_id / CASCADE
 notebooks "0..1" --> "1" sessions : R15 session_id / CASCADE
 reminder_occurrences "0..*" --> "1" reminders : R16 reminder_id / CASCADE
-game_permissions "0..*" --> "1" game_plugins : R17 plugin_id / CASCADE
-game_plugin_settings "0..*" --> "1" game_plugins : R18 plugin_id / CASCADE
-game_plugin_data "0..*" --> "1" game_plugins : R19 plugin_id / CASCADE
-currency_ledger "0..*" --> "0..1" game_runs : R20 game_run_id / RESTRICT
-currency_ledger "0..*" --> "0..1" game_runs : R21 game_run_id, plugin_id, plugin_version / NO ACTION
-travels "0..*" --> "1" sessions : R22 session_id / CASCADE
-travel_journals "0..1" --> "1" travels : R23 travel_id / CASCADE
-travel_journals "0..*" --> "1" sessions : R24 session_id / CASCADE
-travel_journals "0..1" --> "1" travels : R25 travel_id, session_id / NO ACTION
-accessories "0..*" --> "0..1" travels : R26 travel_id / SET NULL
-accessories "0..*" --> "1" sessions : R27 session_id / CASCADE
-accessories "0..*" --> "0..1" travels : R28 travel_id, session_id / NO ACTION
-letters "0..*" --> "0..1" letters : R29 reply_to_id / SET NULL
-letters "0..*" --> "0..1" travels : R30 travel_id / SET NULL
-letters "0..*" --> "1" sessions : R31 session_id / CASCADE
-letters "0..*" --> "0..1" travels : R32 travel_id, session_id / NO ACTION
-souvenirs "0..*" --> "0..1" travels : R33 travel_id / SET NULL
-souvenirs "0..*" --> "1" sessions : R34 session_id / CASCADE
-souvenirs "0..*" --> "0..1" travels : R35 travel_id, session_id / NO ACTION
-custom_festivals "0..*" --> "0..1" festival_catalog : R36 festival_id / SET NULL
-provider_models "0..*" --> "1" providers : R37 provider_id / CASCADE
-provider_roles "0..1" --> "0..1" provider_models : R38 provider_id, purpose / RESTRICT
-provider_roles "0..*" --> "1" providers : R39 provider_id / RESTRICT
-message_images "0..*" --> "1" messages : R40 message_id / CASCADE
-reminder_email_items "0..1" --> "1" reminder_occurrences : R41 occurrence_id / CASCADE
-reminder_email_items "0..*" --> "1" reminder_email_deliveries : R42 delivery_id / CASCADE
-pet_artworks "0..*" --> "1" personas : R43 persona_id / CASCADE
-food_inventory "0..1" --> "0..1" food_catalog : R44 food_id / RESTRICT
-persona_food_settings "0..*" --> "0..1" food_catalog : R45 favorite_food_id / RESTRICT
-persona_food_settings "0..*" --> "1" food_catalog : R46 default_food_id / RESTRICT
-persona_food_settings "0..1" --> "1" personas : R47 persona_id / CASCADE
-food_actions "0..1" --> "0..1" currency_ledger : R48 ledger_id / RESTRICT
-food_actions "0..*" --> "0..1" sessions : R49 session_id / SET NULL
-food_actions "0..*" --> "0..1" personas : R50 persona_id / SET NULL
-food_actions "0..*" --> "1" food_catalog : R51 food_id / RESTRICT
-persona_skills "0..*" --> "1" skills : R52 skill_id / CASCADE
-persona_skills "0..*" --> "1" personas : R53 persona_id / CASCADE
-real_schedules "0..*" --> "1" real_assets : R54 asset_id / RESTRICT
-real_schedules "0..*" --> "1" real_categories : R55 category_id / RESTRICT
-real_entries "0..*" --> "0..1" real_schedules : R56 schedule_id / SET NULL
-real_entries "0..*" --> "1" real_assets : R57 asset_id / RESTRICT
-real_entries "0..*" --> "0..1" real_categories : R58 category_id / RESTRICT
-real_occurrences "0..1" --> "0..1" real_entries : R59 entry_id / SET NULL
-real_occurrences "0..*" --> "1" real_schedules : R60 schedule_id / RESTRICT
+reminder_occurrences "0..*" --> "0..1" messages : R17 presentation_message_id / SET NULL
+reminder_occurrences "0..*" --> "0..1" sessions : R18 presentation_session_id / SET NULL
+reminder_occurrences "0..*" --> "0..1" personas : R19 presentation_persona_id / SET NULL
+game_permissions "0..*" --> "1" game_plugins : R20 plugin_id / CASCADE
+game_plugin_settings "0..*" --> "1" game_plugins : R21 plugin_id / CASCADE
+game_plugin_data "0..*" --> "1" game_plugins : R22 plugin_id / CASCADE
+currency_ledger "0..*" --> "0..1" game_runs : R23 game_run_id / RESTRICT
+currency_ledger "0..*" --> "0..1" game_runs : R24 game_run_id, plugin_id, plugin_version / NO ACTION
+travels "0..*" --> "1" sessions : R25 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R26 travel_id / CASCADE
+travel_journals "0..*" --> "1" sessions : R27 session_id / CASCADE
+travel_journals "0..1" --> "1" travels : R28 travel_id, session_id / NO ACTION
+accessories "0..*" --> "0..1" travels : R29 travel_id / SET NULL
+accessories "0..*" --> "1" sessions : R30 session_id / CASCADE
+accessories "0..*" --> "0..1" travels : R31 travel_id, session_id / NO ACTION
+letters "0..*" --> "0..1" letters : R32 reply_to_id / SET NULL
+letters "0..*" --> "0..1" travels : R33 travel_id / SET NULL
+letters "0..*" --> "1" sessions : R34 session_id / CASCADE
+letters "0..*" --> "0..1" travels : R35 travel_id, session_id / NO ACTION
+souvenirs "0..*" --> "0..1" travels : R36 travel_id / SET NULL
+souvenirs "0..*" --> "1" sessions : R37 session_id / CASCADE
+souvenirs "0..*" --> "0..1" travels : R38 travel_id, session_id / NO ACTION
+custom_festivals "0..*" --> "0..1" festival_catalog : R39 festival_id / SET NULL
+provider_models "0..*" --> "1" providers : R40 provider_id / CASCADE
+provider_roles "0..1" --> "0..1" provider_models : R41 provider_id, purpose / RESTRICT
+provider_roles "0..*" --> "1" providers : R42 provider_id / RESTRICT
+message_images "0..*" --> "1" messages : R43 message_id / CASCADE
+reminder_email_items "0..1" --> "1" reminder_occurrences : R44 occurrence_id / CASCADE
+reminder_email_items "0..*" --> "1" reminder_email_deliveries : R45 delivery_id / CASCADE
+pet_artworks "0..*" --> "1" personas : R46 persona_id / CASCADE
+food_inventory "0..1" --> "0..1" food_catalog : R47 food_id / RESTRICT
+persona_food_settings "0..*" --> "0..1" food_catalog : R48 favorite_food_id / RESTRICT
+persona_food_settings "0..*" --> "1" food_catalog : R49 default_food_id / RESTRICT
+persona_food_settings "0..1" --> "1" personas : R50 persona_id / CASCADE
+food_actions "0..1" --> "0..1" currency_ledger : R51 ledger_id / RESTRICT
+food_actions "0..*" --> "0..1" sessions : R52 session_id / SET NULL
+food_actions "0..*" --> "0..1" personas : R53 persona_id / SET NULL
+food_actions "0..*" --> "1" food_catalog : R54 food_id / RESTRICT
+persona_skills "0..*" --> "1" skills : R55 skill_id / CASCADE
+persona_skills "0..*" --> "1" personas : R56 persona_id / CASCADE
+real_schedules "0..*" --> "1" real_assets : R57 asset_id / RESTRICT
+real_schedules "0..*" --> "1" real_categories : R58 category_id / RESTRICT
+real_entries "0..*" --> "0..1" real_schedules : R59 schedule_id / SET NULL
+real_entries "0..*" --> "1" real_assets : R60 asset_id / RESTRICT
+real_entries "0..*" --> "0..1" real_categories : R61 category_id / RESTRICT
+real_occurrences "0..1" --> "0..1" real_entries : R62 entry_id / SET NULL
+real_occurrences "0..*" --> "1" real_schedules : R63 schedule_id / RESTRICT
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

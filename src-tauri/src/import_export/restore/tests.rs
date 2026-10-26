@@ -495,7 +495,11 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
     assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::SEED_KEY));
     assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::EMOTION_SEED_KEY));
     assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::LIFT_SEED_KEY));
+    assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::TOSS_PROPORTIONS_SEED_KEY));
+    assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::SURPRISE_SEED_KEY));
     target.read(|s, _| {
+        s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::SURPRISE_SEED_KEY])?;
+        s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::TOSS_PROPORTIONS_SEED_KEY])?;
         s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::SEED_KEY])?;
         s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')", [crate::preset_personas::EMOTION_SEED_KEY])?;
         Ok(())
@@ -527,6 +531,8 @@ fn full_restore_maps_selection_clears_keys_and_preserves_global_amount_exactly()
     target
         .read(|s, _| {
             let c = &s.connection;
+            assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::TOSS_PROPORTIONS_SEED_KEY], |r| r.get::<_, String>(0))?, "1");
+            assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::SURPRISE_SEED_KEY], |r| r.get::<_, String>(0))?, "1");
             assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::SEED_KEY], |r| r.get::<_, String>(0))?, "1");
             assert_eq!(c.query_row("SELECT value FROM settings WHERE key=?1", [crate::preset_personas::EMOTION_SEED_KEY], |r| r.get::<_, String>(0))?, "1");
             assert_eq!(
@@ -974,6 +980,44 @@ fn food_and_skill_full_and_persona_backup_roundtrip(){
 mod real_money_tests;
 
 #[test]
+fn error_artwork_roundtrip_accepts_v19_and_preserves_local_seed_marker(){
+ for version in [19,20] {
+  let sd=Directory::new();let td=Directory::new();let source=fixture(&sd.0);let target=fixture(&td.0);
+  if version==20 {source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,description,enabled,created_at,updated_at) VALUES(2,'expression','自定义超载','error','自己的使用说明',0,?1,?1)",[NOW])?;Ok(())}).unwrap();}
+  target.read(|s,_|{s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')",[crate::preset_personas::ERROR_SEED_KEY])?;Ok(())}).unwrap();
+  let archive=make(&source,&sd.0,PackageKind::Full,&[],false);
+  rewrite(&archive.0,|m,_|m.schema_version=version);
+  let preview=prepare(&target,&archive).unwrap().unwrap();let mut choice=input(&preview);
+  // 选择新建来源人设；复用目标人设时应按既有规则保留其原表情库。
+  for binding in &mut choice.personas {if binding.source_id=="2" {binding.target_id=None;}}
+  confirm(&target,choice).unwrap();
+  target.read(|s,_|{
+   assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key=?1",[crate::preset_personas::ERROR_SEED_KEY],|r|r.get::<_,String>(0))?,"1");
+   if version==20 {let row:(String,i64)=s.connection.query_row("SELECT description,enabled FROM pet_artworks WHERE category='error' AND name='自定义超载'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;assert_eq!(row,("自己的使用说明".into(),0));}Ok(())
+  }).unwrap();
+ }
+ assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::ERROR_SEED_KEY));
+}
+
+#[test]
+fn toss_artwork_roundtrip_accepts_v21_and_preserves_local_seed_marker(){
+ for version in [21,22] {
+  let sd=Directory::new();let td=Directory::new();let source=fixture(&sd.0);let target=fixture(&td.0);
+  if version==22 {source.read(|s,_|{for category in ["toss_up","toss_down","landing"]{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,description,enabled,created_at,updated_at) VALUES(2,'expression',?1,?1,'自己的抛接动作',0,?2,?2)",params![category,NOW])?;}Ok(())}).unwrap();}
+  target.read(|s,_|{s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')",[crate::preset_personas::TOSS_SEED_KEY])?;Ok(())}).unwrap();
+  let archive=make(&source,&sd.0,PackageKind::Full,&[],false);rewrite(&archive.0,|m,_|m.schema_version=version);
+  let preview=prepare(&target,&archive).unwrap().unwrap();let mut choice=input(&preview);
+  for binding in &mut choice.personas {if binding.source_id=="2"{binding.target_id=None;}}
+  confirm(&target,choice).unwrap();
+  target.read(|s,_|{
+   assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key=?1",[crate::preset_personas::TOSS_SEED_KEY],|r|r.get::<_,String>(0))?,"1");
+   if version==22{assert_eq!(s.connection.query_row("SELECT count(*) FROM pet_artworks WHERE category IN ('toss_up','toss_down','landing') AND description='自己的抛接动作' AND enabled=0",[],|r|r.get::<_,i64>(0))?,3);}Ok(())
+  }).unwrap();
+ }
+ assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::TOSS_SEED_KEY));
+}
+
+#[test]
 fn multiple_accessory_layers_roundtrip_and_v18_defaults(){
  for legacy in [false,true]{
  let sd=Directory::new();let td=Directory::new();let source=fixture(&sd.0);let target=fixture(&td.0);
@@ -983,5 +1027,65 @@ fn multiple_accessory_layers_roundtrip_and_v18_defaults(){
  if legacy{rewrite(&archive.0,|manifest,data|{manifest.schema_version=18;for row in data["accessories"].as_array_mut().unwrap(){let obj=row.as_object_mut().unwrap();obj.remove("render_layer");obj.remove("layer_order");}});}
  let preview=prepare(&target,&archive).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();
  target.read(|s,_|{assert!(s.connection.query_row("SELECT count(*) FROM accessories WHERE session_id=(SELECT session_id FROM accessories WHERE name='第二件') AND is_worn=1",[],|r|r.get::<_,i64>(0))? >=2);let original:(i64,i64,i64)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories WHERE name='小帽子' AND session_id=(SELECT session_id FROM accessories WHERE name='第二件')",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!(original,(125,-500,1500));let row:(String,i64)=s.connection.query_row("SELECT render_layer,layer_order FROM accessories WHERE name='第二件'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;assert_eq!(row,if legacy{("front".into(),0)}else{("front".into(),3)});assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key=?1",[crate::preset_personas::LIFT_SEED_KEY],|r|r.get::<_,String>(0))?,"1");Ok(())}).unwrap();
+ }
+}
+
+#[test]
+fn souvenir_titles_and_images_backup_restore_v20_v23_compatibility(){
+ for legacy_version in [None,Some(20),Some(23)] {
+  let legacy=legacy_version.is_some();
+  let source_dir=Directory::new();let target_dir=Directory::new();let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+  let mut image=image::RgbaImage::new(16,16);image.put_pixel(8,8,image::Rgba([200,100,150,255]));let mut bytes=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(image).write_to(&mut bytes,image::ImageFormat::Png).unwrap();let bytes=crate::accessories::images::normalize(&bytes.into_inner()).unwrap();
+  fs::create_dir_all(&source.paths.as_ref().unwrap().data_root).unwrap();
+  let file=crate::accessories::images::publish(source.paths.as_ref().unwrap(),&bytes).unwrap();
+  source.read(|s,_|{s.connection.execute("INSERT INTO souvenirs(session_id,title,content,note,is_favorite,image_file,created_at) VALUES(2,'银白贝壳','海边贝壳','带给你的',1,?1,?2)",params![file,NOW])?;crate::souvenirs::set_images_enabled(&s.connection,false)?;Ok(())}).unwrap();
+  crate::accessories::images::cleanup_one(&source,&file,&[]);assert!(crate::accessories::images::read(source.paths.as_ref().unwrap(),&file).is_ok());
+  let package=make(&source,&source_dir.0,PackageKind::Full,&[],false);
+
+  if legacy {
+   // v20旧包只有文字；v23保留图片，二者均不含新标题列。
+   if legacy_version==Some(20) {source.read(|s,_|{s.connection.execute("UPDATE souvenirs SET image_file=NULL",[])?;Ok(())}).unwrap();}
+   let old=make(&source,&source_dir.0,PackageKind::Full,&[],false);rewrite(&old.0,|manifest,data|{manifest.schema_version=legacy_version.unwrap();for row in data["souvenirs"].as_array_mut().unwrap(){if legacy_version==Some(20){row.as_object_mut().unwrap().remove("image_file");}row.as_object_mut().unwrap().remove("title");}});let preview=prepare(&target,&old).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();
+  }else{let preview=prepare(&target,&package).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();}
+  target.read(|s,_|{let(content,note,image):(String,String,Option<String>)=s.connection.query_row("SELECT content,note,image_file FROM souvenirs ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!((content.as_str(),note.as_str()),("海边贝壳","带给你的"));let title:Option<String>=s.connection.query_row("SELECT title FROM souvenirs ORDER BY id DESC LIMIT 1",[],|r|r.get(0))?;assert_eq!(title.as_deref(),if legacy{None}else{Some("银白贝壳")});assert_eq!(image.is_none(),legacy_version==Some(20));assert!(!crate::souvenirs::images_enabled(&s.connection)?);if let Some(file)=image{assert!(crate::accessories::images::read(target.paths.as_ref().unwrap(),&file)?.starts_with("data:image/png;base64,"));}Ok(())}).unwrap();
+ }
+}
+
+#[test]
+fn wait_pet_roundtrip_accepts_v22_and_preserves_local_seed_marker(){
+ for version in [22,23] {
+  let sd=Directory::new();let td=Directory::new();let source=fixture(&sd.0);let target=fixture(&td.0);
+  if version==23 {source.read(|s,_|{for category in ["wait_pet"]{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,description,enabled,created_at,updated_at) VALUES(2,'expression',?1,?1,'自己的等待动作',0,?2,?2)",params![category,NOW])?;}Ok(())}).unwrap();}
+  target.read(|s,_|{s.connection.execute("INSERT INTO settings(key,value) VALUES(?1,'1')",[crate::preset_personas::WAIT_PET_SEED_KEY])?;Ok(())}).unwrap();
+  let archive=make(&source,&sd.0,PackageKind::Full,&[],false);rewrite(&archive.0,|m,_|m.schema_version=version);
+  let preview=prepare(&target,&archive).unwrap().unwrap();let mut choice=input(&preview);
+  for binding in &mut choice.personas {if binding.source_id=="2"{binding.target_id=None;}}
+  confirm(&target,choice).unwrap();
+  target.read(|s,_|{
+   assert_eq!(s.connection.query_row("SELECT value FROM settings WHERE key=?1",[crate::preset_personas::WAIT_PET_SEED_KEY],|r|r.get::<_,String>(0))?,"1");
+   if version==23{assert_eq!(s.connection.query_row("SELECT count(*) FROM pet_artworks WHERE category='wait_pet' AND description='自己的等待动作' AND enabled=0",[],|r|r.get::<_,i64>(0))?,1);}Ok(())
+  }).unwrap();
+ }
+ assert!(!crate::import_export::protocol::setting_allowed(crate::preset_personas::WAIT_PET_SEED_KEY));
+}
+
+#[test]
+fn reminder_presentation_full_restore_and_v24_compatibility(){
+ for legacy in [false,true]{
+  let source_dir=Directory::new();let target_dir=Directory::new();let source=fixture(&source_dir.0);let target=fixture(&target_dir.0);
+  source.read(|s,_|{
+   s.connection.execute("INSERT INTO reminders(id,name,content,kind,fire_at,status,source,created_at) VALUES(90,'喝水','喝一杯水','once',?1,'done','manual',?1)",[NOW])?;
+   s.connection.execute("INSERT INTO reminder_occurrences(id,reminder_id,scheduled_at,status,delivery_state,created_at,completed_at,presentation_state,presentation_persona_id,presentation_session_id,presentation_input,presentation_text,presentation_message_id) VALUES(90,90,?1,'done','shown',?1,?1,'ready',2,2,'{}','喝杯水再忙吧',11)",[NOW])?;
+   s.connection.execute("INSERT INTO reminder_occurrences(id,reminder_id,scheduled_at,status,delivery_state,created_at,completed_at,presentation_state,presentation_persona_id,presentation_session_id,presentation_input) VALUES(91,90,'2026-10-13T01:00:00Z','done','queued',?1,?1,'generating',2,2,'{}')",[NOW])?;Ok(())
+  }).unwrap();
+  let transfer=make(&source,&source_dir.0,PackageKind::Full,&[],false);
+  if legacy {rewrite(&transfer.0,|manifest,data|{manifest.schema_version=24;for row in data["reminder_occurrences"].as_array_mut().unwrap(){for key in ["presentation_state","presentation_persona_id","presentation_session_id","presentation_input","presentation_text","presentation_message_id"]{row.as_object_mut().unwrap().remove(key);}}});}
+  let preview=prepare(&target,&transfer).unwrap().unwrap();confirm(&target,input(&preview)).unwrap();
+  target.read(|s,_|{
+   let (state,text,message,session,persona):(String,Option<String>,Option<i64>,Option<i64>,Option<i64>)=s.connection.query_row("SELECT presentation_state,presentation_text,presentation_message_id,presentation_session_id,presentation_persona_id FROM reminder_occurrences ORDER BY id LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
+   if legacy {assert_eq!(state,"legacy");assert_eq!(text,None);assert_eq!(message,None);} else {assert_eq!(state,"ready");assert_eq!(text.as_deref(),Some("喝杯水再忙吧"));let actual:(i64,i64)=s.connection.query_row("SELECT m.session_id,s.persona_id FROM messages m JOIN sessions s ON s.id=m.session_id WHERE m.id=?1",[message.unwrap()],|r|Ok((r.get(0)?,r.get(1)?)))?;assert_eq!(actual,(session.unwrap(),persona.unwrap()));}
+   assert_eq!(s.connection.query_row("SELECT count(*) FROM reminder_occurrences WHERE presentation_state IN ('pending','generating')",[],|r|r.get::<_,i64>(0))?,0);
+   assert_eq!(s.connection.query_row("SELECT count(*) FROM pragma_foreign_key_check",[],|r|r.get::<_,i64>(0))?,0);Ok(())
+  }).unwrap();
  }
 }

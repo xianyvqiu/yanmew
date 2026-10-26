@@ -19,4 +19,13 @@ it("默认位置首次向右调整不会同时跳动纵向位置", async () => {
   await waitFor(() => expect(api.save).toHaveBeenCalledWith(context, "4", 25, -929, 1000));
 });
 
+it("置于底层将前景饰品移到桌宠后面", async () => {
+  api.layer.mockResolvedValue({...item, renderLayer:"back", layerOrder:0});
+  render(<AccessoryPlacementEditor context={context} item={{...item,renderLayer:"front"}} onClose={()=>{}} onSaved={()=>{}}/>);
+  fireEvent.click(screen.getByRole("button",{name:"置于底层"}));
+  await waitFor(()=>expect(api.layer).toHaveBeenCalledWith(context,"4","back","bottom"));
+  await waitFor(()=>expect((screen.getByLabelText("挂件位于桌宠前后") as HTMLSelectElement).value).toBe("back"));
+  expect(api.save).not.toHaveBeenCalled();
+});
+
 it("切换桌宠前后及同层排序立即保存，不覆盖位置",async()=>{api.layer.mockImplementation(async(_c,_id,plane)=>({...item,renderLayer:plane,layerOrder:0}));render(<AccessoryPlacementEditor context={context} item={item} onClose={()=>{}} onSaved={()=>{}}/>);fireEvent.change(screen.getByLabelText("挂件位于桌宠前后"),{target:{value:"back"}});await waitFor(()=>expect(api.layer).toHaveBeenCalledWith(context,"4","back","keep"));await waitFor(()=>expect((screen.getByRole("button",{name:"置于底层"}) as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByRole("button",{name:"置于底层"}));await waitFor(()=>expect(api.layer).toHaveBeenCalledWith(context,"4","back","bottom"));expect(api.save).not.toHaveBeenCalled();});

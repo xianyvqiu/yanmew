@@ -78,6 +78,7 @@ pub struct ToolCall {
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Choice {
+    pub usage: Option<super::usage::TokenUsage>,
     pub index: u32,
     pub content: String,
     pub tools: Vec<ToolCall>,

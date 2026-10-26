@@ -365,6 +365,9 @@ pub fn delete(
 #[cfg(test)]
 #[path = "sessions/delete_tests.rs"]
 mod delete_tests;
+#[cfg(test)]
+#[path = "sessions/recent_tests.rs"]
+mod recent_tests;
 
 pub fn messages(
     connection: &Connection,
@@ -373,18 +376,29 @@ pub fn messages(
     after_id: Option<i64>,
     limit: i64,
 ) -> AppResult<MessagePage> {
+    message_page(connection,persona_id,session_id,after_id,limit,false)
+}
+
+/// 最新页先读；返回内容仍按时间正序，next_after_id为更早页的不透明游标。
+pub fn recent_messages(connection:&Connection,persona_id:i64,session_id:i64,before_id:Option<i64>,limit:i64)->AppResult<MessagePage>{
+    message_page(connection,persona_id,session_id,before_id,limit,true)
+}
+fn message_page(connection:&Connection,persona_id:i64,session_id:i64,after_id:Option<i64>,limit:i64,backward:bool)->AppResult<MessagePage>{
     require_session(connection, persona_id, session_id)?;
     if !(1..=MAX_MESSAGE_PAGE).contains(&limit) {
         return Err(AppError::validation("limit", "每页消息数须为 1–200"));
     }
-    let after_id = after_id.unwrap_or(0);
+    let after_id = after_id.unwrap_or(if backward{i64::MAX}else{0});
     if after_id < 0 {
         return Err(AppError::validation("afterId", "消息游标不能为负数"));
     }
-    let mut statement = connection.prepare(
+    let mut statement = connection.prepare(if backward {
         "SELECT id,session_id,round_id,role,content,expression,created_at
-         FROM messages WHERE session_id=?1 AND id>?2 ORDER BY id LIMIT ?3",
-    )?;
+         FROM messages WHERE session_id=?1 AND id<?2 ORDER BY id DESC LIMIT ?3"
+    }else{
+        "SELECT id,session_id,round_id,role,content,expression,created_at
+         FROM messages WHERE session_id=?1 AND id>?2 ORDER BY id LIMIT ?3"
+    })?;
     let mut items = statement
         .query_map(params![session_id, after_id, limit + 1], message_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -394,6 +408,7 @@ pub fn messages(
     }
     crate::chat_images::hydrate(connection,&mut items)?;
     let next_after_id = has_more.then(|| items.last().expect("non-empty page").id.clone());
+    if backward {items.reverse();}
     Ok(MessagePage {
         items,
         next_after_id,

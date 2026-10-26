@@ -181,3 +181,27 @@ fn proactive_lease_cannot_execute_skill_tools() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn background_reads_only_bound_metadata_and_selected_body_and_rejects_writes() {
+    let (rt,_)=fixture();
+    rt.read(|s,_| {
+        for (title,body,bound) in [("旅行语气","需要时读取的正文",true),("烹饪规则","不相关正文",true),("未绑定私有项","不应泄露",false)] {
+            super::super::save(&mut s.connection,Input{id:None,revision:None,title:title.into(),summary:"简介".into(),body:body.into()})?;
+            if bound {bind(&s.connection,s.connection.last_insert_rowid(),1,true)?;}
+        }
+        let listing=read_bound(&s.connection,1,&call("list","list_skills",json!({"query":"旅行","limit":1})))?;
+        assert_eq!(listing["records"].as_array().unwrap().len(),1);assert!(listing["records"][0].get("body").is_none());
+        assert!(!listing.to_string().contains("需要时读取的正文"));
+        assert_eq!(read_bound(&s.connection,1,&call("read","get_skill",json!({"skill_id":"1"})))?["record"]["body"],"需要时读取的正文");
+        assert_eq!(read_bound(&s.connection,1,&call("other","get_skill",json!({"skill_id":"3"}))).unwrap_err().code,"PERMISSION_DENIED");
+        assert!(read_bound(&s.connection,1,&call("library","list_skills",json!({"scope":"library"}))).is_err());
+        assert!(read_bound(&s.connection,1,&call("write","create_skill",json!({"title":"禁止写入","summary":"","body":"禁止"}))).is_err());
+        let first=read_bound(&s.connection,1,&call("page1","list_skills",json!({"limit":1})))?;
+        let second=read_bound(&s.connection,1,&call("page2","list_skills",json!({"limit":1,"before_id":first["next_before_id"]})))?;
+        assert_ne!(first["records"][0]["id"],second["records"][0]["id"]);
+        assert_eq!(super::super::list(&s.connection)?.len(),3);Ok(())
+    }).unwrap();
+    let names=read_definitions().iter().map(|v|v["function"]["name"].as_str().unwrap().to_owned()).collect::<Vec<_>>();
+    assert_eq!(names,vec!["list_skills","get_skill"]);
+}

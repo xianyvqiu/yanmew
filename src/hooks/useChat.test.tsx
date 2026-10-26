@@ -367,3 +367,33 @@ it("其他入口的新流式请求先同步快照，旁观窗口卸载不取消�
   expect(hook.result.current.active?.partialContent).toBe("跨窗口同步");
   hook.unmount();expect(api.cancel).not.toHaveBeenCalled();
 });
+
+it("刷新快照期间不启动历史加载，刷新完成后仍可继续加载", async () => {
+  api.messages.mockResolvedValue({items:[round.userMessage],nextAfterId:"20"});
+  const {result}=renderHook(()=>useChat(context));
+  await waitFor(()=>expect(result.current.ready).toBe(true));
+  const pending=deferred<MessagePage>();
+  api.messages.mockReturnValueOnce(pending.promise);
+  let refresh!:Promise<void>;
+  act(()=>{refresh=result.current.reload();});
+  await waitFor(()=>expect(result.current.loading).toBe(true));
+  const calls=api.messages.mock.calls.length;
+  await act(async()=>{await result.current.loadMore();});
+  expect(api.messages.mock.calls.length).toBe(calls);
+  await act(async()=>{pending.resolve({items:[round.userMessage],nextAfterId:"20"});await refresh;});
+  expect(result.current.ready).toBe(true);
+  await act(async()=>{await result.current.loadMore();});
+  expect(api.messages.mock.calls.length).toBe(calls+1);
+});
+
+it("第二个订阅失败后清理半完成连接，重试重新订阅全部事件", async () => {
+  api.listenMessages.mockRejectedValueOnce(new Error("订阅失败"));
+  const {result}=renderHook(()=>useChat(context));
+  await waitFor(()=>expect(result.current.error).toBe("订阅失败"));
+  expect(stop).toHaveBeenCalledTimes(1);
+  await act(async()=>{await result.current.reload();});
+  expect(api.listen).toHaveBeenCalledTimes(2);
+  expect(api.listenMessages).toHaveBeenCalledTimes(2);
+  expect(result.current.ready).toBe(true);
+  expect(result.current.error).toBe("");
+});

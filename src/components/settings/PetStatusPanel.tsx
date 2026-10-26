@@ -5,7 +5,7 @@ import type { WorkspaceContext } from "../../hooks/useCurrentContext";
 import type { SessionIntimacy, SignInStatus } from "../../types";
 import "./PetStatusPanel.css";
 
-export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContext }) {
+export default function PetStatusPanel({ snapshot, scope = "all" }: { snapshot: WorkspaceContext; scope?: "all" | "global" | "persona" }) {
   const { personaId, sessionId, contextRevision } = snapshot.context;
   const [status, setStatus] = useState<SignInStatus | null>(null);
   const [intimacy, setIntimacy] = useState<SessionIntimacy | null>(null);
@@ -122,7 +122,7 @@ export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContex
     ? status.intimacyThresholds.findIndex(value => value > currentIntimacy.intimacy) : -1;
   const title = snapshot.sessions.find(session => session.id === sessionId)?.title ?? "当前会话";
   return <div className="ym-pet-status">
-    <section className="ym-page-card" aria-labelledby="pet-intimacy-heading">
+    {scope !== "global" && <section className="ym-page-card" aria-labelledby="pet-intimacy-heading">
       <div className="ym-page-heading"><div><h2 id="pet-intimacy-heading">亲密度</h2>
         <p>{snapshot.persona.name} · {sessionId ? title : "尚无会话"}</p></div></div>
       {!sessionId ? <p className="ym-page-note">创建会话后，可以在这里查看你们的亲密度。</p>
@@ -134,8 +134,8 @@ export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContex
             : `下一解锁档位：第 ${nextTier + 1} 档 · ${status.intimacyThresholds[nextTier]} 亲密度（还差 ${status.intimacyThresholds[nextTier] - currentIntimacy.intimacy}）。`}</p>}
         </> : !intimacyError && <p role="status">正在读取亲密度…</p>}
       {intimacyError && <p role="alert" className="ym-page-error">{intimacyError}。请重新聚焦窗口重试。</p>}
-    </section>
-    <section className="ym-page-card" aria-labelledby="pet-wallet-heading">
+    </section>}
+    {scope !== "persona" && <><section className="ym-page-card" aria-labelledby="pet-wallet-heading">
       <div className="ym-page-heading"><div><h2 id="pet-wallet-heading">喵币</h2><p>全局共享，不随人设或会话切换。</p></div></div>
       <p className="ym-pet-status-value" aria-label="喵币余额">{status?.wallet.coins ?? "—"}<span> 喵币</span><ValueChange value={status?.wallet.coins} unit="喵币"/></p>
     </section>
@@ -153,6 +153,6 @@ export default function PetStatusPanel({ snapshot }: { snapshot: WorkspaceContex
       {readError && <div role="alert" className="ym-page-error">{readError}<button className="ym-button" disabled={busy} onClick={() => { void readStatus(); }}>重新读取</button></div>}
       {actionError && <p role="alert" className="ym-page-error">{actionError}</p>}
       {notice && notice.date === status?.localDate && <p role="status" className="ym-pet-status-notice">{notice.text}</p>}
-    </section>
+    </section></>}
   </div>;
 }

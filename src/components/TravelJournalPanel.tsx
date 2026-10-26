@@ -1,3 +1,5 @@
+import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
+import InlineDetailCard from "./InlineDetailCard";
 import CardBrowserControls from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -104,6 +106,7 @@ function JournalPage(props: { context: CurrentContext }) {
       }
     } finally { locked.current = false; if (alive.current) { setBusy(false); browser.refresh(); await load(); } }
   };
+  useEffect(()=>{if(!current.current.editing)switchSelection(null);},[browser.selectionKey]);
   const discard = () => {
     if (!detail) return;
     if (dirty) setConfirmation({ kind: "discard", next: selected, reload: true });
@@ -122,12 +125,11 @@ function JournalPage(props: { context: CurrentContext }) {
     {actionError && <p role="alert" className="ym-page-error">{actionError}</p>}
     {(loading || browser.loading) && <p role="status">正在读取游记列表…</p>}
     {!loading && !browser.loading && !browser.total && !browser.search && !browser.error && <p className="ym-page-note">还没有游记。正常旅行返回后会自动生成；已删除的游记不会补回。</p>}
-    {!selected&&<CardBrowserControls browser={browser} label="游记" timeLabel="生成时间" disabled={busy}/>}
+    <TravelFilter browser={browser} disabled={busy||editing}/><CardBrowserControls browser={browser} label="游记" timeLabel="生成时间" disabled={busy||editing}/>
     {browser.error&&<p role="alert" className="ym-page-error">{browser.error}</p>}
-    <div className="ym-mailbox-layout" data-detail={!!selected}><ul className="ym-letter-list ym-object-grid">{browser.items.map(item => <li key={item.id}>
-      <button className="ym-letter-item" disabled={busy} aria-pressed={selected === item.id} onClick={() => choose(item.id)}><strong>{item.title}</strong><p className="ym-card-summary">{item.content}</p><time>生成：{travelTime(item.createdAt)}</time></button>
-    </li>)}</ul>
-      <div className="ym-letter-detail" aria-label="游记详情">{detailLoading ? <p role="status">正在读取游记…</p> : detail ? <>
+    <ul className="ym-letter-list ym-mailbox-list">{(selected&&detail&&!browser.items.some(item=>item.id===selected)?[detail,...browser.items]:browser.items).map(item=><li key={item.id}>
+      <InlineDetailCard title={item.title} summary={(item.content??"").length>140?item.content.slice(0,140)+"…":item.content??"查看完整游记"} meta={<><TravelOriginLabel travel={item.travel} travelId={item.travelId}/><span>{travelTime(item.createdAt)}</span></>} expanded={selected===item.id} disabled={busy} detailLabel="游记详情" onToggle={()=>choose(selected===item.id?null:item.id)}>
+{detailLoading ? <p role="status">正在读取游记…</p> : detail ? <>
         <div className="ym-page-heading"><h3>{editing ? "编辑游记" : detail.title}</h3><button className="ym-button" disabled={busy} onClick={() => choose(null)}>关闭详情</button></div>
         <p className="ym-letter-meta">生成：{travelTime(detail.createdAt)} · 修改：{travelTime(detail.updatedAt)}</p>
         {missing && <p role="alert" className="ym-page-error">这篇游记已不存在。草稿仍可复制，但不能保存或重新创建。</p>}
@@ -148,8 +150,7 @@ function JournalPage(props: { context: CurrentContext }) {
           <button className="ym-button" disabled={busy || missing} onClick={() => { setEditing(true); setActionError(""); }}>编辑游记</button>
           <button className="ym-button" data-variant="danger" disabled={busy || missing} onClick={() => { setActionError(""); setConfirmation({ kind: "delete", journal: detail }); }}>删除游记</button>
         </div></>}
-      </> : <p className="ym-page-note">{selected ? "游记详情暂不可用，请刷新后重试。" : "选择一篇游记，查看完整内容。"}</p>}</div>
-    </div>
+      </> : <p className="ym-page-note">{selected ? "游记详情暂不可用，请刷新后重试。" : "选择一篇游记，查看完整内容。"}</p>}</InlineDetailCard></li>)}</ul>
 
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="journal-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       <h2 id="journal-confirm-title">{confirmation?.kind === "delete" ? "删除这篇游记？" : "放弃未保存的修改？"}</h2>

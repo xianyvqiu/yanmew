@@ -3,18 +3,19 @@ import { configurationApi, errorMessage } from "../../api";
 import type { Persona } from "../../types";
 
 const groups = [
-  ["normal", "日常"], ["walk_left", "向左行走"], ["walk_right", "向右行走"], ["lifted", "被拎后颈"],
+  ["normal", "日常"], ["walk_left", "向左行走"], ["walk_right", "向右行走"], ["lifted", "被拎后颈"], ["error", "报错 / 超载"], ["toss_up", "往上抛"], ["toss_down", "往下掉"], ["landing", "落地"], ["wait_pet", "等摸摸"],
   ["peek_left", "左侧探头"], ["peek_right", "右侧探头"], ["rest_sit", "底部坐下"], ["rest_lie", "底部趴下"],
   ["click.happy", "点击 · 开心"], ["click.surprised", "点击 · 惊讶"], ["click.shy", "点击 · 害羞"],
   ["standby", "待机"], ["hungry", "饥饿"], ["craving", "等待投喂"], ["craving_favorite", "期待最爱"],
   ["eating", "进食"], ["eating_favorite", "喜欢地品尝"], ["sleepy", "困倦"], ["bored", "无聊"], ["thinking", "思考"],
 ] as const;
 function fields(persona: Persona): Record<string, string> {
+  const addedDefaults:Record<string,string>={wait_pet:"(｡･ω･｡)ﾉ",toss_up:"ヽ(°◇° )ノ",toss_down:"(>﹏<)ﾉ",landing:"＿(×ω×)＿"};
   const library = persona.effectiveExpressions ?? persona.expressions;
   return Object.fromEntries(groups.map(([key]) => {
     const [category, kind] = key.split(".");
     const value = kind ? (library?.[category] as Record<string, unknown> | undefined)?.[kind] : library?.[category];
-    return [key, Array.isArray(value) ? value.filter(v => typeof v === "string").join("\n") : ""];
+    return [key, Array.isArray(value)&&value.length ? value.filter(v => typeof v === "string").join("\n") : addedDefaults[key]??""];
   }));
 }
 export default function PersonaExpressionsEditor({ persona, disabled, onSaved }: { persona: Persona; disabled: boolean; onSaved: () => void }) {

@@ -7,7 +7,6 @@ export type ReminderBubbleProps = {
   context?: Pick<CurrentContext, "personaId" | "contextRevision">;
   busy: boolean;
   error: string;
-  onComplete: () => void;
   onDismiss: () => void;
   onOpenReminders: () => void;
 };
@@ -22,12 +21,11 @@ export default function ReminderBubble({
   context,
   busy,
   error,
-  onComplete,
   onDismiss,
   onOpenReminders,
 }: ReminderBubbleProps) {
   const polished = useReminderPolish(occurrence, context);
-  if (occurrence.status === "done") return null;
+  if (occurrence.status === "done" && !occurrence.autoCompleted) return null;
 
   const displayedTime = formatScheduledAt(occurrence.scheduledAt);
 
@@ -48,8 +46,7 @@ export default function ReminderBubble({
         {error && <p className="ym-reminder-notification__error" role="alert">{error}</p>}
       </div>
       <footer className="ym-reminder-notification__actions">
-        <button className="ym-button ym-reminder-notification__action" type="button" disabled={busy} onClick={onComplete}>完成</button>
-        <button className="ym-button ym-reminder-notification__action" type="button" disabled={busy} onClick={onDismiss}>收起</button>
+        <button className="ym-button ym-reminder-notification__action" type="button" disabled={busy} onClick={onDismiss}>知道了</button>
         <button className="ym-button ym-reminder-notification__action" type="button" disabled={busy} onClick={onOpenReminders}>查看提醒</button>
       </footer>
     </section>

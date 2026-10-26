@@ -137,3 +137,19 @@ fn guide_does_not_count_as_a_round_and_cannot_skip_later_history() {
     }).unwrap();
     assert_eq!(sessions::messages::delete_tail(&runtime, 1, 1, 0, 1, sessions::INITIAL_GUIDE).unwrap_err().code, "ROUND_NOT_TAIL");
 }
+
+#[test]
+fn tutorial_only_marks_fresh_data_and_completion_survives_restart() {
+    let mut fresh = Connection::open_in_memory().unwrap();
+    initialize(&mut fresh).unwrap();
+    assert!(crate::config::onboarding_pending(&fresh).unwrap());
+    initialize(&mut fresh).unwrap();
+    assert!(crate::config::onboarding_pending(&fresh).unwrap());
+    crate::config::finish_onboarding(&fresh).unwrap();
+    crate::config::finish_onboarding(&fresh).unwrap();
+    initialize(&mut fresh).unwrap();
+    assert!(!crate::config::onboarding_pending(&fresh).unwrap());
+    let mut old = test_database();
+    initialize(&mut old).unwrap();
+    assert!(!crate::config::onboarding_pending(&old).unwrap());
+}

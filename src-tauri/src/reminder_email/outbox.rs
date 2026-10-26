@@ -105,7 +105,7 @@ fn insert(
     Ok(())
 }
 fn rebuild(c: &Connection, id: i64, offline: bool) -> AppResult<bool> {
-    let mut query=c.prepare("SELECT i.name,i.content,i.scheduled_time,o.reminder_id FROM reminder_email_items i JOIN reminder_occurrences o ON o.id=i.occurrence_id WHERE i.delivery_id=?1 ORDER BY o.scheduled_at,o.id")?;
+    let mut query=c.prepare("SELECT i.name,i.content,i.scheduled_time,o.reminder_id,o.presentation_text FROM reminder_email_items i JOIN reminder_occurrences o ON o.id=i.occurrence_id WHERE i.delivery_id=?1 ORDER BY o.scheduled_at,o.id")?;
     let items = query
         .query_map([id], |r| {
             Ok((
@@ -113,6 +113,7 @@ fn rebuild(c: &Connection, id: i64, offline: bool) -> AppResult<bool> {
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
                 r.get::<_, i64>(3)?,
+                r.get::<_, Option<String>>(4)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -134,9 +135,10 @@ fn rebuild(c: &Connection, id: i64, offline: bool) -> AppResult<bool> {
         String::new()
     };
     let mut seen = std::collections::HashSet::new();
-    for (name, content, time, rule) in items {
+    for (name, content, time, rule, presentation) in items {
         if seen.insert(rule) {
-            body.push_str(&format!("{name}\n详情：{content}\n原定时间：{time}\n\n"));
+            let spoken=presentation.map(|text|format!("角色提醒：{text}\n")).unwrap_or_default();
+            body.push_str(&format!("{name}\n{spoken}详情：{content}\n原定时间：{time}\n\n"));
         }
     }
     body.push_str("由本机颜喵提醒发送。应用关闭期间无法实时发送邮件。");
@@ -163,7 +165,7 @@ fn claim(runtime: &Runtime) -> AppResult<Option<Pending>> {
         if !config.enabled || !config.verified {cancel(&tx)?;tx.commit()?;return Ok(None);}
         tx.execute("UPDATE reminder_email_deliveries SET state='cancelled',next_retry_at=NULL WHERE state IN ('pending','retry_wait','failed','uncertain') AND (config_revision<>?1 OR recipient<>?2)",params![config.revision,config.connection.to])?;
         let now=stamp(runtime.clock.sample()?.utc);
-        let task:Option<(i64,String,u32)>=tx.query_row("SELECT id,kind,attempts FROM reminder_email_deliveries WHERE state='pending' OR (state='retry_wait' AND next_retry_at<=?1) ORDER BY id LIMIT 1",[&now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+        let task:Option<(i64,String,u32)>=tx.query_row("SELECT d.id,d.kind,d.attempts FROM reminder_email_deliveries d WHERE (d.state='pending' OR (d.state='retry_wait' AND d.next_retry_at<=?1)) AND NOT EXISTS(SELECT 1 FROM reminder_email_items i JOIN reminder_occurrences o ON o.id=i.occurrence_id WHERE i.delivery_id=d.id AND o.presentation_state IN ('pending','generating')) ORDER BY d.id LIMIT 1",[&now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
         let Some((id,kind,attempts))=task else {tx.commit()?;return Ok(None);};
         if !rebuild(&tx,id,kind=="offline_summary")? {tx.commit()?;return Ok(None);}
         let secret=encrypted_secret(&tx)?.ok_or_else(||AppError::new("EMAIL_NOT_VERIFIED","缺少邮箱授权码，请重新验证"))?;
@@ -331,4 +333,16 @@ mod tests {
             assert_eq!(view(&s.connection)?.deliveries[0].state,"uncertain");Ok(())
         }).unwrap();
     }
+}
+
+#[cfg(test)]mod presentation_tests{
+ use super::*;
+ #[test]fn email_waits_for_saved_presentation_and_uses_the_same_text(){
+  let runtime=crate::reminder_email::tests::verified();let now=Utc::now()+chrono::Duration::minutes(1);
+  let id=runtime.read(|s,_|{let id=crate::reminder_email::tests::occurrence(&s.connection,"喝水",&stamp(now));s.connection.execute("UPDATE reminder_occurrences SET status='done',presentation_state='pending' WHERE id=?1",[id])?;enqueue(&s.connection,&[id],false,now)?;enqueue(&s.connection,&[id],false,now)?;Ok(id)}).unwrap();
+  assert!(claim(&runtime).unwrap().is_none());
+  runtime.read(|s,_|{s.connection.execute("UPDATE reminder_occurrences SET presentation_state='ready',presentation_text='喝口水，休息一下吧。' WHERE id=?1",[id])?;Ok(())}).unwrap();
+  assert!(claim(&runtime).unwrap().is_some());
+  runtime.read(|s,_|{let body:String=s.connection.query_row("SELECT body FROM reminder_email_deliveries",[],|r|r.get(0))?;assert!(body.contains("角色提醒：喝口水，休息一下吧。"));assert!(body.contains("详情：喝水详情"));assert_eq!(s.connection.query_row("SELECT count(*) FROM reminder_email_deliveries",[],|r|r.get::<_,i64>(0))?,1);Ok(())}).unwrap();
+ }
 }

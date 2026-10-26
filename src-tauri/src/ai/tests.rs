@@ -38,6 +38,15 @@ impl Server {
         Self::new_at(responses,"/v1/chat/completions")
     }
     pub fn new_at(responses: Vec<Response>,path:&str) -> Self {
+        Self::with_header_delay(responses, path, 0)
+    }
+    pub fn with_request_wait(responses: Vec<Response>, wait: Duration) -> Self {
+        Self::with_limits(responses, "/v1/chat/completions", 0, wait)
+    }
+    fn with_header_delay(responses: Vec<Response>, path: &str, header_delay_ms: u64) -> Self {
+        Self::with_limits(responses, path, header_delay_ms, Duration::from_secs(5))
+    }
+    fn with_limits(responses: Vec<Response>, path: &str, header_delay_ms: u64, accept_wait: Duration) -> Self {
         let expected=format!("post {path} ");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
@@ -52,7 +61,7 @@ impl Server {
                         Ok((s, _)) => break s,
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             assert!(
-                                started.elapsed() < Duration::from_secs(5),
+                                started.elapsed() < accept_wait,
                                 "未收到预期测试请求"
                             );
                             std::thread::sleep(Duration::from_millis(1));
@@ -95,6 +104,7 @@ impl Server {
                     .lock()
                     .unwrap()
                     .push(serde_json::from_slice(&request[header_end..header_end + len]).unwrap());
+                std::thread::sleep(Duration::from_millis(header_delay_ms));
                 if write!(stream,"HTTP/1.1 {} Test\r\nContent-Type: {}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",response.status,response.mime).is_err(){continue;}
                 for (delay, chunk) in response.chunks {
                     std::thread::sleep(Duration::from_millis(delay));
@@ -430,4 +440,14 @@ fn reasoning_fragments_survive_tool_round_trip_without_becoming_text_or_public_o
     let message = Message::tool_request(&choice);
     assert_eq!(serde_json::to_value(&message).unwrap()["reasoning_content"], "先检查记事本");
     assert!(serde_json::to_value(&choice).unwrap().get("reasoning_content").is_none());
+}
+
+#[tokio::test]
+async fn non_streaming_generation_waits_for_complete_body_within_total_limit() {
+    let mut response=Response::json(json!({"summary":"完成"}));
+    response.chunks[0].0=120;
+    let server=Server::with_header_delay(vec![response],"/v1/chat/completions",120);
+    let client=AiClient::new(Timeouts{connect:Duration::from_secs(1),first_event:Duration::from_millis(30),idle:Duration::from_millis(30),total:Duration::from_secs(3)}).unwrap();
+    let choice=client.complete(&server.config(),&input(),&Cancellation::default()).await.unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&choice.content).unwrap()["summary"],"完成");
 }

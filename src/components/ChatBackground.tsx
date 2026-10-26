@@ -1,4 +1,5 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {rememberBackgroundViewport} from "./chatBackgroundViewport";
 import { backgroundApi, errorMessage } from "../api";
 import type { Persona } from "../types";
 import "./ChatBackground.css";
@@ -11,6 +12,8 @@ export function BackgroundImage({ source, opacity, blur }: { source: string; opa
 
 /** 背景只消费当前人设资源，不读取任意本机路径，也不影响聊天状态。 */
 export default function ChatBackground({ persona, contextRevision }: { persona: Persona; contextRevision: number }) {
+  const marker=useRef<HTMLSpanElement>(null);
+  useEffect(()=>{const host=marker.current?.closest<HTMLElement>(".ym-chat-background-host");return host?rememberBackgroundViewport(host):undefined;},[]);
   const [image, setImage] = useState<{ personaId: string; file: string; source: string } | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -29,6 +32,7 @@ export default function ChatBackground({ persona, contextRevision }: { persona: 
   }, [persona.id, persona.chatBgFile, contextRevision, attempt]);
   const source = image?.personaId === persona.id && image.file === persona.chatBgFile ? image.source : null;
   return <>
+    <span ref={marker} hidden aria-hidden="true"/>
     {source && <BackgroundImage source={source} opacity={persona.chatBgOpacity} blur={persona.chatBgBlur} />}
     {error && <div className="ym-page-error ym-background-error" role="alert">{error}，聊天仍可使用。
       <button type="button" className="ym-button" onClick={() => setAttempt(value => value + 1)}>重试读取背景</button>

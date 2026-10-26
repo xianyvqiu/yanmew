@@ -11,8 +11,8 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin yanmew-plugin -- validate e
 
 安装使用 `.yanmew-game` ZIP，必须在根目录包含 `manifest.json`。模板只是宿主连接和存档演示，不是内置小游戏，也不列入随包清单。主仓库或社区公开分发必须补充 GitHub `repository`；私人开发包可以留空。
 
-## 四个自带游戏
+## 六个自带游戏
 
-运行 `npm run plugins:build`，构建脚本先生成共用Rust CLI，再从plugins/bundled-games.json依次打包四个源码目录到resources/plugins，并逐包validate。临时输出也必须以.yanmew-game结尾，校验成功才替换稳定文件名；shared/runtime.js复制到各包内，包可独立安装。
+运行 `npm run plugins:build`，构建脚本先生成共用Rust CLI，再从plugins/bundled-games.json打包六个源码目录到resources/plugins，并逐包validate。临时输出也必须以.yanmew-game结尾，校验成功才替换稳定文件名；shared/runtime.js复制到各包。前四款复制window.css，扫雷和2048复制classic.css与classic-runtime.js，各包可独立安装。新增规则、限次及结算检查为 `node --test plugins/build/classic-games.test.mjs`。
 
 Tauri的beforeDevCommand/beforeBuildCommand会先执行该步骤。便携版发布需执行 `./scripts/copy-plugin-resources.ps1 -Destination <便携版目录>`，将包和清单放到exe旁resources/plugins；同样复制Embedding资源。不复制开发数据库和用户存档。源码、规则及检查见../first-party/README.md。

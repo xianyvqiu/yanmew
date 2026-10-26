@@ -60,7 +60,7 @@ fn incomplete_later_and_manually_named_rounds_do_not_start_title_requests() {
 #[test]
 fn title_output_must_be_complete_short_single_line_json() {
     let choice = |text: String, finish| Choice {
-        reasoning_content: None,
+        usage: None, reasoning_content: None,
         index: 0,
         content: text,
         tools: vec![],

@@ -495,7 +495,7 @@ fn travel_departure_blocks_chat_and_interaction_without_reward() {
     assert_eq!(runtime.pet_interact(input(Action::Feed)).unwrap_err().code,"PET_AWAY");
     assert_eq!(runtime.pet_view().unwrap().intimacy,Some(0));
     clock.offline(7200); assert_ne!(runtime.pet_view().unwrap().activity,Activity::Away);
-    assert!(travel_wait(&runtime).unwrap()>=7200);
+    assert!(travel_wait(&runtime).unwrap()>=14400);
 }
 
 #[test]
@@ -504,4 +504,18 @@ fn click_after_standby_is_not_feeding_and_recovers_wander() {
  let before=runtime.read(|s,_|Ok((s.connection.query_row("SELECT count(*) FROM food_actions",[],|r|r.get::<_,i64>(0))?,s.connection.query_row("SELECT count(*) FROM currency_ledger",[],|r|r.get::<_,i64>(0))?))).unwrap();
  runtime.pet_interact(input(Action::Click)).unwrap();assert_eq!(runtime.pet_view().unwrap().activity,Activity::Interacting);clock.advance(3);let normal=runtime.pet_view().unwrap();assert_eq!(normal.activity,Activity::Normal);assert!(normal.can_wander);
  let after=runtime.read(|s,_|Ok((s.connection.query_row("SELECT count(*) FROM food_actions",[],|r|r.get::<_,i64>(0))?,s.connection.query_row("SELECT count(*) FROM currency_ledger",[],|r|r.get::<_,i64>(0))?))).unwrap();assert_eq!(before,after);
+}
+
+#[test]
+fn chase_petting_forces_happy_instead_of_random_click_and_preserves_three_second_feedback() {
+    let (runtime,clock)=setup(2);
+    runtime.read(|s,_|{
+        let lib=serde_json::json!({"click":{"happy":["(^_^)"],"surprised":["(O_O)"],"shy":["(〃ω〃)"]},"hungry":["(>_<)"],"eating":["(^_^)"],"sleepy":["(-_-)"],"bored":["(._.)"],"thinking":["(?)"],"standby":["(u_u)"]});
+        s.connection.execute("UPDATE personas SET expressions=?1 WHERE id=1",[lib.to_string()])?;Ok(())
+    }).unwrap();
+    let normal=runtime.pet_interact(input(Action::Click)).unwrap();assert_eq!(normal.expression,"(〃ω〃)");
+    clock.advance(3);runtime.pet_view().unwrap();
+    let happy=runtime.pet_interact_with_petting(input(Action::Click),true).unwrap();assert_eq!(happy.expression,"(^_^)");assert_eq!(happy.activity,Activity::Interacting);
+    clock.advance(2);assert_eq!(runtime.pet_view().unwrap().expression,"(^_^)");
+    clock.advance(1);assert_eq!(runtime.pet_view().unwrap().activity,Activity::Normal);
 }

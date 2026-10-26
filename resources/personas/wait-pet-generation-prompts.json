@@ -1,0 +1,34 @@
+{
+  "generator": "imagegen",
+  "transparentBackground": true,
+  "assets": [
+    {
+      "persona": "gpt",
+      "category": "wait_pet",
+      "reference": "resources/personas/gpt/base.png",
+      "output": "resources/personas/gpt/wait_pet.png",
+      "prompt": "Use case: illustration-story. Asset: single transparent full-body desktop companion waiting for head pats (wait_pet). Reference image is ONLY character identity, exact outfit, proportions, colors, accessories and delicate anime rendering. Draw same character in a NEW clearly distinctive pose: White-haired white dragon girl in white lavender qipao. Stand with weight on one leg and BOTH ARMS CROSSED loosely at waist, turn head and eyes sideways but subtly tilt crown toward viewer. Small embarrassed blush, pursed proud pout, tail curled tightly near ankles: she wants a head pat but is too proud to ask. Reserved tsundere. Not clasped hands and not hugging a notebook. Keep original identity and chibi proportions, complete hair/tail/ears/horns/shoes fit in frame with a little alpha margin. Front or slight three-quarter view. The crown is offered and the eyes seek the user's response, not a generic happy portrait. One character only. Real alpha transparent background; no floor, cushion, furniture, hand from another person, shadow platform, hearts, text, symbols, border or watermark. Do not reuse the default pose or a template of hands clasped under chin across characters."
+    },
+    {
+      "persona": "claude",
+      "category": "wait_pet",
+      "reference": "resources/personas/claude/base.png",
+      "output": "resources/personas/claude/wait_pet.png",
+      "prompt": "Use case: illustration-story. Asset: single transparent full-body desktop companion waiting for head pats (wait_pet). Reference image is ONLY character identity, exact outfit, proportions, colors, accessories and delicate anime rendering. Draw same character in a NEW clearly distinctive pose: Orange-haired scholarly lady in cream orange black long dress with flower hairpin and closed flower notebook. Polite elegant mini-curtsy, upper torso bowing gently forward and lowering crown toward viewer, closed notebook held horizontally at waist with both hands, knees and feet close together. Gentle restrained smile, eyes looking up warmly. Clearly graceful bow, not straight standing or hugging book at chest. Keep original identity and chibi proportions, complete hair/tail/ears/horns/shoes fit in frame with a little alpha margin. Front or slight three-quarter view. The crown is offered and the eyes seek the user's response, not a generic happy portrait. One character only. Real alpha transparent background; no floor, cushion, furniture, hand from another person, shadow platform, hearts, text, symbols, border or watermark. Do not reuse the default pose or a template of hands clasped under chin across characters."
+    },
+    {
+      "persona": "gemini",
+      "category": "wait_pet",
+      "reference": "resources/personas/gemini/base.png",
+      "output": "resources/personas/gemini/wait_pet.png",
+      "prompt": "Use case: illustration-story. Asset: one transparent full-body desktop companion waiting for head pats, standing pose. Reference image is character identity/style reference, not pose to copy. Preserve the exact original clothing, accessories, colors, face, chibi proportions and delicate polished anime rendering. Purple-haired catgirl with pink/gold heterochromia and purple star outfit. STANDING UPRIGHT on two feet, legs visibly extended, hips well above knees, both shoes underneath hips near same baseline. She leans only her upper torso and head slightly forward toward viewer, raises small paw-like fists beside cheeks, perks ears and curls tail upward, lively affectionate eager gaze inviting head pats. Gentle head tilt, playful open smile. Never crouching, squatting, kneeling, sitting, bent low at knees or tiptoeing with raised knees. Head above shoulders above waist above hips above knees above feet; full STANDING figure, NO sitting/crouching. Keep all hair, ears, tail, limbs and shoes in frame with a little transparent margin, view from the front or slight three-quarter angle. One character only, real alpha transparent background. No furniture, floor, cushions, shadow platform, extra person/hand, hearts, writing, symbols, border or watermark. Modest unchanged outfit. Clearly waiting for a head pat, not simply generic happiness."
+    },
+    {
+      "persona": "deepseek",
+      "category": "wait_pet",
+      "reference": "resources/personas/deepseek/base.png",
+      "output": "resources/personas/deepseek/wait_pet.png",
+      "prompt": "Use case: illustration-story. Asset: one transparent full-body desktop companion waiting for head pats, standing pose. Reference image is character identity/style reference, not pose to copy. Preserve the exact original clothing, accessories, colors, face, chibi proportions and delicate polished anime rendering. Blue-haired whale girl in navy white maid outfit and braid. STANDING UPRIGHT on two feet, legs extended below skirt, both shoes beneath hips at same baseline. Relaxed shoulders, small hopeful drowsy smile and shy sideward head tilt; holds closed checklist notebook tucked under left arm at waist, RIGHT hand lightly indicating the crown of her own head as if asking for a pat. Whale tail loosely curled sideways. Leisurely restrained affectionate reaction distinct from energetic catgirl paws. Never sitting, cross-legged, crouching, squatting or kneeling. Head above shoulders above waist above hips above knees above feet; full STANDING figure, NO sitting/crouching. Keep all hair, ears, tail, limbs and shoes in frame with a little transparent margin, view from the front or slight three-quarter angle. One character only, real alpha transparent background. No furniture, floor, cushions, shadow platform, extra person/hand, hearts, writing, symbols, border or watermark. Modest unchanged outfit. Clearly waiting for a head pat, not simply generic happiness."
+    }
+  ]
+}

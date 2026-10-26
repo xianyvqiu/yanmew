@@ -10,6 +10,26 @@
 
 存档键最多 128 字节，由小写字母、数字、下划线、短横线组成，以点分段。单值最大 1 MiB，合计最大 10 MiB，最多 1024 个键。设置只接受 manifest 的 `settings_schema`（最多 64 项），支持 boolean/integer/number/string/enum，默认值和覆盖值同样校验。
 
+## 管理页进度摘要（可选）
+
+先保存游戏的实际进度，再使用现有存档接口写入约定键 `ui.summary`：
+
+```js
+await window.yanmew.storage.set("state.main", savedGame);
+await window.yanmew.storage.set("ui.summary", {
+  version: 1,
+  status: "playing",
+  metrics: [
+    { label: "目前关卡", value: "第 8 关" },
+    { label: "已收集", value: "12 / 30" }
+  ]
+});
+```
+
+类型见 `SaveSummary`，校验约定见 `summary.schema.json`。`version` 必须为1；可选 `status` 为 `saved`（默认）、`playing` 或 `completed`，由颜喵统一显示“进度已保存”“游戏进行中”或“已通关”。可选 `metrics` 最多3项，label最多20个Unicode字符，value最多40个，不接受空白文本、控制字符、未知字段或HTML渲染。文本以普通文字展示，不提供自定义按钮、样式、脚本或页面布局。
+
+摘要仅供玩家查看，不是实际存档，不用于钱包结算或验证成绩。写入失败不应回滚已保存的实际进度；下次保存时可以再次更新摘要。`storage.delete("ui.summary")` 可恢复默认展示。使用当前的私有存档权限和容量限制，无新权限、RPC或存储版本要求，协议仍为1.0.0；旧插件无需改动，未提供摘要或格式无效时显示默认保存状态，内置游戏仍保留已有的简短进度解释。宿主的待核对结算提示优先于摘要状态。升级迁移时如需保留摘要，应在完整目标快照中保留该键；不需要时可以省略，由宿主删除。
+
 ## 钱包和网络
 
 所有金额及数据库 ID 返回十进制字符串。请求 `delta` 为 JavaScript 安全范围内整数；请求 ID 最多 128 字节、展示原因最多 200 字。每个独立操作使用唯一 `request_id`；失败重试复用相同 ID 和业务参数；不得为每次重试产生新 ID。已经提交的请求在关闭或升级后仍可携带原运行 ID、数量与原因核对原账单，不再次结算；未提交的新请求只能使用当前运行 ID。先结算钱包再 complete。

@@ -40,14 +40,37 @@ impl Rect {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
+pub struct Contact {pub bounds:Rect,pub rows:Vec<u32>}
+impl Contact {
+    pub fn visible_rect(&self)->Option<Rect> {
+        let mut left=32;let mut right=0;let mut top=32;let mut bottom=0;
+        for (y,row) in self.rows.iter().enumerate(){if *row!=0 {left=left.min(row.trailing_zeros());right=right.max(32-row.leading_zeros());top=top.min(y);bottom=bottom.max(y+1);}}
+        if top==32{return None}let b=self.bounds;Some(Rect{x:b.x+f64::from(left)*b.width/32.0,y:b.y+top as f64*b.height/32.0,width:f64::from(right-left)*b.width/32.0,height:(bottom-top) as f64*b.height/32.0})
+    }
+    pub fn aim(&self)->Option<Point> {
+        let (x,y)=(0..32).flat_map(|y|(0..32).map(move|x|(x,y))).filter(|(x,y)|self.rows.get(*y).is_some_and(|r|r&(1u32<<x)!=0)).min_by_key(|(x,y)|(*x as i32*2-31).pow(2)+(*y as i32*2-31).pow(2))?;
+        Some(Point{x:self.bounds.x+(x as f64+0.5)*self.bounds.width/32.0,y:self.bounds.y+(y as f64+0.5)*self.bounds.height/32.0})
+    }
+    pub fn contains(&self,x:f64,y:f64)->bool {
+        let b=self.bounds;
+        if x<b.x||y<b.y||x>=b.x+b.width||y>=b.y+b.height{return false}
+        let col=((x-b.x)/b.width*32.0).floor() as usize;
+        let row=((y-b.y)/b.height*32.0).floor() as usize;
+        self.rows.get(row).is_some_and(|bits|bits&(1u32<<col)!=0)
+    }
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct Layout {
     pub persona_id: String, pub session_id: String, pub context_revision: u64,
     pub layout_revision: u64, pub area: Rect, pub body: Rect, pub offset: Point, pub paused: bool,
     #[serde(default)] pub anchor: Option<Rect>,
+    #[serde(default)] pub free_y: Option<f64>,
+    #[serde(default)] pub contact: Option<Contact>,
 }
 impl Layout {
     pub fn validate(&self) -> AppResult<()> {
-        if !self.area.valid() || !self.body.valid() || self.anchor.is_some_and(|r|!r.valid()) || !self.offset.x.is_finite() || !self.offset.y.is_finite()
+        if self.free_y.is_some_and(|y|!y.is_finite()||y.abs()>100_000.0) || self.contact.as_ref().is_some_and(|c|!c.bounds.valid()||c.rows.len()!=32) || !self.area.valid() || !self.body.valid() || self.anchor.is_some_and(|r|!r.valid()) || !self.offset.x.is_finite() || !self.offset.y.is_finite()
             || self.offset.x.abs() > 100_000.0 || self.offset.y.abs() > 100_000.0 {
             return Err(AppError::validation("layout", "游走画布坐标或尺寸无效"));
         }
@@ -139,7 +162,7 @@ mod tests {
     impl RandomSource for Fixed { fn below(&mut self, upper:u64)->AppResult<u64> { Ok(self.0%upper) } }
     fn layout() -> Layout { Layout {persona_id:"1".into(),session_id:"1".into(),context_revision:0,
         layout_revision:1,area:Rect{x:4.0,y:44.0,width:312.0,height:192.0},
-        body:Rect{x:100.0,y:120.0,width:120.0,height:80.0},offset:Point::default(),paused:false,anchor:None} }
+        body:Rect{x:100.0,y:120.0,width:120.0,height:80.0},offset:Point::default(),paused:false,anchor:None,free_y:None,contact:None} }
     fn view() -> super::super::controller::View {
         super::super::controller::View {persona_id:"1".into(),session_id:Some("1".into()),context_revision:0,revision:1,
             activity:super::super::controller::Activity::Normal,expression:"(・ω・)".into(),intimacy:Some(0),

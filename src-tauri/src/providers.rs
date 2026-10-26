@@ -5,6 +5,7 @@ use crate::{
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+pub(crate) mod probe;
 
 /// 仅后端使用；不派生 Serialize/Debug，避免凭据进入 DTO 或日志。
 pub struct ConnectionTest {

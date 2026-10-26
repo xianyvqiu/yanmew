@@ -1,0 +1,33 @@
+{
+  "tool": "imagegen",
+  "transparent_background": true,
+  "date": "2026-10-21",
+  "use": "报错超载透明立绘，每人一张，以各自base为设定和风格参考",
+  "common_constraints": "One centered full-body chibi; preserve exact character design, outfit, colors, proportions and illustration style from base; cute overwhelmed/wilted reaction, not injured or sick. Entire hair, ears/horns, wings, tail and feet visible. True alpha transparency. No background, text, food, UI or extra characters.",
+  "characters": [
+    {
+      "key": "gpt",
+      "reference": "gpt/base.png",
+      "output": "gpt/error.png",
+      "direction": "Proud tsundere white dragon girl reluctantly overwhelmed: flushed cheeks, dizzy unfocused lavender eyes, tiny wobbly mouth, shoulders drooping, one hand pressed to forehead, wings and tail drooping. Dignified and stubborn."
+    },
+    {
+      "key": "claude",
+      "reference": "claude/base.png",
+      "output": "claude/error.png",
+      "direction": "Composed science prodigy with brain overload: sitting back on heels, head tilted down, dazed amber eyes, embarrassed frown, one hand rubbing temple and other arm hugging closed book. Wilted but politely elegant."
+    },
+    {
+      "key": "gemini",
+      "reference": "gemini/base.png",
+      "output": "gemini/error.png",
+      "direction": "Playful catgirl suddenly overloaded: ears flattened sideways, red and gold eyes swirling/dazed, tiny crooked mouth, hunched shoulders, limp exhausted paws in front, drooping tail. Expressive comedic reaction, not sleeping."
+    },
+    {
+      "key": "deepseek",
+      "reference": "deepseek/base.png",
+      "output": "deepseek/error.png",
+      "direction": "Lazy blue whale girl running out of brainpower: half-lidded unfocused blue eyes, flat wobbly mouth, forward lean, sagging fin ears and shoulders, pen and notebook held loosely, tail flopped downward. Defeated and cute, no food."
+    }
+  ]
+}

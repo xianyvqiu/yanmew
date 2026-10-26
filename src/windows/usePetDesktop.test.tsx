@@ -54,3 +54,33 @@ it("行走按方向读取动作，暂停后迟到的图片不能恢复行走表�
   await act(async () => { complete("旧行走图"); });
   expect(r.result.current.expression).toBeUndefined(); expect(r.result.current.walking).toBeNull();
 });
+
+it("恢复上缘布局并使用日常停靠形象",async()=>{
+ mocks.invoke.mockImplementation(async(name:string)=>name==="get_pet_desktop_state"?{fullscreenWander:false,dock:"top",revision:1}:"上缘日常");
+ const r=renderHook(()=>usePetDesktop("1",0));await waitFor(()=>expect(r.result.current.expression).toBe("上缘日常"));
+ expect(mocks.invoke).toHaveBeenCalledWith("get_pet_dock_expression",{personaId:"1",dock:"top"});
+});
+it("抛接按阶段选本地图，下一阶段读取期间保留当前图且迟到结果不复活动作",async()=>{
+ let receive:(e:{payload:unknown})=>void=()=>{},finish:(value:string)=>void=()=>{};
+ mocks.listen.mockImplementation(async(_:string,fn:typeof receive)=>{receive=fn;return()=>{};});
+ const toss={phase:"up",personaId:"1",sessionId:"1",contextRevision:0,body:{x:62,y:102,width:196,height:196},controlsBelow:true};
+ mocks.invoke.mockImplementation((name:string,args?:{phase?:string})=>name==="get_pet_desktop_state"?Promise.resolve({fullscreenWander:true,dock:"none",revision:1,toss}):args?.phase==="up"?Promise.resolve("上抛图"):new Promise<string>(r=>{finish=r;}));
+ const r=renderHook(()=>usePetDesktop("1",0));await waitFor(()=>expect(r.result.current.expression).toBe("上抛图"));
+ await act(async()=>receive({payload:{fullscreenWander:true,dock:"none",revision:2,toss:{...toss,phase:"down"}}}));
+ expect(r.result.current.expression).toBe("上抛图");expect(mocks.invoke).toHaveBeenCalledWith("get_pet_toss_expression",{personaId:"1",phase:"down"});
+ await act(async()=>receive({payload:{fullscreenWander:true,dock:"none",revision:3,toss:null}}));
+ await act(async()=>finish("迟到的下落图"));expect(r.result.current.expression).toBeUndefined();
+});
+
+it("追逐复用行走，等待和失落各读取本地反馈，退出后忽略迟到结果",async()=>{
+ let receive:(e:{payload:unknown})=>void=()=>{},finish:(v:string)=>void=()=>{};
+ mocks.listen.mockImplementation(async(_:string,fn:typeof receive)=>{receive=fn;return()=>{};});
+ const chase={phase:"running",personaId:"1",sessionId:"1",contextRevision:0};const walking={direction:"left",personaId:"1",sessionId:"1",contextRevision:0};
+ mocks.invoke.mockImplementation((name:string,args?:{phase?:string})=>name==="get_pet_desktop_state"?Promise.resolve({fullscreenWander:true,dock:"none",revision:1,chase,walking}):name==="get_pet_walk_expression"?Promise.resolve("左走图"):args?.phase==="waiting"?Promise.resolve("等摸摸图"):new Promise<string>(r=>{finish=r;}));
+ const r=renderHook(()=>usePetDesktop("1",0));await waitFor(()=>expect(r.result.current.expression).toBe("左走图"));
+ await act(async()=>receive({payload:{fullscreenWander:true,dock:"none",revision:2,chase:{...chase,phase:"waiting"},walking:null}}));
+ await waitFor(()=>expect(r.result.current.expression).toBe("等摸摸图"));expect(mocks.invoke).toHaveBeenCalledWith("get_pet_chase_expression",{personaId:"1",phase:"waiting"});
+ await act(async()=>receive({payload:{fullscreenWander:true,dock:"none",revision:3,chase:{...chase,phase:"sad"}}}));
+ expect(mocks.invoke).toHaveBeenCalledWith("get_pet_chase_expression",{personaId:"1",phase:"sad"});
+ await act(async()=>receive({payload:{fullscreenWander:true,dock:"none",revision:4,chase:null}}));await act(async()=>finish("迟到的失落图"));expect(r.result.current.expression).toBeUndefined();
+});

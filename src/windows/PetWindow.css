@@ -34,7 +34,7 @@
 .pet-visibility {
   position: absolute; top: 6px; right: 8px; width: 32px; height: 32px;
   border-radius: var(--ym-radius-pill); padding-inline: 6px;
-  box-shadow:none; opacity: .78;
+  box-shadow:none; opacity: .94;
 }
 .pet-visibility:hover, .pet-visibility:focus-visible,
 .pet-window[data-hidden="true"] .pet-visibility,
@@ -107,6 +107,8 @@
 .pet-chat-bubble__body p { margin:0 0 5px; }
 .pet-chat-bubble__actions { display:flex; flex-direction:column; justify-content:center; gap:6px; padding:2px; }
 .pet-chat-bubble__actions .ym-button { min-height:22px; padding:2px 7px; font-size:11px; }
+.pet-chat-bubble__body { scroll-behavior:auto; overflow-anchor:none; padding:12px 13px; font-size:14px; line-height:1.65; scrollbar-color:var(--ym-accent) transparent; }
+.pet-window[data-dock="none"]:not([data-upper-layout="true"]) .pet-reminder-slot:has(> .pet-chat-bubble) { top:8px; bottom:auto; left:8px; right:8px; height:max(64px,calc(var(--pet-body-top,200px) - 18px)); }
 .pet-chat-message-error,.pet-chat-note { margin:4px 8px; font:700 12px/1.5 var(--ym-font-ui); overflow-wrap:anywhere; }
 .pet-chat-message-error { color:var(--ym-danger); }
 .pet-chat-note { color:var(--ym-text-secondary); }
@@ -205,30 +207,30 @@
 .pet-window[data-dock^="rest_"]{--dock-body-height:calc(var(--ym-font-pet) * 1.4);--dock-controls-extra:0px}
 .pet-window[data-dock^="rest_"]:has(.pet-expression-image){--dock-body-height:var(--ym-pet-image-size)}
 .pet-window[data-dock^="rest_"][data-chat-open="true"]{--dock-controls-extra:120px}
-.pet-window[data-dock^="rest_"] .pet-face{bottom:0;line-height:1;padding-block:0}
+.pet-window[data-dock^="rest_"] .pet-face{bottom:var(--dock-floor-inset,0px);line-height:1;padding-block:0}
 .pet-window[data-dock^="rest_"] .pet-expression{animation:none}
 
-.pet-window[data-dock^="rest_"] :is(.pet-visibility,.pet-more,.pet-health,.pet-chat-entry){top:auto;bottom:calc(var(--dock-body-height) + 32px + var(--dock-controls-extra));right:auto;transform:none}
+.pet-window[data-dock^="rest_"] :is(.pet-visibility,.pet-more,.pet-health,.pet-chat-entry){top:auto;bottom:calc(var(--dock-floor-inset,0px) + var(--dock-body-height) + 32px + var(--dock-controls-extra));right:auto;transform:none}
 .pet-window[data-dock^="rest_"] .pet-health{left:calc(50% - 76px)}
 .pet-window[data-dock^="rest_"] .pet-chat-entry{left:calc(50% - 36px)}
 .pet-window[data-dock^="rest_"] .pet-more{left:calc(50% + 4px)}
 .pet-window[data-dock^="rest_"] .pet-visibility{left:calc(50% + 44px)}
-.pet-window[data-dock^="rest_"] .pet-chat-input{bottom:calc(var(--dock-body-height) + 8px);left:8px;right:8px}
-.pet-window[data-dock^="rest_"] :is(.pet-reminder-slot,.pet-error){left:8px;right:8px;top:8px;bottom:auto;width:auto;max-height:calc(100% - var(--dock-body-height) - 84px - var(--dock-controls-extra))}
-.pet-window[data-dock^="rest_"] .pet-options-menu{top:auto;right:8px;bottom:calc(var(--dock-body-height) + 74px + var(--dock-controls-extra));max-height:calc(100% - var(--dock-body-height) - 82px - var(--dock-controls-extra));overflow:auto}
-.pet-window[data-dock^="rest_"] .pet-food-picker{top:8px;max-height:calc(100% - var(--dock-body-height) - 20px)}
+.pet-window[data-dock^="rest_"] .pet-chat-input{bottom:calc(var(--dock-floor-inset,0px) + var(--dock-body-height) + 8px);left:8px;right:8px}
+.pet-window[data-dock^="rest_"] :is(.pet-reminder-slot,.pet-error){left:8px;right:8px;top:8px;bottom:auto;width:auto;max-height:calc(100% - var(--dock-floor-inset,0px) - var(--dock-body-height) - 84px - var(--dock-controls-extra))}
+.pet-window[data-dock^="rest_"] .pet-options-menu{top:auto;right:8px;bottom:calc(var(--dock-floor-inset,0px) + var(--dock-body-height) + 74px + var(--dock-controls-extra));max-height:calc(100% - var(--dock-floor-inset,0px) - var(--dock-body-height) - 82px - var(--dock-controls-extra));overflow:auto}
+.pet-window[data-dock^="rest_"] .pet-food-picker{top:8px;max-height:calc(100% - var(--dock-floor-inset,0px) - var(--dock-body-height) - 20px)}
 .pet-window[data-dock^="rest_"] .pet-food-status{top:8px}
 @media(prefers-reduced-motion:reduce){.pet-switch-track>span{transition:none}}
 
 .pet-window[data-dock^="rest_"]{--dock-body-height:var(--dock-measured-body-height,calc(var(--ym-font-pet) * 1.4))}
 .pet-window[data-dock^="rest_"]:has(.pet-expression-image){--dock-body-height:var(--dock-measured-body-height,var(--ym-pet-image-size))}
 .pet-window[data-dock^="rest_"] .pet-expression-image{position:relative;height:calc(var(--ym-pet-image-size) * var(--ym-art-visible-ratio,1))}
-.pet-window[data-dock^="rest_"] .pet-expression-image img{position:absolute;bottom:auto;top:calc(var(--ym-pet-image-size) * var(--ym-art-top-ratio,0));left:50%;translate:-50% 0;width:calc(var(--ym-pet-image-size) * var(--ym-art-width-ratio,1));height:calc(var(--ym-pet-image-size) * var(--ym-art-height-ratio,1));transform:none}
+.pet-window[data-dock^="rest_"] .pet-expression-image img{position:absolute;bottom:auto;top:auto;bottom:calc(0px - var(--ym-pet-image-size) * var(--ym-art-bottom-ratio,0));left:50%;translate:-50% 0;width:calc(var(--ym-pet-image-size) * var(--ym-art-width-ratio,1));height:calc(var(--ym-pet-image-size) * var(--ym-art-height-ratio,1));transform:none}
 
 .pet-window[data-dock]:not([data-dock="none"]) .pet-reminder-slot{bottom:auto!important}
 .pet-window[data-dock="peek_left"] .pet-menu{left:calc(var(--dock-visible-body-width,100px) + 12px);right:8px;top:8px;bottom:auto;width:auto;max-height:calc(100% - 24px)}
 .pet-window[data-dock="peek_right"] .pet-menu{left:8px;right:calc(var(--dock-visible-body-width,100px) + 12px);top:8px;bottom:auto;width:auto;max-height:calc(100% - 24px)}
-.pet-window[data-dock^="rest_"] .pet-menu{left:8px;right:8px;top:auto;bottom:calc(var(--dock-body-height) + 70px + var(--dock-controls-extra));width:auto}
+.pet-window[data-dock^="rest_"] .pet-menu{left:8px;right:8px;top:auto;bottom:calc(var(--dock-floor-inset,0px) + var(--dock-body-height) + 70px + var(--dock-controls-extra));width:auto}
 .pet-window[data-dock^="rest_"] .pet-food-feedback img{animation-name:food-eaten-docked}
 @keyframes food-eaten-docked{from{transform:translate(30px,-30px) scale(1);opacity:1}to{transform:translate(0,-8px) scale(.1);opacity:0}}
 
@@ -271,13 +273,12 @@
 .pet-window .pet-chat-input .chat-composer__input { grid-column:1; grid-row:1; }
 .pet-window .pet-chat-input .ym-page-error { grid-column:1/-1; }
 
-/* 保留已解码旧图，切图只改变透明度，按钮与命中区不参与动画。 */
+/* 新图完整承接旧图，旧图在上方淡出，避免两图同时半透明而透出桌面。 */
 .pet-expression-image { position:relative; }
-.pet-expression-image .pet-image-outgoing { position:absolute; inset:0; pointer-events:none; animation:ym-picture-out .18s ease-out both; }
-.pet-expression-image .pet-image-enter { animation:ym-picture-in .18s ease-out both; }
-@keyframes ym-picture-in { from{opacity:0}to{opacity:1} }
+.pet-expression-image .pet-image-current { position:relative; z-index:0; }
+.pet-expression-image .pet-image-outgoing { position:absolute; inset:0; z-index:1; pointer-events:none; animation:ym-picture-out .18s ease-out both; }
 @keyframes ym-picture-out { from{opacity:1}to{opacity:0} }
-@media(prefers-reduced-motion:reduce){.pet-expression-image .pet-image-outgoing{display:none}.pet-expression-image .pet-image-enter{animation:none}}
+@media(prefers-reduced-motion:reduce){.pet-expression-image .pet-image-outgoing{display:none}}
 
 .pet-face { isolation:isolate; }
 .pet-face > .pet-expression { position:relative; z-index:1; }
@@ -288,3 +289,48 @@
 
 .pet-window[data-dock="peek_right"] .pet-new-mail{left:auto;right:calc(100% + 5px)}
 .pet-window[data-dock^="rest_"] .pet-new-mail{left:50%;right:auto;top:auto;bottom:calc(100% + 5px);translate:-50% 0}
+
+/* 上缘放置：身体靠上，操作与展开内容留在身体下方。 */
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]){--top-body-height:var(--pet-body-height,calc(var(--ym-font-pet) * 1.4))}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]):has(.pet-expression-image){--top-body-height:var(--pet-body-height,var(--ym-pet-image-size))}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-face{top:4px;bottom:auto;translate:none;animation:none}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-expression{animation:none}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) :is(.pet-health,.pet-chat-entry,.pet-more,.pet-visibility){top:calc(var(--pet-body-top,0px) + var(--top-body-height) + 20px);bottom:auto;right:auto;transform:none}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-health{left:calc(50% - 76px)}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-chat-entry{left:calc(50% - 36px)}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-more{left:calc(50% + 4px)}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) .pet-visibility{left:calc(50% + 44px)}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) :is(.pet-chat-input,.pet-options-menu,.pet-menu){top:calc(var(--pet-body-top,0px) + var(--top-body-height) + 70px);bottom:auto;left:8px;right:8px;max-height:calc(100% - var(--pet-body-top,0px) - var(--top-body-height) - 78px);overflow:auto}
+.pet-window:is([data-dock="top"],[data-upper-layout="true"]) :is(.pet-reminder-slot,.pet-error){top:calc(var(--pet-body-top,0px) + var(--top-body-height) + 70px + var(--pet-chat-extra));bottom:auto;left:8px;right:8px;width:auto;max-height:calc(100% - var(--pet-body-top,0px) - var(--top-body-height) - 78px - var(--pet-chat-extra))}
+/* 飞行只改变原生窗口坐标；固定身体锚点，接住时不跳到另一种布局。 */
+.pet-window[data-toss]{--toss-controls-top:calc(var(--pet-toss-y) - 44px)}
+.pet-window[data-toss][data-toss-controls="below"]{--toss-controls-top:calc(var(--pet-toss-y) + var(--pet-toss-height) + 12px)}
+.pet-window[data-toss] .pet-face{left:var(--pet-toss-x);top:var(--pet-toss-y);width:var(--pet-toss-width);height:var(--pet-toss-height);max-width:none;box-sizing:border-box;bottom:auto;right:auto;padding:0;transform:none;translate:none;display:grid;place-items:center;animation:none}
+.pet-window[data-toss] .pet-expression{grid-area:1/1;animation:none}
+.pet-window[data-toss] .pet-hunger-hint{position:absolute;left:100%;top:50%}
+.pet-window[data-toss] :is(.pet-health,.pet-chat-entry,.pet-more,.pet-visibility){top:var(--toss-controls-top);bottom:auto;right:auto;transform:none}
+.pet-window[data-toss] .pet-health{left:calc(50% - 76px)}
+.pet-window[data-toss] .pet-chat-entry{left:calc(50% - 36px)}
+.pet-window[data-toss] .pet-more{left:calc(50% + 4px)}
+.pet-window[data-toss] .pet-visibility{left:calc(50% + 44px)}
+.pet-window[data-toss] :is(.pet-chat-input,.pet-options-menu,.pet-menu,.pet-error,.pet-reminder-slot){top:8px;bottom:auto;left:8px;right:8px;width:auto;max-height:max(32px,calc(var(--pet-toss-y) - 58px));overflow:auto}
+.pet-window[data-toss][data-toss-controls="below"] :is(.pet-chat-input,.pet-options-menu,.pet-menu,.pet-error,.pet-reminder-slot){top:calc(var(--toss-controls-top) + 40px);max-height:max(32px,calc(100% - var(--toss-controls-top) - 48px))}
+.pet-window[data-hidden="true"] .pet-visibility{top:6px;bottom:auto;left:auto;right:8px}
+.pet-window[data-toss="landed"] .pet-expression-image{height:calc(var(--ym-pet-image-size) * var(--ym-art-visible-ratio,1));align-self:end}
+.pet-window[data-toss="landed"] .pet-expression-image img{position:absolute;top:auto;bottom:calc(0px - var(--ym-pet-image-size) * var(--ym-art-bottom-ratio,0));left:50%;translate:-50% 0;width:calc(var(--ym-pet-image-size) * var(--ym-art-width-ratio,1));height:calc(var(--ym-pet-image-size) * var(--ym-art-height-ratio,1));transform:none}
+
+.pet-window[data-toss="landed"] .pet-expression{align-self:end}
+/* 覆盖带饰品时的旧面板高度限制，展开内容也不得遮住操作行。 */
+.pet-window[data-ready="true"]:is([data-dock="top"],[data-upper-layout="true"]) :is(.pet-error,.pet-reminder-slot){max-height:calc(100% - var(--pet-body-top,0px) - var(--top-body-height) - 78px - var(--pet-chat-extra))}
+.pet-window[data-ready="true"][data-toss] :is(.pet-error,.pet-reminder-slot){max-height:max(32px,calc(var(--pet-toss-y) - 58px))}
+.pet-window[data-ready="true"][data-toss][data-toss-controls="below"] :is(.pet-error,.pet-reminder-slot){max-height:max(32px,calc(100% - var(--toss-controls-top) - 48px))}
+
+/* 等摸摸提示随立绘出现；不拦截点击、不推动布局。 */
+.pet-petting-hint { position:absolute; left:var(--pet-hint-left,8px); top:var(--pet-hint-top,8px); z-index:5; padding:4px 7px; border:1px solid var(--ym-border); border-radius:12px; background:color-mix(in srgb,var(--ym-accent-strong) 84%,#352434); color:#fff; -webkit-text-stroke:0; font-size:12px; font-weight:600; white-space:nowrap; pointer-events:none; animation:pet-petting-in 180ms cubic-bezier(.22,1,.36,1) both; }
+@keyframes pet-petting-in {from {opacity:0;transform:translateY(4px)} to {opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.pet-petting-hint{animation:none}}
+
+/* 透明宠窗的图标与边框适度加强，保持原有主题和按钮尺寸。 */
+.pet-window :is(.pet-visibility,.pet-more,.pet-health,.pet-chat-toggle){border-width:2px;}
+.pet-window :is(.pet-visibility,.pet-chat-toggle,.pet-more) svg{width:18px;height:18px;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 .6px 0 var(--ym-pet-text-outline)) drop-shadow(0 -.6px 0 var(--ym-pet-text-outline));}
+.pet-chat-toggle{padding:5px;}

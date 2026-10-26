@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../api", () => ({ configurationApi: api, backgroundApi: { get: vi.fn(), save: vi.fn() }, errorMessage: (error: { message: string }) => error.message }));
 
+vi.mock("./PetImageSetup",()=>({default:({personaName}:{personaName:string})=><div role="dialog">初始化图片：{personaName}</div>}));
 vi.mock("./PetCreationPanel",()=>({default:({personaId}:{personaId:string})=><div data-testid="picture-library">{personaId}</div>}));
 vi.mock("../ChatBackgroundSettings",()=>({default:()=>null}));
 
@@ -220,6 +221,7 @@ describe("PersonasPanel", () => {
     api.generateExpressions.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     await loadPanel();
 
+    fireEvent.click(screen.getByText("表情库",{selector:"summary span"}));
     fireEvent.click(screen.getByRole("button", { name: `重新生成 ${currentPersona.name} 表情库` }));
     await screen.findByRole("button", { name: "取消生成" });
     fireEvent.click(screen.getByRole("button", { name: "取消生成" }));
@@ -232,6 +234,7 @@ describe("PersonasPanel", () => {
     const view = render(<PersonasPanel />);
     await screen.findByRole("article", { name: currentPersona.name });
     fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
+    fireEvent.click(screen.getByText("表情库",{selector:"summary span"}));
     fireEvent.click(screen.getByRole("button", { name: `重新生成 ${currentPersona.name} 表情库` }));
     await screen.findByRole("button", { name: "取消生成" });
 
@@ -257,4 +260,10 @@ it("人设详情展示该人设的图片库和有效基础颜文字",async()=>{
   expect((await screen.findByTestId("picture-library")).textContent).toBe(systemPersona.id);
   expect(screen.getByText("(・ω・)")).toBeTruthy();
   expect(screen.getByText("(｡-ω-｡)")).toBeTruthy();
+});
+
+it("新建人设选择图片模式后直接进入初始图片和预览流程",async()=>{
+ render(<PersonasPanel/>);await screen.findByRole("button",{name:"新建人设"});await waitFor(()=>expect((screen.getByRole("button",{name:"新建人设"}) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button",{name:"新建人设"}));fireEvent.change(screen.getByLabelText("人设名称"),{target:{value:"图片伙伴"}});fireEvent.change(screen.getByLabelText("当前设定"),{target:{value:"温柔的伙伴"}});fireEvent.click(screen.getByRole("switch",{name:/图片模式/}));fireEvent.click(screen.getByRole("button",{name:"保存人设"}));
+ expect(await screen.findByText(`初始化图片：${currentPersona.name}`)).toBeTruthy();expect(api.createPersona).toHaveBeenCalledTimes(1);
 });

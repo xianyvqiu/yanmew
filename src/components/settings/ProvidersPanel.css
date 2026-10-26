@@ -15,3 +15,13 @@
 .ym-provider-form fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; }
 .ym-provider-form legend { margin-bottom: 12px; font-weight: 600; }
 .ym-provider-form [role="alert"] { color: var(--ym-danger); }
+
+.ym-window-shell .ym-provider-roles { grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:12px; }
+.ym-window-shell .ym-provider-roles>.ym-object-card { padding:16px; }
+.ym-window-shell .ym-provider-roles .ym-page-heading { margin-bottom:10px; align-items:start; gap:10px; }
+.ym-provider-roles h3 { margin:0; font-size:15px; }
+.ym-provider-roles>.ym-object-card>p { margin:6px 0 0; overflow-wrap:anywhere; }
+.ym-window-shell .ym-provider-roles .ym-page-heading>.ym-button { min-height:32px; padding:6px 10px; font-size:12px; }
+.ym-provider-roles>.ym-object-card:has(form) { grid-column:1/-1; }
+
+.ym-provider-form,.ym-role-fields,.ym-reminder-form,.ym-persona-form,.ym-skill-editor { scroll-margin-block-start:12px; }

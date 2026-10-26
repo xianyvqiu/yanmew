@@ -8,7 +8,20 @@ pub(crate) mod generation;
 #[cfg(test)]
 mod tests;
 
-const COLUMNS: &str = "id,session_id,travel_id,content,note,is_favorite,created_at";
+const COLUMNS: &str = "id,session_id,travel_id,content,note,is_favorite,created_at,image_file,title";
+pub(crate) fn images_enabled(c:&Connection)->AppResult<bool>{
+    let value:Option<String>=c.query_row("SELECT value FROM settings WHERE key='souvenir_images_enabled'",[],|r|r.get(0)).optional()?;
+    match value.as_deref(){None|Some("1")=>Ok(true),Some("0")=>Ok(false),_=>Err(AppError::validation("souvenirImages","伴手礼图片设置无效"))}
+}
+pub(crate) fn set_images_enabled(c:&Connection,enabled:bool)->AppResult<bool>{
+    c.execute("INSERT INTO settings(key,value) VALUES('souvenir_images_enabled',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[if enabled{"1"}else{"0"}])?;Ok(enabled)
+}
+pub(crate) fn image(runtime:&crate::runtime::Runtime,persona:i64,session:i64,revision:u64,id:i64)->AppResult<crate::accessories::images::ImageView>{
+    let record=runtime.read(|store,_|{crate::accessories::require_current(store,persona,session,revision)?;get(&store.connection,session,id)})?;
+    let result=record.image_file.as_ref().map(|file|runtime.paths.as_ref().map_err(Clone::clone).and_then(|paths|crate::accessories::images::read(paths,file)));
+    runtime.read(|store,_|{crate::accessories::require_current(store,persona,session,revision)?;if get(&store.connection,session,id)?.image_file!=record.image_file{return Err(AppError::new("CONFLICT","伴手礼图片已变化，请刷新"));}Ok(())})?;
+    Ok(match result {Some(Ok(data_url))=>crate::accessories::images::ImageView{data_url:Some(data_url),notice:None},Some(Err(_))=>crate::accessories::images::ImageView{data_url:None,notice:Some("伴手礼图片暂不可用，文字内容仍保留。".into())},None=>crate::accessories::images::ImageView{data_url:None,notice:None}})
+}
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Souvenir> {
     Ok(Souvenir {
         id: r.get::<_, i64>(0)?.to_string(),
@@ -18,6 +31,8 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Souvenir> {
         note: r.get(4)?,
         is_favorite: r.get(5)?,
         created_at: r.get(6)?,
+        image_file:r.get(7)?,
+        title:r.get(8)?,
     })
 }
 pub(crate) fn list(

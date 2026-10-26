@@ -72,3 +72,16 @@ it("切图读取期间保留旧图，新图成功才替换，不显示颜文字�
  expect(screen.getByRole("img",{name:"初始猫"})).toBeTruthy();expect(screen.queryByText("(・ω・)")).toBeNull();
  await act(async()=>finish("data:image/png;base64,wave"));await screen.findByRole("img",{name:"挥手猫"});
 });
+
+it("落地切换前完成解码和透明边界测量，淡出旧图保留自己的底部留白",async()=>{
+ let release!:()=>void;let drawn="";
+ class Decoded {src="";naturalWidth=256;naturalHeight=256;decode(){return this.src.endsWith(",2")?new Promise<void>(done=>{release=done;}):Promise.resolve();}}
+ vi.stubGlobal("Image",Decoded);
+ vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({drawImage(image:Decoded){drawn=image.src;},getImageData(){const pixels=new Uint8ClampedArray(256*256*4);const start=drawn.endsWith(",2")?80:32,end=drawn.endsWith(",2")?192:224;for(let y=start;y<end;y++)pixels[(y*256+100)*4+3]=255;return {data:pixels};}} as unknown as CanvasRenderingContext2D);
+ const view=render(<PetArtworkDisplay personaId="2" expression="@pet-image:1" dock="rest_sit"/>);await screen.findByRole("img",{name:"初始猫"});
+ expect(view.container.firstElementChild?.getAttribute("style")).toContain("--ym-art-visible-ratio: 0.75");
+ view.rerender(<PetArtworkDisplay personaId="2" expression="@pet-image:2" dock="rest_lie"/>);await waitFor(()=>expect(release).toBeTypeOf("function"));
+ expect(screen.getByRole("img",{name:"初始猫"})).toBeTruthy();await act(async()=>release());const current=await screen.findByRole("img",{name:"挥手猫"});
+ expect(current.parentElement!.style.getPropertyValue("--ym-art-visible-ratio")).toBe("0.4375");expect((current as HTMLElement).style.getPropertyValue("--ym-art-bottom-ratio")).toBe("0.25");
+ const old=view.container.querySelector<HTMLElement>(".pet-image-outgoing")!;expect(old.style.getPropertyValue("--ym-art-bottom-ratio")).toBe("0.125");
+});

@@ -117,7 +117,7 @@ export default function ReminderEmailPanel() {
       {view && <button type="button" className="ym-email-switch" role="switch" aria-label="邮件提醒" aria-checked={view.enabled} disabled={busy || !view.verified} onClick={() => {
         const enabled = !view.enabled;
         void run(async () => { const next = await reminderEmailApi.enable(enabled, view.revision); if (mounted.current) { sync(next, false); setCodeSent(false); setNotice(enabled ? "邮件提醒已开启，只发送此后触发的提醒。" : "邮件提醒已关闭，未开始发送的任务已取消。"); } });
-      }}><span className="ym-email-switch__track" aria-hidden="true"><span /></span><span>{view.enabled ? "已开启" : "已关闭"}</span></button>}
+      }}><span>{view.enabled ? "已开启" : "已关闭"}</span></button>}
     </div>
     <p className="ym-page-note">到点时同时显示界面提醒并发送邮件。关闭颜喵期间无法发信，重新打开后会汇总离开期间的过期事项。</p>
     {!view && !error && <p role="status">正在读取邮件设置…</p>}

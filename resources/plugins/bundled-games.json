@@ -4,6 +4,8 @@
     "rock-paper-scissors.yanmew-game",
     "dice.yanmew-game",
     "star-catcher.yanmew-game",
-    "my-home.yanmew-game"
+    "my-home.yanmew-game",
+    "minesweeper.yanmew-game",
+    "2048.yanmew-game"
   ]
 }

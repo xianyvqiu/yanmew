@@ -390,8 +390,10 @@ pub(crate) fn request(
                     }
                     Err(error) => Err(error.clone()),
                 };
+                let cutout_paths = worker.paths.clone(); let cutout_cancel = lease.cancel.clone();
                 let result = match result {
                     Ok(bytes) => tauri::async_runtime::spawn_blocking(move || {
+                        let bytes = crate::background_removal::ensure(&cutout_paths?, &bytes, &cutout_cancel, true)?;
                         super::images::normalize(&bytes)
                     })
                     .await

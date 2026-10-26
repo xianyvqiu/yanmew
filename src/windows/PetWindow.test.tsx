@@ -2,11 +2,13 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PetWindow from "./PetWindow";
+import type {Toss,Chase} from "./usePetDesktop";
+import * as petWander from "./usePetWander";
 import { newestSnapshot, type PetSnapshot } from "./usePetWindow";
 import type { MemoryGenerationView, PetActivity, PetStateNotice } from "../types";
 
 const startDragging = vi.fn();
-const desktopState = vi.hoisted(() => ({ fullscreenWander: false, dock: "none", revision: 0, busy: false, error: "", expression: undefined as string | undefined, toggle: vi.fn() }));
+const desktopState = vi.hoisted(() => ({ chase:undefined as Chase|undefined, toss:undefined as Toss|undefined, fullscreenWander: false, dock: "none", revision: 0, busy: false, error: "", expression: undefined as string | undefined, toggle: vi.fn() }));
 vi.mock("./usePetDesktop", () => ({ usePetDesktop: () => desktopState }));
 vi.mock("./usePetAppearance", () => ({ usePetAppearance: () => ({ error: "", ready: true }) }));
 vi.mock("../components/PetReminderNotifications", () => ({ default: ({ hidden, ready, unobscured, stateBubble }: {
@@ -40,6 +42,87 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 describe("PetWindow", () => {
+  it("追到后显示等摸摸，按下不会先取消等待，松手仍走正常点击接口",async()=>{
+    Object.assign(desktopState,{fullscreenWander:true,chase:{phase:"waiting",personaId:"1",sessionId:"1",contextRevision:0},expression:"(｡･ω･｡)ﾉ"});
+    const wander=vi.spyOn(petWander,"usePetWander");
+    await act(async()=>{render(<PetWindow/>);});
+    expect(screen.getByText("等摸摸").parentElement).toBe(screen.getByTestId("pet-window"));expect(screen.getByText("等摸摸").hasAttribute("data-pet-interactive")).toBe(true);expect(screen.getByText("(｡･ω･｡)ﾉ")).toBeTruthy();
+    const face=screen.getByRole("img",{name:"桌宠"});
+    fireEvent.pointerDown(face,{button:0,pointerId:9,clientX:140,clientY:170});
+    expect(screen.getByText("等摸摸")).toBeTruthy();expect(wander.mock.calls[wander.mock.calls.length-1]?.[3]).toBe(true);
+    fireEvent.pointerUp(face,{button:0,pointerId:9,clientX:140,clientY:170});
+    await waitFor(()=>expect(invoke).toHaveBeenCalledWith("interact_pet",{input:{personaId:"1",sessionId:"1",contextRevision:0,action:"click"}}));
+    await act(async()=>receiveActivity({payload:{...initialActivity,activity:"away",expression:"出门啦",canInteract:false,canWander:false,revision:4}}));
+    expect(screen.queryByText("等摸摸")).toBeNull();expect(screen.getByText("出门啦")).toBeTruthy();wander.mockRestore();
+  });
+  it("失落阶段使用对应表情而不显示等待文字，旧上下文不会覆盖当前人设",async()=>{
+    Object.assign(desktopState,{fullscreenWander:true,chase:{phase:"sad",personaId:"1",sessionId:"1",contextRevision:0},expression:"(｡•́︿•̀｡)"});
+    const r=await act(async()=>render(<PetWindow/>));expect(screen.getByText("(｡•́︿•̀｡)")).toBeTruthy();expect(screen.queryByText("等摸摸")).toBeNull();
+    desktopState.chase={...desktopState.chase!,contextRevision:99};r.rerender(<PetWindow/>);expect(screen.queryByText("(｡•́︿•̀｡)")).toBeNull();
+  });
+  it("落地动作按透明边界贴地，不因坐姿变矮悬空",async()=>{
+    desktopState.toss={phase:"landed",personaId:"1",sessionId:"1",contextRevision:0,body:{x:62,y:102,width:196,height:196},controlsBelow:false};desktopState.expression="@pet-image:4";
+    const fallback=invoke.getMockImplementation()!;
+    const base={id:"1",personaId:"1",kind:"base",name:"默认图片",prompt:"",description:"",category:"normal",enabled:true,imageFile:"base.png",previewFile:null,revision:0,createdAt:"a",updatedAt:"a"};
+    invoke.mockImplementation(async(command,args)=>{
+      if(command==="get_pet_creation")return{enabled:true,revision:1,items:[base,{...base,id:"4",kind:"expression",category:"landing",name:"落地动作",imageFile:"landing.png"}]};
+      if(command==="set_pet_artwork_layout")return{hidden:false,revision:1,chatOpen:false};
+      if(command==="get_pet_artwork_image")return `data:image/png;base64,${args.id}`;
+      return fallback(command,args);
+    });
+    const pixels=new Uint8ClampedArray(8*8*4);for(let y=2;y<6;y++)pixels[(y*8+4)*4+3]=255;
+    const spy=vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({drawImage(){},getImageData:()=>({data:pixels})} as unknown as CanvasRenderingContext2D);
+    try{await act(async()=>{render(<PetWindow/>);});const image=await screen.findByRole("img",{name:"落地动作"});
+      Object.defineProperties(image,{naturalWidth:{value:8},naturalHeight:{value:8},complete:{value:true}});fireEvent.load(image);
+      expect(image.parentElement!.style.getPropertyValue("--ym-art-visible-ratio")).toBe("0.5");
+    }finally{spy.mockRestore();}
+  });
+  it("飞行中按下立绘立即接住并显示拎起，不触发普通点击",async()=>{
+    desktopState.toss={phase:"down",personaId:"1",sessionId:"1",contextRevision:0,body:{x:62,y:102,width:196,height:196},controlsBelow:false};
+    desktopState.expression="(>﹏<)ﾉ";
+    await act(async()=>{render(<PetWindow/>);});
+    fireEvent.pointerDown(screen.getByRole("img",{name:"桌宠"}),{button:0,pointerId:1,clientX:150,clientY:180});
+    await waitFor(()=>expect(startDragging).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("(｡>﹏<｡)")).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalledWith("interact_pet",expect.anything());
+  });
+  it("出行时即使收到旧飞行快照也不显示抛接或按下接住",async()=>{
+    desktopState.toss={phase:"down",personaId:"1",sessionId:"1",contextRevision:0,body:{x:62,y:102,width:196,height:196},controlsBelow:true};desktopState.expression="(>﹏<)ﾉ";
+    const fallback=invoke.getMockImplementation()!;
+    invoke.mockImplementation(async(command,args)=>command==="get_pet_activity"?{...initialActivity,activity:"away",expression:"出门啦",canInteract:false,canWander:false}:fallback(command,args));
+    await act(async()=>{render(<PetWindow/>);});expect(screen.getByText("出门啦")).toBeTruthy();
+    expect(screen.getByTestId("pet-window").hasAttribute("data-toss")).toBe(false);
+    fireEvent.pointerDown(screen.getByRole("img",{name:"桌宠"}),{button:0,pointerId:1,clientX:150,clientY:180});
+    expect(startDragging).not.toHaveBeenCalled();
+  });
+  it("报错表情使用本地设置，收起详情仍保留，解除后恢复停靠",async()=>{
+    Object.assign(desktopState,{dock:"peek_left",expression:"|・ω・)"});
+    const fallback=invoke.getMockImplementation()!;
+    invoke.mockImplementation(async(command,args)=>command==="get_pet_error_expression"?"(=_=;)":fallback(command,args));
+    await act(async()=>{render(<PetWindow/>);});expect(screen.getByText("|・ω・)")).toBeTruthy();
+    await act(async()=>{receiveActivity({payload:{...initialActivity,revision:2,activity:"dormant",error:"连接失败",canWander:false}});});
+    expect(screen.getByText("(=_=;)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:"查看错误"}));expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button",{name:"查看错误"}));expect(screen.queryByRole("alert")).toBeNull();expect(screen.getByText("(=_=;)")).toBeTruthy();
+    await act(async()=>{receiveActivity({payload:{...initialActivity,revision:3}});});expect(screen.getByText("|・ω・)")).toBeTruthy();
+    expect(invoke.mock.calls.some(([command])=>command==="submit_chat"||command==="interact_pet")).toBe(false);
+  });
+  it("图片模式报错显示超载图，问题解除后恢复当前图",async()=>{
+    const fallback=invoke.getMockImplementation()!;
+    const base={id:"1",personaId:"1",kind:"base",name:"默认图片",prompt:"",description:"",category:"normal",enabled:true,imageFile:"base.png",previewFile:null,revision:0,createdAt:"a",updatedAt:"a"};
+    invoke.mockImplementation(async(command,args)=>{
+      if(command==="get_pet_activity")return {...initialActivity,expression:"@pet-image:1"};
+      if(command==="get_pet_error_expression")return "@pet-image:3";
+      if(command==="get_pet_creation")return {enabled:true,revision:1,items:[base,{...base,id:"3",kind:"expression",name:"报错超载",category:"error",imageFile:"error.png"}]};
+      if(command==="set_pet_artwork_layout")return {hidden:false,revision:1,chatOpen:false};
+      if(command==="get_pet_artwork_image")return `data:image/png;base64,${args.id}`;
+      return fallback(command,args);
+    });
+    await act(async()=>{render(<PetWindow/>);});await screen.findByRole("img",{name:"默认图片"});
+    await act(async()=>{receiveActivity({payload:{...initialActivity,revision:2,expression:"@pet-image:1",error:"模型报错"}});});await screen.findByRole("img",{name:"报错超载"});
+    await act(async()=>{receiveActivity({payload:{...initialActivity,revision:3,expression:"@pet-image:1"}});});await screen.findByRole("img",{name:"默认图片"});
+  });
+
   it("图片模式在原生接管鼠标后保留拎后颈图，松手恢复原图",async()=>{
     const fallback=invoke.getMockImplementation()!;
     const base={id:"1",personaId:"1",kind:"base",name:"默认图片",prompt:"",description:"",category:"normal",enabled:true,imageFile:"base.png",previewFile:null,revision:0,createdAt:"2026-10-20",updatedAt:"2026-10-20"};
@@ -96,6 +179,14 @@ describe("PetWindow", () => {
     expect(startDragging).toHaveBeenCalledTimes(2);
   });
 
+  it("警示可收起为叹号并重新打开，收起不清除故障状态",async()=>{
+    desktopState.error="拖动暂时失败";await act(async()=>{render(<PetWindow/>);});
+    expect(screen.getByRole("alert").textContent).toContain("拖动暂时失败");
+    fireEvent.click(screen.getByRole("button",{name:"收起警示"}));expect(screen.queryByRole("alert")).toBeNull();
+    const badge=screen.getByRole("button",{name:"查看错误"});expect(badge.getAttribute("aria-expanded")).toBe("false");expect(document.querySelector(".pet-window")?.getAttribute("data-error")).toBe("true");
+    fireEvent.click(badge);expect(screen.getByRole("alert").textContent).toContain("拖动暂时失败");expect(badge.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("首次连接失败显示错误并可重试恢复", async () => {
     let failed = false;
     invoke.mockImplementation(async (command) => {
@@ -125,13 +216,14 @@ describe("PetWindow", () => {
   });
 
   beforeEach(() => {
-  Object.assign(desktopState, { fullscreenWander: false, dock: "none", revision: 0, busy: false, error: "", expression: undefined }); desktopState.toggle.mockReset();
+  Object.assign(desktopState, { chase:undefined, toss:undefined, fullscreenWander: false, dock: "none", revision: 0, busy: false, error: "", expression: undefined }); desktopState.toggle.mockReset();
     startDragging.mockReset().mockResolvedValue(undefined);
     invoke.mockReset().mockImplementation(async (command, args) => {
       if (command === "set_pet_chat_open") return {hidden:false,revision:3,chatOpen:args.open};
       if(command === "list_foods") return [{id:"token",name:"Token小点心",unlimited:true,price:0,quantity:0,revision:0,updatedAt:"2026-10-19"}];
       if(command === "get_food_preferences") return {defaultFoodId:"token",favoriteFoodId:null};
       if(command === "get_food_expression") return "(o_o)";
+      if(command === "get_pet_error_expression") return "(×_×)";
       if(command === "get_pet_lift_expression") return "(｡>﹏<｡)";
       if(command === "feed_food") return {actionId:args.actionId,kind:"feed",foodId:"token",quantity:1,personaId:"1",sessionId:"1",favoriteBonus:false,intimacyDelta:0,coinDelta:0,replayed:false};
       if (command === "get_pet_activity") return initialActivity;
@@ -143,6 +235,17 @@ describe("PetWindow", () => {
     });
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
     vi.stubGlobal("matchMedia", () => ({ addEventListener() {}, removeEventListener() {} }));
+  });
+
+  it.each(["standby", "bored", "hungry"] as const)("顶部放置保留%s活动表情，底部仍用停靠动作", async activity => {
+    Object.assign(desktopState,{dock:"top",expression:"顶部默认图"});
+    const result=await act(async()=>render(<PetWindow/>));
+    await act(async()=>receiveActivity({payload:{...initialActivity,activity,expression:"当前活动表情",canWander:false,revision:20}}));
+    expect(screen.getByText("当前活动表情")).toBeTruthy();
+    expect(screen.queryByText("顶部默认图")).toBeNull();
+    Object.assign(desktopState,{dock:"rest_sit",expression:"底部坐下"});
+    result.rerender(<PetWindow/>);
+    expect(screen.getByText("底部坐下")).toBeTruthy();
   });
 
   it("渲染颜文字形象", async () => {
@@ -185,6 +288,37 @@ describe("PetWindow", () => {
     expect((screen.getByRole("button",{name:"投喂"}) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("出行左键切换时长且不报错，右键菜单与时长互斥",async()=>{
+    const fallback=invoke.getMockImplementation()!;
+    invoke.mockImplementation(async(command,args)=>command==="get_current_travel"?{id:"3",status:"away",startedAt:new Date(Date.now()-3600000).toISOString()}:fallback(command,args));
+    await act(async()=>{render(<PetWindow/>);});
+    await act(async()=>receiveActivity({payload:{...initialActivity,revision:4,activity:"away",expression:"喵喵出门啦",canInteract:false}}));
+    expect(screen.queryByLabelText("已经出门时间")).toBeNull();const pet=screen.getByRole("img",{name:"桌宠"});
+    await act(async()=>{fireEvent.pointerDown(pet,{button:0,pointerId:1,clientX:10,clientY:10});fireEvent.pointerUp(pet,{pointerId:1,clientX:10,clientY:10});});
+    expect(await screen.findByLabelText("已经出门时间")).toBeTruthy();expect(screen.getByText("01:00")).toBeTruthy();
+    expect(screen.queryByRole("button",{name:"查看错误"})).toBeNull();expect(invoke.mock.calls.some(([command])=>command==="interact_pet")).toBe(false);
+    fireEvent.contextMenu(pet);expect(screen.queryByLabelText("已经出门时间")).toBeNull();expect(screen.getByRole("button",{name:"投喂"})).toHaveProperty("disabled",true);
+    await act(async()=>{fireEvent.pointerDown(pet,{button:0,pointerId:2,clientX:10,clientY:10});fireEvent.pointerUp(pet,{pointerId:2,clientX:10,clientY:10});});
+    expect(await screen.findByLabelText("已经出门时间")).toBeTruthy();expect(screen.queryByRole("button",{name:"投喂"})).toBeNull();
+  });
+  it("同会话正常返回展示我回来了，不等待回来信",async()=>{
+    const fallback=invoke.getMockImplementation()!;invoke.mockImplementation(async(command,args)=>command==="list_travels"?[{id:"3",status:"returned"}]:fallback(command,args));
+    await act(async()=>{render(<PetWindow/>);});
+    await act(async()=>receiveActivity({payload:{...initialActivity,revision:3,activity:"away",canInteract:false}}));
+    await act(async()=>receiveActivity({payload:{...initialActivity,revision:4}}));
+    expect(await screen.findByRole("status",{name:"返回提示"})).toHaveProperty("textContent","我回来了");
+  });
+  it("点击撞上出发时后端PET_AWAY不产生感叹号警示",async()=>{
+    const fallback=invoke.getMockImplementation()!;
+    invoke.mockImplementation(async(command,args)=>{
+      if(command==="interact_pet")throw {code:"PET_AWAY",message:"它出门啦，回来以后再互动吧"};
+      return fallback(command,args);
+    });
+    await act(async()=>{render(<PetWindow/>);});const pet=screen.getByRole("img",{name:"桌宠"});
+    await act(async()=>{fireEvent.pointerDown(pet,{button:0,pointerId:1,clientX:10,clientY:10});fireEvent.pointerUp(pet,{pointerId:1,clientX:10,clientY:10});});
+    expect(screen.queryByRole("button",{name:"查看错误"})).toBeNull();expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("左键单击颜文字时不开始拖动", async () => {
     await act(async () => { render(<PetWindow />); });
     const pet = screen.getByText("(・ω・)");
@@ -195,6 +329,19 @@ describe("PetWindow", () => {
     });
 
     expect(startDragging).not.toHaveBeenCalled();
+  });
+
+  it("出门后拖动只移动占位区域，不显示拎起表情", async () => {
+    await act(async () => { render(<PetWindow />); });
+    await act(async () => { receiveActivity({payload:{...initialActivity,revision:4,activity:"away",expression:"喵喵出门啦",canInteract:false}}); });
+    const pet=screen.getByRole("img");
+    await act(async () => {
+      fireEvent.pointerDown(pet,{button:0,clientX:10,clientY:10,pointerId:1});
+      fireEvent.pointerMove(pet,{clientX:30,clientY:10,pointerId:1});
+    });
+    expect(startDragging).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("喵喵出门啦")).toBeTruthy();
+    expect(screen.queryByText("(｡>﹏<｡)")).toBeNull();
   });
 
   it("移动超过阈值后只开始拖动一次", async () => {
@@ -352,14 +499,15 @@ describe("PetWindow", () => {
     ["peek_left", "|・ω・)"], ["peek_right", "(・ω・|"],
     ["rest_sit", "(｡･ω･｡)＿"], ["rest_lie", "＿(｡-ω-｡)＿"],
     ["none", "(・ω・)"],
-  ])("连接异常时%s保留本地停靠姿态与错误提示", async (dock, expected) => {
+  ])("连接异常时%s显示报错表情但保留停靠位置", async (dock, expected) => {
     Object.assign(desktopState, { fullscreenWander: true, dock, expression: dock === "none" ? undefined : expected });
     const fallback = invoke.getMockImplementation()!;
     invoke.mockImplementation(async (command, args) => command === "get_pet_activity"
       ? { ...initialActivity, activity: "dormant", error: "暂无聊天提供商", canWander: false }
       : fallback(command, args));
     await act(async () => { render(<PetWindow />); });
-    expect(screen.getByText(expected)).toBeTruthy();
+    expect(screen.getByText("(×_×)")).toBeTruthy();
+    expect(screen.getByTestId("pet-window").getAttribute("data-dock")).toBe(dock);
     expect(document.querySelector("[data-walking]")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "查看错误" }));
     expect(screen.getByRole("alert").textContent).toContain("暂无聊天提供商");
@@ -444,6 +592,34 @@ describe("PetWindow", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "查看错误" })).toBeNull());
   });
 
+  it.each(["error", "longError"] as const)("%s 错误徽标未展开或收起时仍暂停游走，解除后恢复", async (field) => {
+    desktopState.fullscreenWander = true;
+    const movement = vi.spyOn(petWander, "usePetWander").mockReturnValue({});
+    const fallback = invoke.getMockImplementation()!;
+    let failed = false;
+    invoke.mockImplementation(async (command, args) => command === "get_memory_generation_status"
+      ? { ...initialMemory, [field]: failed ? { code: "PROVIDER_UNAVAILABLE", message: "记忆模型暂不可用" } : null }
+      : fallback(command, args));
+    const enabled = () => movement.mock.calls[movement.mock.calls.length - 1]?.[3];
+    try {
+      await act(async () => { render(<PetWindow />); });
+      await waitFor(() => expect(enabled()).toBe(true));
+      await act(async () => { failed = true; receiveMemoryChanged(); });
+      await screen.findByRole("button", { name: "查看错误" });
+      expect(screen.queryByRole("alert")).toBeNull();
+      await waitFor(() => expect(enabled()).toBe(false));
+      expect(screen.getByTestId("pet-window").dataset.error).toBe("true");
+      fireEvent.click(screen.getByRole("button", { name: "查看错误" }));
+      expect(screen.getByRole("alert")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "查看错误" }));
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(enabled()).toBe(false);
+      await act(async () => { failed = false; receiveMemoryChanged(); });
+      await waitFor(() => expect(enabled()).toBe(true));
+      expect(screen.getByTestId("pet-window").dataset.error).toBe("false");
+    } finally { movement.mockRestore(); }
+  });
+
   it("聊天与设置入口只导航，不触发桌宠互动或拖动", async () => {
     await act(async () => { render(<PetWindow />); });
     await act(async () => {
@@ -489,7 +665,8 @@ it("出门后使用快捷邮箱写信并跳转统一邮箱，不触发聊天互�
       expect(button.getAttribute("data-tooltip-open")).toBe("true");
       fireEvent.pointerLeave(button);
       expect(button.getAttribute("data-tooltip-open")).toBe("false");
-      expect(Array.from(button.childNodes).filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent).join("")).toBe(name==="更多操作"?"...":"");
+      expect(Array.from(button.childNodes).filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent).join("")).toBe("");
+      expect(button.querySelector("svg")).toBeTruthy();
     }
     await act(async()=>{fireEvent.click(toggle);});
     expect(invoke).toHaveBeenCalledWith("set_pet_chat_open",{open:true});

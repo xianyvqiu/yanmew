@@ -141,6 +141,7 @@ fn normalize(c: &Connection, table: &str, mut row: Record) -> AppResult<Record> 
         if !super::super::protocol::setting_allowed(&key) {
             return Err(fail());
         }
+        if key=="souvenir_images_enabled" && !["0","1"].contains(&value(&row,"value")?) {return Err(fail());}
         if key == "reminder_email_config" {
             let safe = crate::reminder_email::public_config(value(&row, "value")?)?;
             row.insert("value".into(), Value::String(safe));
@@ -317,6 +318,12 @@ impl<'de> Visitor<'de> for Rows<'_> {
                 let session = row.remove("session_id").ok_or_else(|| A::Error::custom("旧日期缺少会话归属"))?;
                 crate::error::parse_id(session.as_str().ok_or_else(|| A::Error::custom("旧日期会话ID无效"))?).map_err(A::Error::custom)?;
             }
+            if self.table=="reminder_occurrences" && self.schema_version<25 {
+                row.entry("presentation_state").or_insert(Value::from("legacy"));
+                for field in ["presentation_persona_id","presentation_session_id","presentation_input","presentation_text","presentation_message_id"] {row.entry(field).or_insert(Value::Null);}
+            }
+            if self.table=="souvenirs" && self.schema_version<24 {row.entry("title").or_insert(Value::Null);}
+            if self.table=="souvenirs" && self.schema_version<21 {row.entry("image_file").or_insert(Value::Null);}
             if self.schema_version<19 && self.table=="accessories" {row.entry("render_layer").or_insert(Value::from("front"));row.entry("layer_order").or_insert(Value::from(0));}
             if self.schema_version<12 {if self.table=="personas"{row.entry("pet_image_enabled").or_insert(Value::from(0));row.entry("pet_image_revision").or_insert(Value::from(0));}if self.table=="accessories"{row.entry("position_x").or_insert(Value::Null);row.entry("position_y").or_insert(Value::Null);row.entry("scale").or_insert(Value::from(1000));}}
             if self.table == "sessions" && self.schema_version < 11 {
@@ -451,7 +458,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         serde_json::from_reader(zip.by_name("manifest.json").map_err(|_| fail())?)
             .map_err(|_| fail())?;
     if manifest.format_version != FORMAT_VERSION
-        || ![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, SCHEMA_VERSION].contains(&manifest.schema_version)
+        || ![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, SCHEMA_VERSION].contains(&manifest.schema_version)
     {
         return Err(AppError::new(
             "BACKUP_VERSION_UNSUPPORTED",
@@ -573,6 +580,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     for (table, column) in [
         ("personas", "chat_bg_file"),
         ("accessories", "image_file"),
+        ("souvenirs", "image_file"),
         ("pet_artworks", "image_file"),
         ("pet_artworks", "preview_file"),
         ("message_images", "image_file"),
@@ -598,7 +606,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
             |r| r.get(0),
         )?;
         let accessory: bool = c.query_row(
-            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
+            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM souvenirs WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
             [&entry.path],
             |r| r.get(0),
         )?;

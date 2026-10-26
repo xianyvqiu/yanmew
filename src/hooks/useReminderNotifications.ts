@@ -35,7 +35,7 @@ export default function useReminderNotifications() {
       const absent = missed.filter(item => !dismissed.current.has(item.id));
       setPendingIds([...due, ...absent].map(item => item.id));
       if (current?.kind === "missed") return; // 已展示的汇总保留原快照，不因自身确认事件消失。
-      if (current?.kind === "due" && record?.status === "pending") {
+      if (current?.kind === "due" && record && (record.status === "pending" || (record.status === "done" && record.autoCompleted))) {
         publish({ kind: "due", item: record });
         return;
       }
@@ -84,13 +84,12 @@ export default function useReminderNotifications() {
     finally { locked.current = false; if (alive.current) setBusy(false); }
   }, [acknowledge]);
 
-  const close = async (complete: boolean, expectedKey?: string) => {
+  const close = async (expectedKey?: string) => {
     const snapshot = active.current;
     if (!snapshot || locked.current || (expectedKey !== undefined && noticeKey(snapshot) !== expectedKey)) return false;
     locked.current = true; setBusy(true); setError("");
     try {
       await acknowledge(snapshot);
-      if (complete && snapshot.kind === "due") await reminderApi.complete(snapshot.item.id);
       entries(snapshot).forEach(item => dismissed.current.add(item.id));
       if (alive.current) {
         // 写入时的通知查询可能较晚返回，不能重新显示刚刚收起的气泡。
@@ -101,7 +100,7 @@ export default function useReminderNotifications() {
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
   return { notice, pendingIds, error, busy, shown, refresh,
-    dismiss: (expectedKey?: string) => close(false, expectedKey), complete: (expectedKey?: string) => close(true, expectedKey),
+    dismiss: (expectedKey?: string) => close(expectedKey),
     reportError: (cause: unknown) => { if (alive.current) setError(errorMessage(cause)); },
   };
 }

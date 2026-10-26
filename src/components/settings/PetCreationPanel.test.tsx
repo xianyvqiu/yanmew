@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import PetCreationPanel from "./PetCreationPanel";
 import type { PetArtwork, PetCreation } from "../../types";
 const api = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn(), enable: vi.fn(), image: vi.fn(), upload: vi.fn(), finish: vi.fn(), generate: vi.fn(), cancel: vi.fn(), listen: vi.fn() }));
@@ -61,4 +61,12 @@ it("批量新建中途失败会展示已保存项，仅保留尚未保存的要�
   await screen.findByRole("heading", { name: "要求二" });
   expect(api.save.mock.calls.map(call => call[3].prompt)).toEqual(["要求一", "要求二", "要求二"]);
   expect(library.items.filter(item => item.prompt === "要求一")).toHaveLength(1);
+});
+
+it("默认图接受后进入统一准备方式，普通表情接受不触发",async()=>{
+ library.items[0]={...base,previewFile:"new-base.png"};const open=vi.fn();render(<PetCreationPanel personaId="2" personaName="猫猫" onStartSetup={open}/>);
+ const baseCard=(await screen.findByRole("heading",{name:"初始形象"})).closest("article")!;
+ fireEvent.click(within(baseCard).getByRole("button",{name:"接受预览"}));await waitFor(()=>expect(open).toHaveBeenCalledTimes(1));expect(api.finish).toHaveBeenCalledWith("2","1",0,"accept");
+ await waitFor(()=>expect((within(baseCard).getByRole("button",{name:"接受预览"}) as HTMLButtonElement).disabled).toBe(false));
+ const expressionCard=screen.getByRole("heading",{name:"挥手"}).closest("article")!;fireEvent.click(within(expressionCard).getByRole("button",{name:"接受预览"}));await waitFor(()=>expect(api.finish).toHaveBeenCalledWith("2","2",0,"accept"));expect(open).toHaveBeenCalledTimes(1);
 });

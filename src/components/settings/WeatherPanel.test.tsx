@@ -4,9 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WeatherSettings, WeatherView } from "../../types";
 import WeatherPanel from "./WeatherPanel";
 
-const api = vi.hoisted(() => ({ get: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), getWeatherSettings: vi.fn(), saveWeatherSettings: vi.fn() }));
+const api = vi.hoisted(() => ({ listen: vi.fn(), get: vi.fn(), refresh: vi.fn(), cancel: vi.fn(), getWeatherSettings: vi.fn(), saveWeatherSettings: vi.fn() }));
 vi.mock("../../api", () => ({
-  weatherApi: { get: api.get, refresh: api.refresh, cancel: api.cancel },
+  weatherApi: { listen: api.listen, get: api.get, refresh: api.refresh, cancel: api.cancel },
   configurationApi: { getWeatherSettings: api.getWeatherSettings, saveWeatherSettings: api.saveWeatherSettings },
   errorMessage: (error: { message: string }) => error.message,
 }));
@@ -24,10 +24,12 @@ const weather = (overrides: Partial<WeatherView> = {}): WeatherView => ({
   ...overrides,
 });
 let cached: WeatherView;
+let weatherChanged: () => void;
 
 beforeEach(() => {
   vi.clearAllMocks();
   cached = weather();
+  api.listen.mockImplementation(async (receive: () => void) => { weatherChanged = receive; return vi.fn(); });
   api.get.mockImplementation(async () => cached);
   api.refresh.mockResolvedValue(weather({ availability: "available" }));
   api.cancel.mockResolvedValue(undefined);
@@ -36,35 +38,47 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-it("StrictMode 下每次进入只刷新一次，焦点补查不额外联网，重新进入会刷新", async () => {
+it("StrictMode进入、聚焦和再次进入只读缓存，不发起天气刷新", async () => {
   const view = render(<StrictMode><WeatherPanel contextRevision={7} /></StrictMode>);
-  await screen.findByText("状态：最新天气");
-  expect(api.refresh).toHaveBeenCalledTimes(1);
+  await screen.findByText("状态：缓存天气");
+  expect(api.refresh).not.toHaveBeenCalled();
+  const reads = api.get.mock.calls.length;
   fireEvent.focus(window);
-  await waitFor(() => expect(api.get).toHaveBeenCalledTimes(3));
-  expect(api.refresh).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(reads));
   view.unmount();
   render(<WeatherPanel contextRevision={7} />);
-  await screen.findByText("状态：最新天气");
-  expect(api.refresh).toHaveBeenCalledTimes(2);
+  await screen.findByText("状态：缓存天气");
+  expect(api.refresh).not.toHaveBeenCalled();
+});
+
+it("后台天气更新通知会立即重读缓存，不额外联网", async () => {
+  render(<WeatherPanel contextRevision={7} />);
+  await screen.findByText("21 °C");
+  cached = weather({availability:"available",data:{...weather().data!,observation:{...weather().data!.observation,temperatureCelsius:18}}});
+  await act(async () => weatherChanged());
+  await screen.findByText("18 °C");
+  expect(api.refresh).not.toHaveBeenCalled();
 });
 
 it("离页后初次缓存才返回，不发起定位和联网刷新", async () => {
   let finish!: (view: WeatherView) => void;
   api.get.mockImplementationOnce(() => new Promise<WeatherView>(resolve => { finish = resolve; }));
   const view = render(<WeatherPanel contextRevision={7} />);
+  await waitFor(() => expect(api.get).toHaveBeenCalled());
   view.unmount();
   await act(async () => finish(weather()));
   expect(api.refresh).not.toHaveBeenCalled();
 });
 
-it("打开时先展示缓存再自动刷新一次，保留坐标、来源与观测信息", async () => {
+it("打开立即显示缓存，手动刷新时保留坐标、来源与观测信息", async () => {
   let finish!: (view: WeatherView) => void;
   api.refresh.mockImplementation(() => new Promise<WeatherView>(resolve => { finish = resolve; }));
   render(<WeatherPanel contextRevision={7} />);
   await screen.findByText("状态：缓存天气");
 
   expect(api.get).toHaveBeenCalledTimes(1);
+  expect(api.refresh).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {name:"刷新天气"}));
   expect(api.refresh).toHaveBeenCalledTimes(1);
   expect(screen.getByText("31.2304, 121.4737")).toBeTruthy();
   expect(screen.getByText("Open-Meteo")).toBeTruthy();
@@ -77,6 +91,7 @@ it("刷新拒绝时保留旧缓存和位置，并显示失败原因", async () =
   api.refresh.mockRejectedValue({ message: "定位权限被拒绝" });
   render(<WeatherPanel contextRevision={7} />);
   await screen.findByText("31.2304, 121.4737");
+  fireEvent.click(screen.getByRole("button", {name:"刷新天气"}));
 
   expect(await screen.findByText("刷新天气失败：定位权限被拒绝")).toBeTruthy();
   expect(screen.getByText("31.2304, 121.4737")).toBeTruthy();
@@ -87,6 +102,7 @@ it("取消后忽略较晚返回的天气结果并保留缓存", async () => {
   api.refresh.mockImplementation(() => new Promise<WeatherView>(resolve => { finish = resolve; }));
   render(<WeatherPanel contextRevision={7} />);
   await screen.findByText("31.2304, 121.4737");
+  fireEvent.click(screen.getByRole("button", {name:"刷新天气"}));
   fireEvent.click(await screen.findByRole("button", { name: "取消刷新" }));
   await waitFor(() => expect(api.cancel).toHaveBeenCalledTimes(1));
 
@@ -100,6 +116,7 @@ it("卸载时取消进行中的页面刷新，并丢弃晚返回结果", async (
   api.refresh.mockImplementation(() => new Promise<WeatherView>(resolve => { finish = resolve; }));
   const view = render(<WeatherPanel contextRevision={7} />);
   await screen.findByText("31.2304, 121.4737");
+  fireEvent.click(screen.getByRole("button", {name:"刷新天气"}));
   view.unmount();
 
   expect(api.cancel).toHaveBeenCalledTimes(1);
@@ -112,7 +129,7 @@ it("不显示 revision 不匹配的缓存", async () => {
   api.refresh.mockResolvedValue(weather({ contextRevision: 6 }));
   render(<WeatherPanel contextRevision={7} />);
 
-  expect(await screen.findByText("天气结果属于其他会话上下文，已忽略；请重新刷新。")).toBeTruthy();
+  expect(await screen.findByText("缓存属于其他会话上下文，已隐藏；请刷新当前天气。")).toBeTruthy();
   expect(screen.queryByText("31.2304, 121.4737")).toBeNull();
 });
 
@@ -146,6 +163,7 @@ it("刷新失败期间的慢缓存读取不能覆盖失败状态或显示旧天�
   api.get.mockImplementationOnce(() => new Promise<WeatherView>(resolve => { finishCache = resolve; }));
   api.refresh.mockRejectedValue({ message: "定位失败" });
   render(<WeatherPanel contextRevision={7} />);
+  await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole("button", { name: "刷新天气" }));
 
   expect(await screen.findByText("刷新天气失败：定位失败")).toBeTruthy();
@@ -161,6 +179,7 @@ it("取消接口失败时不报告取消并保持刷新锁，可再次取消", a
   api.refresh.mockImplementation(() => new Promise<WeatherView>(resolve => { finishRefresh = resolve; }));
   render(<WeatherPanel contextRevision={7} />);
   await screen.findByText("31.2304, 121.4737");
+  fireEvent.click(screen.getByRole("button", {name:"刷新天气"}));
   fireEvent.click(await screen.findByRole("button", { name: "取消刷新" }));
   expect(await screen.findByText("取消天气刷新失败：取消暂不可用")).toBeTruthy();
   expect(screen.queryByText("已取消天气刷新；现有缓存已保留。")).toBeNull();

@@ -1,6 +1,8 @@
+import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
+import InlineDetailCard from "./InlineDetailCard";
 import CardBrowserControls from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { errorMessage, lettersApi, travelApi } from "../api";
 import { travelContextKey, useTravel } from "../hooks/useTravel";
 import { navigation } from "../platform/navigation";
@@ -14,6 +16,9 @@ export type TravelTab = "history" | "mailbox" | "souvenirs" | "journals";
 import { travelTime } from "./travelTime";
 export { travelTime } from "./travelTime";
 const stateName = { away: "出门中", returned: "已返回", cancelled: "已取消" };
+const letterKindNames:Record<Letter["letterKind"],string>={user:"寄出的信",midway:"途中信",return:"回来信",reply:"回信"};
+const letterKindNotes:Record<Letter["letterKind"],string>={user:"你寄出的信",midway:"旅行半程主动寄来的信",return:"旅行返回后寄来的信",reply:"针对你来信的回复"};
+function LetterKindBadge({letter}:{letter:Letter}){return <span className="ym-letter-kind" data-kind={letter.letterKind} title={letterKindNotes[letter.letterKind]}>{letterKindNames[letter.letterKind]}</span>;}
 export const replyStateName = { none: "", pending: "等待回信", completed: "已收到回信", cancelled: "待回信已取消" };
 export default function TravelPanel(props: { context: CurrentContext; personaName: string; tab?: TravelTab; onTabChange?: (tab: TravelTab) => void }) {
   return <TravelPanelForContext key={travelContextKey(props.context)} {...props} />;
@@ -30,19 +35,13 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
   const [journalOpened, setJournalOpened] = useState(selectedTab === "journals");
   useEffect(() => { if (selectedTab === "journals") setJournalOpened(true); }, [selectedTab]);
   const [selection, setSelection] = useState<string | null>(null);
-  const listRef=useRef<HTMLUListElement>(null);
-  const positions=useRef(new Map<string,number>());
-  const closeTimer=useRef<ReturnType<typeof setTimeout>>();
-  const [closing,setClosing]=useState(false);
-  const capture=()=>{positions.current=new Map(Array.from(listRef.current?.children??[]).map(node=>[(node as HTMLElement).dataset.letterId!,node.getBoundingClientRect().top]));};
-  const openLetter=(id:string)=>{if(selection===id){closeLetter();return;}clearTimeout(closeTimer.current);capture();setClosing(false);setSelection(id);setDetail(null);};
-  const closeLetter=()=>{clearTimeout(closeTimer.current);listRef.current?.querySelector<HTMLButtonElement>(`[data-letter-id="${selection}"] > button`)?.focus({preventScroll:true});if(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches){capture();setSelection(null);return;}setClosing(true);closeTimer.current=setTimeout(()=>{capture();setSelection(null);setClosing(false);},180);};
-  useEffect(()=>()=>clearTimeout(closeTimer.current),[]);
-
+  const openLetter=(id:string)=>{setSelection(selection===id?null:id);setDetail(null);};
+  const closeLetter=()=>setSelection(null);
+  useEffect(()=>{setSelection(null);},[mailBrowser.selectionKey]);
   const [detail, setDetail] = useState<Letter | null>(null);
+  const [readIds,setReadIds]=useState<Set<string>>(()=>new Set());
   const [deleting, setDeleting] = useState<Letter | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  useLayoutEffect(()=>{if(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)return;const animations:Animation[]=[];for(const node of Array.from(listRef.current?.children??[])){const previous=positions.current.get((node as HTMLElement).dataset.letterId!);if(previous!==undefined){const delta=previous-node.getBoundingClientRect().top;if(Math.abs(delta)>1){const a=(node as HTMLElement).animate?.([{transform:`translateY(${delta}px)`},{transform:"translateY(0)"}],{duration:240,easing:"cubic-bezier(.22,1,.36,1)"});if(a)animations.push(a);}}}positions.current.clear();return()=>animations.forEach(a=>a.cancel());},[selection,detailLoading,detail]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const alive = useRef(true);
@@ -61,7 +60,13 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
         let letter = await lettersApi.get(context, selection);
         if (disposed) return;
         if (!letter.isRead) letter = await lettersApi.flags(context, letter.id, { read: true });
-        if (!disposed) {capture();setDetail(letter);}
+        if (!disposed) {
+          setDetail(letter);
+          if(letter.isRead){
+            setReadIds(previous=>new Set(previous).add(letter.id));
+            if(mailBrowser.items.some(row=>row.id===letter.id&&!row.isRead))mailBrowser.refresh();
+          }
+        }
       } catch (cause) {
         if (disposed) return;
         setError(errorMessage(cause));
@@ -70,6 +75,13 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
     })();
     return () => { disposed = true; };
   }, [selection, travel.version]);
+  useEffect(()=>{
+    setReadIds(previous=>{
+      const confirmed=mailBrowser.items.filter(row=>row.isRead&&previous.has(row.id));
+      if(!confirmed.length)return previous;
+      const next=new Set(previous);confirmed.forEach(row=>next.delete(row.id));return next;
+    });
+  },[mailBrowser.items]);
   useEffect(() => {
     if (deleting && !dialog.current?.open) dialog.current?.showModal();
     if (!deleting) dialog.current?.close();
@@ -110,43 +122,34 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
     {selectedTab === "journals" ? null : selectedTab === "souvenirs" ? <SouvenirPanel context={context} /> : selectedTab === "history" ? <section className="ym-page-card" aria-label="出行历史">
       <h2>出行历史</h2>{tripsBrowser.loading && <p role="status">正在读取出行记录…</p>}
       {!tripsBrowser.loading && !tripsBrowser.total && !tripsBrowser.search && !tripsBrowser.error && <p className="ym-page-note">还没有出行记录。</p>}
-      {!selectedTrip&&<CardBrowserControls browser={tripsBrowser} label="出行" timeLabel="出发时间" disabled={busy}/>}
+      <CardBrowserControls browser={tripsBrowser} label="出行" timeLabel="出发时间" disabled={busy}/>
       {tripsBrowser.error&&<p role="alert" className="ym-page-error">{tripsBrowser.error}</p>}
-      {selectedTrip&&<button className="ym-button" onClick={()=>setSelectedTrip(null)}>返回出行列表</button>}
-      <ol className="ym-travel-history ym-object-grid">{(selectedTrip?[selectedTrip]:tripsBrowser.items).map(trip => <li className="ym-object-card" key={trip.id} onClick={event=>{if(!selectedTrip&&!(event.target as HTMLElement).closest("button"))setSelectedTrip(trip);}}>
-        <div className="ym-page-heading"><h3><button className="ym-card-open" onClick={()=>setSelectedTrip(trip)}>{trip.destination ?? "目的地尚未准备好"}</button></h3><span className="ym-travel-badge" data-status={trip.status}>{stateName[trip.status]}</span></div>
-        {!selectedTrip&&<p className="ym-page-note">{travelTime(trip.startedAt)}出发</p>}
-        {selectedTrip&&<>
+      <ol className="ym-letter-list ym-mailbox-list">{tripsBrowser.items.map(trip=><li key={trip.id}><InlineDetailCard title={trip.destination??"目的地尚未准备好"} summary={stateName[trip.status]} meta={travelTime(trip.startedAt)+"出发"} expanded={selectedTrip?.id===trip.id} detailLabel="出行详情" onToggle={()=>setSelectedTrip(selectedTrip?.id===trip.id?null:trip)}>
         <dl className="ym-travel-times"><dt>出发</dt><dd>{travelTime(trip.startedAt)}</dd><dt>计划返回</dt><dd>{travelTime(trip.plannedReturnAt)}</dd>
           {trip.status === "returned" && <><dt>实际返回</dt><dd>{travelTime(trip.actualReturnAt)}</dd></>}
           {trip.status === "cancelled" && <><dt>取消</dt><dd>{travelTime(trip.cancelledAt)}</dd></>}
         </dl>
         {trip.status === "cancelled" ? <p className="ym-page-note">旅行已取消，不生成回来信、伴手礼或游记。</p> : trip.status === "returned" && <p className="ym-page-note">{trip.giftKind ? `历史上带回：${trip.giftKind === "text" ? "普通文字伴手礼" : "可佩戴饰品"}` : "伴手礼内容尚未生成。"}</p>}
         <p className="ym-page-note">这次出行的信件、游记、伴手礼可在对应标签中查看。</p>
-        </>}
-      </li>)}</ol>
+      </InlineDetailCard></li>)}</ol>
 
     </section> : <section className="ym-page-card" aria-label="邮箱">
       <h2>邮箱</h2>{mailBrowser.loading && <p role="status">正在读取信件…</p>}
       {!mailBrowser.loading && !mailBrowser.total && !mailBrowser.search && !mailBrowser.error && <p className="ym-page-note">还没有信件。出门期间可以寄一封信。</p>}
-      <CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
+      <TravelFilter browser={mailBrowser} disabled={busy}/><CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
       {mailBrowser.error&&<p role="alert" className="ym-page-error">{mailBrowser.error}</p>}
-      <ul ref={listRef} className="ym-letter-list ym-mailbox-list">{mailBrowser.items.map(letter=><li key={letter.id} data-letter-id={letter.id} className="ym-letter-card" data-expanded={selection===letter.id}>
-        <button className="ym-letter-item" aria-expanded={selection===letter.id} aria-controls={`letter-detail-${letter.id}`} onClick={()=>openLetter(letter.id)}>
-          <span className="ym-letter-card-heading"><strong>{letter.sender==="user"?"我寄出的信":`${personaName}的来信`}</strong><time>{travelTime(letter.createdAt)}</time></span>
-          <span className="ym-card-summary">{letter.content.replace(/\s+/g," ").slice(0,140)}{letter.content.length>140?"…":""}</span>
-          <span className="ym-letter-card-footer"><span className="ym-letter-meta">{letter.isRead?"已读":"未读"}{letter.isFavorite&&" · 已收藏"}{letter.hasBeenReplied&&" · 已回复"}{letter.replyState!=="none"&&` · ${replyStateName[letter.replyState]}`}</span><span className="ym-letter-disclosure">{selection===letter.id?"收起":"查看详情"}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></span>
-        </button>
-        {selection===letter.id&&<div id={`letter-detail-${letter.id}`} className="ym-letter-detail" data-closing={closing} role="region" aria-label="信件详情">{detailLoading ? <p role="status">正在读取信件…</p> : detail ? <>
+      <ul className="ym-letter-list ym-mailbox-list">{mailBrowser.items.map(letter=><li key={letter.id} data-letter-id={letter.id}>
+        <InlineDetailCard title={letter.sender==="user"?"我寄出的信":`${personaName}的来信`} meta={<><LetterKindBadge letter={letter}/><time>{travelTime(letter.createdAt)}</time><TravelOriginLabel travel={letter.travel} travelId={letter.travelId}/></>} summary={<>{letter.content.replace(/\s+/g," ").slice(0,140)}{letter.content.length>140?"…":""}</>} status={<span className="ym-letter-meta"><span className="ym-letter-read-badge" data-read={letter.isRead||readIds.has(letter.id)}>{letter.isRead||readIds.has(letter.id)?"已读":"未读"}</span>{letter.isFavorite&&" · 已收藏"}{letter.hasBeenReplied&&" · 已回复"}{letter.replyState!=="none"&&` · ${replyStateName[letter.replyState]}`}</span>} expanded={selection===letter.id} detailLabel="信件详情" onToggle={()=>openLetter(letter.id)}>
+        {detailLoading ? <p role="status">正在读取信件…</p> : detail ? <>
         <div className="ym-page-heading"><h3>{detail.sender === "user" ? "我寄出的信" : `${personaName}的来信`}</h3><button className="ym-button" onClick={closeLetter}>收起信件</button></div>
-        <p className="ym-letter-meta">{travelTime(detail.createdAt)} · {detail.isFavorite ? "已收藏" : "未收藏"}</p>
+        <p className="ym-letter-meta"><LetterKindBadge letter={detail}/> {letterKindNotes[detail.letterKind]} · {travelTime(detail.createdAt)} · {detail.isFavorite ? "已收藏" : "未收藏"}</p>
         <p className="ym-letter-body">{detail.content}</p>
         {detail.replyState !== "none" && <p className="ym-page-note">{replyStateName[detail.replyState]}{detail.replyState === "pending" && `，预计 ${travelTime(detail.replyDueAt)} 之后回复；旅行结束则取消。`}</p>}
         {detail.sender === "ai" && <p className="ym-page-note">{detail.hasBeenReplied ? "这封信已经回复过，删除回复也不会恢复资格。" : canReply ? "本次旅行尚未结束，可以回复一次。" : "只能在这封信所属旅行尚未结束时回复。"}</p>}
         <div className="ym-inline-form"><button className="ym-button" disabled={busy} onClick={() => { void act(() => lettersApi.flags(context, detail.id, {favorite:!detail.isFavorite})); }}>{detail.isFavorite ? "取消收藏" : "收藏"}</button>
           {detail.sender === "ai" && <button className="ym-button" disabled={busy || !canReply} onClick={() => { void act(() => navigation.openLetter(context, detail.travelId!, detail.id)); }}>回信</button>}
           <button className="ym-button" data-variant="danger" disabled={busy} onClick={() => { setDeleting(detail); }}>删除信件</button></div>
-      </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</div>}
+      </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</InlineDetailCard>
       </li>)}</ul>
 
     </section>}

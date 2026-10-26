@@ -1,0 +1,19 @@
+{
+  "id": "com.yanmew.game.minesweeper",
+  "name": "扫雷",
+  "description": "经典三档扫雷，免费游玩或每日5局赚钱；入场5/20/50喵币，通关奖励10/40/100。",
+  "author": "颜喵",
+  "version": "1.0.1",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": [
+    "wallet.modify"
+  ],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": "https://github.com/xianyvqiu/yanmew",
+  "homepage": null,
+  "release_page": "https://github.com/xianyvqiu/yanmew/releases",
+  "migration": null
+}

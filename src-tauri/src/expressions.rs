@@ -18,8 +18,14 @@ pub struct ClickExpressions {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExpressionLibrary {
+    #[serde(default)] pub toss_up:Vec<String>,
+    #[serde(default)] pub toss_down:Vec<String>,
+    #[serde(default)] pub landing:Vec<String>,
+    #[serde(default)] pub wait_pet:Vec<String>,
     #[serde(default)]
     pub lifted:Vec<String>,
+    #[serde(default)]
+    pub error:Vec<String>,
     pub click: ClickExpressions,
     pub hungry: Vec<String>,
     pub eating: Vec<String>,
@@ -44,6 +50,9 @@ pub struct ExpressionLibrary {
 /// 程序自带基础姿态；未保存专属表情时，展示与运行时使用同一来源。
 pub(crate) fn builtin(category: &str) -> &'static str {
     match category {
+        "toss_up"=>"ヽ(°◇° )ノ", "toss_down"=>"(>﹏<)ﾉ", "landing"=>"＿(×ω×)＿",
+        "wait_pet"=>"(｡･ω･｡)ﾉ",
+        "error"=>"(×_×)",
         "lifted"=>"(｡>﹏<｡)",
         "click" | "click_happy" => "(^_^)", "click_surprised" => "(O_O)", "click_shy" => "(〃ω〃)", "standby" => "(｡-ω-｡)", "hungry" => "(>_<)饿",
         "eating" => "(๑´ڡ`๑)", "sleepy" => "(-_-) zZ", "bored" => "(._.)", "thinking" => "(・・?)",
@@ -54,7 +63,7 @@ pub(crate) fn builtin(category: &str) -> &'static str {
 }
 pub(crate) fn effective_library(saved: Option<&serde_json::Value>) -> serde_json::Value {
     let mut result=serde_json::Map::new();
-    for category in ["normal","standby","hungry","eating","sleepy","bored","thinking","craving","craving_favorite","eating_favorite","peek_left","peek_right","rest_sit","rest_lie","walk_left","walk_right","lifted"] {
+    for category in ["normal","standby","hungry","eating","sleepy","bored","thinking","craving","craving_favorite","eating_favorite","peek_left","peek_right","rest_sit","rest_lie","walk_left","walk_right","lifted","error","toss_up","toss_down","landing","wait_pet"] {
         let value=saved.and_then(|v|v.get(category).or_else(||category.strip_suffix("_favorite").and_then(|base|v.get(base)))).filter(|v|v.as_array().is_some_and(|a|!a.is_empty())).cloned()
             .unwrap_or_else(||serde_json::json!([builtin(category)]));
         result.insert(category.into(),value);
@@ -86,7 +95,7 @@ pub fn validate_library(value: &ExpressionLibrary) -> AppResult<()> {
     if value.standby.len() > 8 {
         return Err(AppError::new("AI_PROTOCOL_ERROR", "待机分类最多包含 8 个颜文字"));
     }
-    for group in [&value.craving,&value.craving_favorite,&value.eating_favorite,&value.normal,&value.lifted,&value.peek_left,&value.peek_right,&value.rest_sit,&value.rest_lie,&value.walk_left,&value.walk_right] {if group.len()>8{return Err(AppError::validation("expressions","表情分类最多8项"));}for e in group{validate_expression(e)?;}}
+    for group in [&value.craving,&value.craving_favorite,&value.eating_favorite,&value.normal,&value.lifted,&value.error,&value.toss_up,&value.toss_down,&value.landing,&value.wait_pet,&value.peek_left,&value.peek_right,&value.rest_sit,&value.rest_lie,&value.walk_left,&value.walk_right] {if group.len()>8{return Err(AppError::validation("expressions","表情分类最多8项"));}for e in group{validate_expression(e)?;}}
     for expression in &value.standby { validate_expression(expression)?; }
     for group in [
         &value.click.happy,
@@ -220,7 +229,7 @@ pub async fn generate_persona_expressions(
             .await
             .map_err(|_| AppError::storage())??;
     let input=GenerateRequest{messages:vec![
-        Message::new("system","只返回 JSON 对象，不附加 Markdown。结构必须为 {\"click\":{\"happy\":[\"颜文字\"],\"surprised\":[\"颜文字\"],\"shy\":[\"颜文字\"]},\"hungry\":[\"颜文字\"],\"eating\":[\"颜文字\"],\"sleepy\":[\"颜文字\"],\"bored\":[\"颜文字\"],\"thinking\":[\"颜文字\"],\"standby\":[\"颜文字\"]}。每类生成 3 个符合人设的单行颜文字，不写解释。另外输出lifted数组（被轻轻拎住后颈的悬空反应，3个符合人设的颜文字），必须输出craving、craving_favorite、eating_favorite三个数组，分别是等待投喂、期待最爱食物、喜欢地咀嚼或品尝，每类3个颜文字。hungry每项须包含“饿”字，点击happy、surprised、shy须分别体现开心、惊讶、害羞，不共用同一表情。standby 表示安静待机，须区别于默认、无聊和睡觉。每个颜文字最多 14 个半角宽度，非 ASCII 字符按 2 个宽度计算。"),
+        Message::new("system","只返回 JSON 对象，不附加 Markdown。结构必须为 {\"click\":{\"happy\":[\"颜文字\"],\"surprised\":[\"颜文字\"],\"shy\":[\"颜文字\"]},\"hungry\":[\"颜文字\"],\"eating\":[\"颜文字\"],\"sleepy\":[\"颜文字\"],\"bored\":[\"颜文字\"],\"thinking\":[\"颜文字\"],\"standby\":[\"颜文字\"]}。每类生成 3 个符合人设的单行颜文字，不写解释。另外输出error数组（遇到实际报错时超载、蔫掉的反应，3个符合人设的颜文字），以及lifted数组（被轻轻拎住后颈的悬空反应，3个符合人设的颜文字），必须输出craving、craving_favorite、eating_favorite三个数组，分别是等待投喂、期待最爱食物、喜欢地咀嚼或品尝，每类3个颜文字。hungry每项须包含“饿”字，点击happy、surprised、shy须分别体现开心、惊讶、害羞，不共用同一表情。standby 表示安静待机，须区别于默认、无聊和睡觉。每个颜文字最多 14 个半角宽度，非 ASCII 字符按 2 个宽度计算。"),
         Message::new("user",format!("人设名称：{}\n人设设定：{}",snapshot.name,snapshot.prompt))],max_tokens:snapshot.config.max_output_tokens,tools:vec![],json:true};
     let result = runtime
         .ai
@@ -283,8 +292,20 @@ mod tests {
         assert_eq!(effective["click"]["happy"],saved["click"]["happy"]);
         assert_eq!(effective["eating_favorite"],saved["eating"]);
         assert_eq!(effective["walk_left"][0],builtin("walk_left"));
+        assert_eq!(effective["error"][0],"(×_×)");
+        assert!(saved.get("error").is_none());
         assert!(saved.get("walk_left").is_none());
         assert_eq!(effective_library(None)["hungry"][0],builtin("hungry"));
+    }
+    #[test]
+    fn error_expression_is_local_editable_and_accepts_legacy_json() {
+        struct First;
+        impl crate::pet::RandomSource for First {fn below(&mut self,_:u64)->AppResult<u64>{Ok(0)}}
+        let mut c=crate::db::test_database();
+        assert_eq!(choose_local(&c,1,"error",&mut First).unwrap(),"(×_×)");
+        let mut value:ExpressionLibrary=serde_json::from_value(effective_library(None)).unwrap();
+        value.error=vec!["(=_=;)".into()];save_manual(&mut c,1,None,&value).unwrap();
+        assert_eq!(choose_local(&c,1,"error",&mut First).unwrap(),"(=_=;)");
     }
     #[test]
     fn categories_and_display_width_are_validated() {

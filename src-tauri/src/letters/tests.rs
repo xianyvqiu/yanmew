@@ -336,7 +336,7 @@ fn scope_target_pagination_and_flags_are_isolated() {
 #[test]
 fn incomplete_ai_output_is_rejected_and_expression_is_preserved() {
     let mut choice = crate::ai::provider::Choice {
-        reasoning_content: None,
+        usage: None, reasoning_content: None,
         index: 0,
         finish: crate::ai::provider::Finish::Length,
         tools: vec![],
@@ -347,4 +347,27 @@ fn incomplete_ai_output_is_rejected_and_expression_is_preserved() {
     assert_eq!(generation::parse(&choice).unwrap(), "你好\n(^_^)");
     choice.content = r#"{"content":"","expression":"(^_^)"}"#.into();
     assert!(generation::parse(&choice).is_err());
+}
+
+#[test]
+fn complete_letter_accepts_fences_extra_metadata_and_wide_expression() {
+    let choice=crate::ai::provider::Choice{usage: None, reasoning_content:None,index:0,finish:crate::ai::provider::Finish::Stop,tools:vec![],content:"```json\n{\"content\":\"我回来了，带回一颗小石头。\",\"expression\":\"(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧\",\"title\":\"回来啦\"}\n```".into()};
+    assert!(crate::expressions::validate_expression("(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧").is_err());
+    assert_eq!(generation::parse(&choice).unwrap(),"我回来了，带回一颗小石头。\n(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧");
+}
+#[test]
+fn missing_or_invalid_decoration_keeps_valid_letter_body() {
+    for suffix in ["",",\"expression\":null",",\"expression\":42",",\"expression\":\"\"",",\"expression\":\"坏\\u0000符号\""] {
+        let choice=crate::ai::provider::Choice{usage: None, reasoning_content:None,index:0,finish:crate::ai::provider::Finish::Stop,tools:vec![],content:format!("{{\"content\":\"完整来信\"{suffix}}}")};
+        assert_eq!(generation::parse(&choice).unwrap(),"完整来信\n(^_^)");
+    }
+}
+#[test]
+fn invalid_letter_body_and_unfinished_output_have_specific_errors() {
+    let mut choice=crate::ai::provider::Choice{usage: None, reasoning_content:None,index:0,finish:crate::ai::provider::Finish::Stop,tools:vec![],content:"{\"expression\":\"(^_^)\"}".into()};
+    assert!(generation::parse(&choice).unwrap_err().message.contains("缺少正文"));
+    choice.content="{\"content\":\"坏\\u0000正文\"}".into();assert!(generation::parse(&choice).unwrap_err().message.contains("控制字符"));
+    choice.content="```json\n{\"content\":\"未关闭代码块\"}".into();assert!(generation::parse(&choice).is_err());
+    choice.finish=crate::ai::provider::Finish::Length;assert!(generation::parse(&choice).unwrap_err().message.contains("被截断"));
+    choice.finish=crate::ai::provider::Finish::ContentFilter;assert!(generation::parse(&choice).unwrap_err().message.contains("拦截"));
 }

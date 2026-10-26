@@ -15,7 +15,7 @@ const keys = [
 const values = ["120", "10", "45", "60", "120", "2", "4", "10", "50", "150", "300", "20", "50", "120", "300"];
 const makeSettings = (overrides: Partial<Settings> = {}) => ({
   ...Object.fromEntries(keys.map((key, index) => [key, values[index]])),
-  pet_chat_autocollapse_minutes:"3",
+  pet_chat_autocollapse_minutes:"3", pet_chase_cooldown_minutes:"10",
   theme_mode: "system",
   short_memory_min_chars: "12",
   ...overrides,
@@ -53,7 +53,7 @@ it("读取真实配置并展示全部 15 个可编辑字段", async () => {
   const fields = keys.map(key => screen.getByLabelText({
     hungry_minutes: "饥饿触发", standby_minutes: "待机等待时间", idle_event_minutes: "无聊／睡觉触发时间",
     sleep_min_minutes: "睡眠最短时长", sleep_max_minutes: "睡眠最长时长",
-    travel_min_online_hours: "出行最短在线时长", travel_max_online_hours: "出行最长在线时长",
+    travel_min_online_hours: "再次出门前的最短等待", travel_max_online_hours: "再次出门前的最长等待",
     intimacy_threshold_1: "档位 1 亲密度", intimacy_threshold_2: "档位 2 亲密度",
     intimacy_threshold_3: "档位 3 亲密度", intimacy_threshold_4: "档位 4 亲密度",
     accessory_cost_1: "档位 1 制作价格", accessory_cost_2: "档位 2 制作价格",
@@ -140,4 +140,13 @@ it("后端字段错误显示在对应输入框并保留草稿，编辑后清除�
   fireEvent.change(input, { target: { value: "122" } });
   expect(screen.queryByText("后端拒绝该时长")).toBeNull();
   expect(input.getAttribute("aria-invalid")).toBe("false");
+});
+
+it("追逐冷却默认十分钟且可单独保存",async()=>{
+ render(<PetTimingPanel/>);
+ const input=await screen.findByLabelText("追逐鼠标冷却");
+ await waitFor(()=>expect((input as HTMLInputElement).value).toBe("10"));
+ fireEvent.change(input,{target:{value:"20"}});
+ fireEvent.click(screen.getByRole("button",{name:"保存"}));
+ await waitFor(()=>expect(api.saveSettings).toHaveBeenCalledWith({pet_chase_cooldown_minutes:"20"}));
 });

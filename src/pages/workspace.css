@@ -41,12 +41,24 @@
 .ym-message-editor { display: grid; gap: 10px; margin-top: 12px; }
 .ym-message-editor textarea { box-sizing: border-box; min-width: 0; width: 100%; resize: vertical; padding: 10px; border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); background: var(--ym-surface); color: var(--ym-text); font: inherit; }
 .ym-message-editor textarea:focus-visible { outline: 2px solid var(--ym-focus); outline-offset: 2px; }
-.ym-settings-nav { display: grid; gap: 6px; }
-.ym-settings-nav h2 { margin: 14px 8px 4px; font-size: var(--ym-font-caption); color: var(--ym-text-muted); }
+.ym-settings-nav { display: grid; gap: 12px; }
+.ym-settings-nav h2 { margin: 0; font-size: var(--ym-font-caption); color: var(--ym-text-secondary); }
 .ym-settings-nav .ym-button { justify-content: start; width: 100%; }
 .ym-settings-nav [aria-current="page"] { background: var(--ym-accent-soft); }
+.ym-settings-group { min-width: 0; }
+.ym-settings-nav .ym-settings-group-toggle { display: flex; justify-content: space-between; gap: 8px; text-align: left; color: inherit; background: var(--ym-surface-muted); border-color: transparent; }
+.ym-settings-group-toggle span { min-width: 0; overflow-wrap: anywhere; }
+.ym-settings-group-toggle svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--ym-accent-strong); transition: transform 180ms var(--ym-ease-standard); }
+.ym-settings-group-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.ym-settings-group-body { display: grid; gap: 4px; padding: 8px 0 0 8px; border-left: 1px solid var(--ym-border); margin-left: 8px; min-width: 0; animation: ym-settings-unfold 200ms var(--ym-ease-standard) both; }
+.ym-settings-group-body .ym-settings-group-toggle { background: transparent; }
+.ym-settings-nav .ym-settings-nav-item { border-color: transparent; text-align: left; white-space: normal; min-width: 0; overflow-wrap: anywhere; animation: ym-settings-unfold 200ms var(--ym-ease-standard) var(--ym-nav-delay) both; }
+.ym-settings-group-body[data-closing="true"] { pointer-events: none; animation: ym-settings-fold 180ms var(--ym-ease-standard) both; }
+@keyframes ym-settings-unfold { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ym-settings-fold { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .ym-settings-group-body, .ym-settings-nav .ym-settings-nav-item { animation: none; } .ym-settings-group-toggle svg { transition: none; } }
 .ym-settings-compact { display: none; }
-@container (max-width: 519px) {
+@container (max-width: 679px) {
   .ym-settings-nav { display: none; }
   .ym-settings-compact { display: grid; gap: 6px; color: var(--ym-text-secondary); }
   .ym-settings-compact select { width: 100%; padding: 8px; font: inherit; border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-md); color: var(--ym-text); background: var(--ym-surface-muted); }
@@ -57,6 +69,11 @@
 .ym-chat-page { display:flex; flex-direction:column; height:100%; min-height:0; gap:10px; }
 .ym-chat-session-settings { min-width:0; }
 .ym-chat-history { flex:1 1 0; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding:14px; }
+.ym-chat-history { scroll-behavior:auto; overflow-anchor:none; }
+.ym-chat-history-content { min-width:0; display:flow-root; }
+.ym-settings-scope { display:flex; align-items:flex-start; gap:10px 16px; flex-wrap:wrap; padding:12px 16px; border-left:3px solid var(--ym-accent); border-radius:10px; background:color-mix(in srgb,var(--ym-accent) 7%,transparent); }
+.ym-settings-scope strong { flex:0 0 auto; color:var(--ym-accent); font-size:var(--ym-font-caption); }
+.ym-settings-scope p { flex:1 1 250px; margin:0; color:var(--ym-text-secondary); font-size:var(--ym-font-caption); line-height:1.65; overflow-wrap:anywhere; }
 .ym-chat-history .ym-chat-history-title { font-size:var(--ym-font-caption); color:var(--ym-text-muted); font-weight:500; margin-bottom:12px; }
 .ym-chat-page > .chat-composer { flex:0 0 auto; position:static; padding:10px 12px; }
 .ym-chat-page > .chat-composer .chat-composer__input { min-height:52px; max-height:24vh; }

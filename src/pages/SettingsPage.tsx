@@ -1,9 +1,12 @@
+import OnboardingGuide from "../components/settings/OnboardingGuide";
+import UserManualPanel from "../components/settings/UserManualPanel";
 import RealMoneyPanel from "../components/settings/RealMoneyPanel";
 import FoodPanel from "../components/settings/FoodPanel";
 import LedgerPanel from "../components/settings/LedgerPanel";
 import MotionRegion from "../components/MotionRegion";
+import SettingsScope from "../components/settings/SettingsScope";
 import SkillPanel from "../components/settings/SkillPanel";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { navigation, type SettingsDetailRequest } from "../platform/navigation";
 import { errorMessage } from "../api";
 import ResponsiveWindowShell from "../components/ResponsiveWindowShell";
@@ -22,20 +25,23 @@ import AccessoryPanel from "../components/settings/AccessoryPanel";
 import TravelPanel from "../components/TravelPanel";
 import FestivalPanel from "../components/settings/FestivalPanel";
 import type { WorkspaceContext } from "../hooks/useCurrentContext";
+import SettingsNavigation, { settingsGroups } from "../components/settings/SettingsNavigation";
 import "./workspace.css";
 
-const groups = [
-  { title: "全局设置", items: ["现实记账", "提供商", "人设", "用户设定", "提醒", "时间与天气", "记忆", "通用"] },
-  { title: "桌宠与内容", items: ["桌宠状态", "桌宠自定义创作", "小游戏插件", "食物", "喵币账单", "Skill 仓库", "时间与桌宠", "出行", "饰品", "节日"] },
-];
 export default function SettingsPage({ snapshot, loading, error, onRefresh }: {
   snapshot: WorkspaceContext | null; loading: boolean; error: string; onRefresh: () => void;
 }) {
+  const [tutorialReplay, setTutorialReplay] = useState(0);
   const [skillId,setSkillId]=useState<string>();
   const [moneyRequest,setMoneyRequest]=useState<{date:string|null}>();
   useEffect(()=>{const open=(event:Event)=>{setSkillId((event as CustomEvent<string>).detail);setPage("Skill 仓库");};window.addEventListener("ym-open-skill",open);return()=>window.removeEventListener("ym-open-skill",open);},[]);
   const [travelTab,setTravelTab]=useState<import("../components/TravelPanel").TravelTab>("history");
   const [page, setPage] = useState("通用");
+  const pageRoot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const content = pageRoot.current?.closest(".ym-window-shell__content");
+    if (content) content.scrollTop = 0;
+  }, [page]);
   const [detailRequest, setDetailRequest] = useState<SettingsDetailRequest>();
   const selectPage = (value: string) => { setDetailRequest(undefined); setMoneyRequest(undefined); setPage(value); };
   const [navigationError, setNavigationError] = useState("");
@@ -62,15 +68,12 @@ export default function SettingsPage({ snapshot, loading, error, onRefresh }: {
     window.addEventListener("focus", reload);
     return () => { disposed = true; stop?.(); window.removeEventListener("focus", reload); };
   }, []);
-  const enabled = (item: string) => item === "现实记账" || item === "喵币账单" || item === "食物" || item === "Skill 仓库" || item === "桌宠自定义创作" || item === "节日" || item === "饰品" || item === "出行" || item === "通用" || item === "提供商" || item === "人设" || item === "用户设定" || item === "提醒" || item === "时间与天气" || item === "时间与桌宠" || item === "记忆" || item === "桌宠状态" || item === "小游戏插件";
-  return <ResponsiveWindowShell title="设置" subtitle="把日常陪伴，调成你喜欢的样子。"
+  const independentPage = page === "人设" || page === "帮助与使用手册";
+  return <><OnboardingGuide replay={tutorialReplay} onNavigate={selectPage}/><ResponsiveWindowShell title="设置" subtitle="把日常陪伴，调成你喜欢的样子。"
     contextLabel={snapshot ? `当前人设：${snapshot.persona.name} · ${snapshot.sessions.find(item => item.id === snapshot.context.sessionId)?.title ?? "尚无会话"}` : "正在读取当前人设"}
-    loading={loading} error={snapshot ? "" : error} onRetry={onRefresh}
-    sidebar={<><label className="ym-settings-compact">设置页面<select value={page} onChange={event => selectPage(event.target.value)} aria-label="设置页面">{groups.map(group => <optgroup key={group.title} label={group.title}>{group.items.map(item => <option key={item} value={item} disabled={!enabled(item)}>{item}{!enabled(item) && " · 未开放"}</option>)}</optgroup>)}</select></label>
-    <nav className="ym-settings-nav" aria-label="设置导航">{groups.map(group => <div key={group.title}>
-      <h2>{group.title}</h2>{group.items.map(item => <button key={item} className="ym-button" disabled={!enabled(item)} onClick={() => selectPage(item)}
-        aria-current={item === page ? "page" : undefined} title={!enabled(item) ? "尚未开放" : undefined}>{item}{!enabled(item) && " · 未开放"}</button>)}
-    </div>)}</nav></>}>
-    {snapshot && <MotionRegion motionKey={page}><div className="ym-workspace-page">{navigationError && <p role="alert" className="ym-page-error">设置页面跳转失败：{navigationError}，可从左侧选择目标页面。</p>}{error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}{page === "现实记账" ? <RealMoneyPanel request={moneyRequest}/> : page === "喵币账单" ? <LedgerPanel/> : page === "食物" ? <FoodPanel/> : page === "Skill 仓库" ? <SkillPanel requestedId={skillId}/> : page === "桌宠自定义创作" ? <PetCreationPanel key={snapshot.context.personaId} personaId={snapshot.context.personaId} personaName={snapshot.persona.name} /> : page === "饰品" ? <AccessoryPanel key={`${snapshot.context.personaId}:${snapshot.context.sessionId}:${snapshot.context.contextRevision}`} context={snapshot.context} /> : page === "出行" ? <TravelPanel context={snapshot.context} personaName={snapshot.persona.name} tab={travelTab} onTabChange={setTravelTab} /> : page === "提供商" ? <ProvidersPanel /> : page === "人设" ? <PersonasPanel detailRequest={detailRequest?.page === "persona" ? detailRequest : undefined} /> : page === "用户设定" ? <UserProfilePanel detailRequest={detailRequest?.page === "userProfile" ? detailRequest : undefined} /> : page === "提醒" ? <ReminderPanel /> : page === "时间与天气" ? <WeatherPanel key={snapshot.context.contextRevision} contextRevision={snapshot.context.contextRevision} /> : page === "时间与桌宠" ? <PetTimingPanel /> : page === "记忆" ? <MemorySettingsPanel /> : page === "小游戏插件" ? <PluginManagerPanel /> : page === "节日" ? <FestivalPanel context={snapshot.context} /> : page === "桌宠状态" ? <PetStatusPanel snapshot={snapshot} /> : <GeneralPanel />}</div></MotionRegion>}
-  </ResponsiveWindowShell>;
+    loading={loading && !independentPage} error={snapshot || independentPage ? "" : error} onRetry={onRefresh}
+    sidebar={<><label className="ym-settings-compact">设置页面<select value={page} onChange={event => selectPage(event.target.value)} aria-label="设置页面">{settingsGroups.map(group => <optgroup key={group.title} label={group.title}>{group.items.map(item => <option key={item} value={item}>{item}</option>)}</optgroup>)}<option value="帮助与使用手册">帮助与使用手册</option></select></label>
+    <SettingsNavigation page={page} onSelect={selectPage} /></>}>
+    {(snapshot || independentPage) && <MotionRegion motionKey={page}><div ref={pageRoot} className="ym-workspace-page"><SettingsScope page={page}/>{navigationError && <p role="alert" className="ym-page-error">设置页面跳转失败：{navigationError}，可从左侧选择目标页面。</p>}{error && <div role="alert" className="ym-page-error">{error}<button className="ym-button" onClick={onRefresh}>重新加载</button></div>}{page === "帮助与使用手册" ? <UserManualPanel onTutorial={() => setTutorialReplay(value => value + 1)} /> : page === "人设" ? <PersonasPanel detailRequest={detailRequest?.page === "persona" ? detailRequest : undefined} /> : !snapshot ? null : page === "喵币与签到" ? <PetStatusPanel snapshot={snapshot} scope="global"/> : page === "现实记账" ? <RealMoneyPanel request={moneyRequest}/> : page === "喵币账单" ? <LedgerPanel/> : page === "食物" ? <FoodPanel/> : page === "Skill 仓库" ? <SkillPanel requestedId={skillId}/> : page === "桌宠自定义创作" ? <PetCreationPanel key={snapshot.context.personaId} personaId={snapshot.context.personaId} personaName={snapshot.persona.name} /> : page === "饰品" ? <AccessoryPanel key={`${snapshot.context.personaId}:${snapshot.context.sessionId}:${snapshot.context.contextRevision}`} context={snapshot.context} /> : page === "出行" ? <TravelPanel context={snapshot.context} personaName={snapshot.persona.name} tab={travelTab} onTabChange={setTravelTab} /> : page === "提供商" ? <ProvidersPanel /> : page === "用户设定" ? <UserProfilePanel detailRequest={detailRequest?.page === "userProfile" ? detailRequest : undefined} /> : page === "提醒" ? <ReminderPanel /> : page === "时间与天气" ? <WeatherPanel key={snapshot.context.contextRevision} contextRevision={snapshot.context.contextRevision} personaId={snapshot.context.personaId} /> : page === "时间与桌宠" ? <PetTimingPanel /> : page === "记忆" ? <MemorySettingsPanel /> : page === "小游戏插件" ? <PluginManagerPanel /> : page === "日历" ? <FestivalPanel context={snapshot.context} /> : page === "桌宠状态" ? <PetStatusPanel snapshot={snapshot} scope="persona"/> : <GeneralPanel />}</div></MotionRegion>}
+  </ResponsiveWindowShell></>;
 }

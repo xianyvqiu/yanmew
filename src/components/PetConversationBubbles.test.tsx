@@ -18,21 +18,22 @@ const notice: ProactiveMessageNotice = {
   message: { id: "9", sessionId: "2", roundId: null, role: "assistant", content: "来聊聊天吧", expression: null, createdAt: "2026-10-06" },
 };
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks();
+  vi.useFakeTimers({toFake:["setTimeout","clearTimeout","setInterval","clearInterval","performance"]}); vi.clearAllMocks();
   api.open.mockResolvedValue(undefined);
   api.listen.mockImplementation(async callback => { receive = callback; return api.stop; });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("PetConversationBubbles", () => {
-  it("展示已保存正文并纳入原生交互区域，20秒自动收起且重复事件不延时", async () => {
+  it("展示已保存正文并按默认三分钟收起，超过20秒仍保留且重复事件不延时", async () => {
     await act(async () => { render(<PetConversationBubbles view={view} />); });
     expect(screen.getByTestId("ordinary-bubble")).toBeTruthy();
     act(() => receive(notice));
     expect(screen.getByRole("status").hasAttribute("data-pet-interactive")).toBe(true);
     expect(screen.getByText("来聊聊天吧")).toBeTruthy();
     expect(screen.queryByTestId("ordinary-bubble")).toBeNull();
-    act(() => vi.advanceTimersByTime(19000));
+    act(() => vi.advanceTimersByTime(179000));
+    expect(screen.getByRole("status")).toBeTruthy();
     act(() => receive(notice));
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.queryByRole("status")).toBeNull();
@@ -40,6 +41,29 @@ describe("PetConversationBubbles", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("鼠标悬停保留，离开主动消息后重新等待三分钟",async()=>{
+    await act(async()=>{render(<PetConversationBubbles view={view}/>);});act(()=>receive(notice));
+    fireEvent.pointerEnter(screen.getByRole("status"));act(()=>vi.advanceTimersByTime(300000));expect(screen.getByRole("status")).toBeTruthy();
+    fireEvent.pointerLeave(screen.getByRole("status"));act(()=>vi.advanceTimersByTime(179000));expect(screen.getByRole("status")).toBeTruthy();
+    act(()=>vi.advanceTimersByTime(1000));expect(screen.queryByRole("status")).toBeNull();
+  });
+  it("复用宠窗根区域和配置时间，草稿与忙碌结束后重新计时",async()=>{
+    const root={current:document.createElement("div")};document.body.append(root.current);
+    const options={root,minutes:1,hidden:false,busy:false,hasDraft:true};
+    let r!:ReturnType<typeof render>;await act(async()=>{r=render(<PetConversationBubbles view={view} autoCollapse={options}/>);});act(()=>receive(notice));
+    act(()=>vi.advanceTimersByTime(120000));expect(screen.getByRole("status")).toBeTruthy();
+    r.rerender(<PetConversationBubbles view={view} autoCollapse={{...options,hasDraft:false,busy:true}}/>);
+    act(()=>vi.advanceTimersByTime(120000));expect(screen.getByRole("status")).toBeTruthy();
+    r.rerender(<PetConversationBubbles view={view} autoCollapse={{...options,hasDraft:false}}/>);
+    fireEvent.pointerEnter(root.current);act(()=>vi.advanceTimersByTime(120000));expect(screen.getByRole("status")).toBeTruthy();
+    fireEvent.pointerLeave(root.current);act(()=>vi.advanceTimersByTime(59000));expect(screen.getByRole("status")).toBeTruthy();
+    act(()=>vi.advanceTimersByTime(1000));expect(screen.queryByRole("status")).toBeNull();r.unmount();root.current.remove();
+  });
+  it("设置为零时不会自动收起主动消息",async()=>{
+    const options={root:{current:document.createElement("div")},minutes:0,hidden:false,busy:false,hasDraft:false};
+    await act(async()=>{render(<PetConversationBubbles view={view} autoCollapse={options}/>);});act(()=>receive(notice));
+    act(()=>vi.advanceTimersByTime(1800000));expect(screen.getByText("来聊聊天吧")).toBeTruthy();
+  });
   it.each(["personaId", "sessionId", "contextRevision"] as const)("拒绝不匹配的 %s", async field => {
     await act(async () => { render(<PetConversationBubbles view={view} />); });
     act(() => receive({ ...notice, [field]: field === "contextRevision" ? 4 : "other" }));

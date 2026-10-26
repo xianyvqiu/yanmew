@@ -14,3 +14,16 @@
 .ym-reminder-rule p, .ym-reminder-occurrence p { overflow-wrap: anywhere; }
 .ym-reminder-dialog { max-width: min(500px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; background: var(--ym-surface); color: var(--ym-text); border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); font: inherit; }
 .ym-reminder-dialog::backdrop { background: var(--ym-scrim); }
+
+.ym-reminder-state[data-state="pending"],.ym-reminder-state[data-state="queued"]{color:var(--ym-info)}
+.ym-reminder-state[data-state="done"]{color:var(--ym-success)}
+.ym-reminder-state[data-state="expired"],.ym-reminder-state[data-state="missed"]{color:var(--ym-warning)}
+.ym-reminder-state[data-state="shown"]{color:var(--ym-text-secondary)}
+.ym-reminder-rule .ym-reminder-state{font-weight:600;padding:4px 10px;border:1px solid currentColor;border-radius:999px;white-space:nowrap}
+
+.ym-reminder-section { margin-top:24px; padding-top:20px; border-top:1px solid var(--ym-border); min-width:0; }
+.ym-reminder-section>h3 { margin:0 0 14px; }
+.ym-reminder-filters { display:flex; align-items:end; flex-wrap:wrap; gap:12px; }
+.ym-reminder-filters>.ym-field { flex:1 1 160px; }
+.ym-reminder-filters>.ym-button { flex:0 0 auto; }
+.ym-reminder-section .ym-reminder-rule { background:var(--ym-surface-muted); }

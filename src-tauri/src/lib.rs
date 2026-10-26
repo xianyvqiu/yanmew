@@ -1,3 +1,4 @@
+mod background_removal;
 mod native_tools;
 use std::io;
 pub mod ai;
@@ -129,13 +130,18 @@ pub fn run() {
             tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Content-Security-Policy",game_host::csp(label)).header("X-Content-Type-Options","nosniff").header("Cache-Control","no-store").body(body).unwrap_or_default()
         })
         .invoke_handler(game_host::command_gate(tauri::generate_handler![
+            commands::get_onboarding_pending,
+            commands::finish_onboarding,
             food_cursor::set_food_cursor,
             pet_desktop::get_pet_desktop_state,
             pet_desktop::set_pet_fullscreen_wander,
             pet_desktop::get_pet_dock_expression,
             pet_desktop::get_pet_walk_expression,
             pet_desktop::get_pet_lift_expression,
-            companion_commands::get_food_expression, companion_commands::list_foods, companion_commands::get_food_preferences, companion_commands::save_food_preferences, companion_commands::buy_food, companion_commands::get_food_action, companion_commands::feed_food, companion_commands::list_skills, companion_commands::save_skill, companion_commands::delete_skill, companion_commands::bind_skill, companion_commands::get_skill_previews, companion_commands::resolve_skill_preview,
+            pet_desktop::get_pet_error_expression,
+            pet_desktop::toss::get_pet_toss_expression,
+            pet_desktop::chase::get_pet_chase_expression,
+            companion_commands::get_food_expression, companion_commands::list_foods, companion_commands::get_food_preferences, companion_commands::save_food_preferences, companion_commands::buy_food, companion_commands::get_food_action, companion_commands::feed_food, companion_commands::list_skills, companion_commands::parse_skill_markdown, companion_commands::cancel_skill_markdown_import, companion_commands::save_skill, companion_commands::delete_skill, companion_commands::bind_skill, companion_commands::get_skill_previews, companion_commands::resolve_skill_preview,
             commands::get_backup_export_options,
             commands::prepare_backup_import,
             commands::refresh_backup_import,
@@ -187,6 +193,9 @@ pub fn run() {
             commands::retry_journal_generation,
             commands::list_souvenirs,
             commands::get_souvenir,
+            commands::get_souvenir_image,
+            commands::get_souvenir_image_settings,
+            commands::set_souvenir_image_settings,
             commands::set_souvenir_favorite,
             commands::delete_souvenir,
             commands::get_gift_generation_status,
@@ -316,6 +325,8 @@ pub fn run() {
             commands::get_weather_settings,
             commands::get_weather,
             commands::refresh_weather,
+            commands::refresh_weather_information,
+            commands::retry_weather_care,
             commands::cancel_weather_refresh,
             commands::save_weather_settings,
             commands::save_settings,
@@ -354,6 +365,7 @@ pub fn run() {
             let plugin_app=app.handle().clone();let plugin_runtime=runtime.clone();
             tauri::async_runtime::spawn(async move { if let Err(error)=game_host::install::initialize(plugin_app.clone(),plugin_runtime).await {use tauri::Emitter;let _=plugin_app.emit("game_plugin_error",error);} plugin_app.state::<game_host::Host>().ready.store(true,std::sync::atomic::Ordering::Release); });
             let open_initial_chat = runtime.initial_session_created;
+            let open_tutorial = runtime.read(|s, _| config::onboarding_pending(&s.connection)).unwrap_or(false);
             if let Err(error) = app.state::<pet_position::WindowPosition>().restore(&window, &runtime) {
                 pet_position::report(app.handle(), &error);
             }
@@ -366,6 +378,7 @@ pub fn run() {
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
                 std::sync::Arc::new(platform::windows::events::PetEvents(app.handle().clone())),
+                std::sync::Arc::new(platform::windows::location::WindowsLocation(window.clone())),
             ));
             let show = MenuItem::with_id(app, "show", "显示宠窗", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
@@ -411,10 +424,10 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            if open_initial_chat {
+            if open_initial_chat || open_tutorial {
                 let app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = desktop_windows::open(app, desktop_windows::Page::Chat).await {
+                    if let Err(error) = desktop_windows::open(app, if open_tutorial { desktop_windows::Page::Settings } else { desktop_windows::Page::Chat }).await {
                         // 会话已经提交；开窗失败不回滚或重新生成，仍可从聊天入口打开。
                         eprintln!("打开初始教程失败：{error}");
                     }

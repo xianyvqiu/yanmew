@@ -67,7 +67,7 @@ export function useChat(context: CurrentContext, options: { onSubmitted?: (recei
       let cursor:string|null=null;
       try {
         for(let index=0;index<loadedPages;index++) {
-          const page: import("../types").MessagePage=await (cursor ? sessionApi.messages(context,cursor) : sessionApi.messages(context));
+          const page: import("../types").MessagePage=await sessionApi.messages(context,cursor,100,true);
           if(disposed || token !== historyGeneration) return null;
           page.items.forEach(item=>fresh.set(item.id,item));
           cursor=page.nextAfterId;
@@ -208,7 +208,7 @@ export function useChat(context: CurrentContext, options: { onSubmitted?: (recei
         return submitRequest(() => chatApi.continue(context, lastRound.round.id));
       },
       regenerateReply: async () => {
-        if(state.afterId || state.lastRound?.round.status!=="completed") return false;
+        if(state.lastRound?.round.status!=="completed") return false;
         return submitRequest(()=>chatApi.regenerate(context,state.lastRound!.round.id));
       },
       editMessage: async (message,content) => {
@@ -231,7 +231,7 @@ export function useChat(context: CurrentContext, options: { onSubmitted?: (recei
         return saved;
       },
       deleteTail: async message => {
-        if(disposed || !state.ready || syncing || submitting || mutating || paging || state.afterId) return false;
+        if(disposed || !state.ready || syncing || submitting || mutating || paging) return false;
         historyGeneration++;
         mutating=true;state.error="";
         const active=state.active;
@@ -256,11 +256,11 @@ export function useChat(context: CurrentContext, options: { onSubmitted?: (recei
       cancel,
       reload: async () => { if (!unlisten) await connect(); else await synchronize(); },
       more: async () => {
-        if (disposed || paging || !state.afterId) return;
+        if (disposed || paging || syncing || submitting || mutating || !state.ready || !state.afterId) return;
         const token = ++historyGeneration;
         paging = true; state.loading = true; publish();
         try {
-          const page = await sessionApi.messages(context, state.afterId);
+          const page = await sessionApi.messages(context, state.afterId,100,true);
           if (disposed || token !== historyGeneration) return;
           page.items.forEach(item => rows.set(item.id, item)); state.afterId = page.nextAfterId;loadedPages++;
         } catch (cause) { if (!disposed && token === historyGeneration) state.error = errorMessage(cause); }
@@ -290,7 +290,12 @@ export function useChat(context: CurrentContext, options: { onSubmitted?: (recei
           unlistenMessages=stopMessages;
           window.addEventListener("focus", focus);
           await synchronize();
-        } catch (cause) { if (!disposed) { state.error = errorMessage(cause); publish(); } }
+        } catch (cause) {
+          unlisten?.(); unlisten = undefined;
+          unlistenMessages?.(); unlistenMessages = undefined;
+          window.removeEventListener("focus", focus);
+          if (!disposed) { state.error = errorMessage(cause); publish(); }
+        }
         finally { connecting = false; }
     };
     void connect();

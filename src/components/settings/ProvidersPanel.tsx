@@ -10,7 +10,6 @@ import {useCardBrowser} from "../../hooks/useCardBrowser";
 import "./ProvidersPanel.css";
 
 export default function ProvidersPanel() {
-  const [selected,setSelected]=useState<string|null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -78,7 +77,7 @@ export default function ProvidersPanel() {
   const test = async (provider: Provider) => {
     if (lock.current) return;
     setTestingId(provider.id);
-    await run(() => configurationApi.testProvider(provider.id), `${provider.name}：连接成功（已保存配置）`);
+    await run(() => configurationApi.testProvider(provider.id), provider.model==="未配置"?`${provider.name}：连接可访问（未生成图片或验证透明输出）`:`${provider.name}：连接成功（已保存配置）`);
     if (mounted.current) setTestingId(null);
   };
   const remove = async () => {
@@ -102,14 +101,13 @@ export default function ProvidersPanel() {
       {notice && <p role="status">{notice}</p>}
       {loaded && !providers.length && <p className="ym-page-empty">暂无提供商，请先新增。</p>}
       {editing !== undefined && <ProviderForm connectionOnly key={editing?.id ?? "new"} provider={editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
-      {!selected&&<CardBrowserControls browser={browser} label="提供商" timeLabel="创建时间" disabled={busy}/>}
-      {selected&&<button className="ym-button" disabled={busy||editing!==undefined} onClick={()=>setSelected(null)}>返回提供商列表</button>}
-      <div className="ym-object-grid">{(selected?providers.filter(p=>p.id===selected):browser.items).map(provider=><article className="ym-object-card" key={provider.id} onClick={event=>{if(!selected&&!disabled&&editing===undefined&&!(event.target as HTMLElement).closest("button"))setSelected(provider.id);}}>
-        <h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(provider.id)}>{provider.name}</button></h3><p className="ym-page-note ym-card-summary">{provider.baseUrl||"https://api.openai.com/v1"}</p>
+      <CardBrowserControls browser={browser} label="提供商" timeLabel="创建时间" disabled={busy}/>
+      <div className="ym-object-grid ym-provider-grid">{browser.items.map(provider=><article className="ym-object-card" key={provider.id}>
+        <h3>{provider.name}</h3><p className="ym-page-note">{provider.baseUrl||"https://api.openai.com/v1"}</p>
         <p className="ym-page-note" aria-label="模型原生能力">{provider.capabilities?.webSearch===true&&<span title="服务声明或官方资料确认此模型支持原生搜索；实际调用仍受接口权限和额度限制"><UiIcon name="globe"/> {provider.capabilities.nativeSearchReady?"原生联网":"联网能力（接口待适配）"}　</span>}{provider.capabilities?.reasoning===true&&<span title="服务声明或实际响应已确认推理能力；普通聊天沿用模型本身的思考模式"><UiIcon name="brain"/> 原生推理</span>}{provider.capabilities?.webSearch==null&&provider.capabilities?.reasoning==null&&"原生能力尚未确认"}</p>
         <p className="ym-page-note">Key：{provider.hasApiKey?"已保存":"未保存"} · {provider.purposes?.map(role=>({chat:"聊天",memory:"记忆",image:"生图",vision:"识图"})[role as "chat"]).join("、")||"尚未指定用途"}</p>
         <p className="ym-page-note">创建：{provider.createdAt?new Date(provider.createdAt).toLocaleString():"时间未知"}</p>
-        {selected===provider.id&&<div className="ym-inline-form"><button className="ym-button" disabled={disabled||editing!==undefined} onClick={()=>{setEditing(provider);setError(null);setNotice("");}}>编辑连接</button><button className="ym-button" disabled={disabled||provider.model==="未配置"} title="使用该连接的聊天模型进行请求，可能消耗服务额度" onClick={()=>void test(provider)}>{testingId===provider.id?"正在测试…":"测试聊天连接"}</button><button className="ym-button" data-variant="danger" disabled={disabled} onClick={()=>{setDeleting(provider);setError(null);}}>删除连接</button></div>}
+        <div className="ym-inline-form"><button className="ym-button" disabled={disabled||editing!==undefined} onClick={()=>{setEditing(provider);setError(null);setNotice("");}}>编辑连接</button><button className="ym-button" disabled={disabled} title={provider.model==="未配置"?"只读检查模型目录，不生成图片，也不验证透明输出":"使用已保存的聊天模型测试，可能消耗服务额度"} onClick={()=>void test(provider)}>{testingId===provider.id?"正在测试…":"测试连接"}</button><button className="ym-button" data-variant="danger" disabled={disabled} onClick={()=>{setDeleting(provider);setError(null);}}>删除连接</button></div>
       </article>)}</div>
     </section>
     <ProviderRolesPanel providers={providers}/>

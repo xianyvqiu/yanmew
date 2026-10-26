@@ -31,7 +31,7 @@ export function useGamePlugins() {
     const stops: (() => void)[] = [];
     const reload = () => { if (!disposed) void refresh(); };
     for (const [subscribe, receive] of [[gamePluginsApi.listen, reload], [walletApi.listen, () => { if (!disposed) void readWallet(); }]] as const) {
-      void subscribe(receive).then(stop => { if (disposed) stop(); else stops.push(stop); })
+      void subscribe(receive).then(stop => { if (disposed) stop(); else { stops.push(stop); receive(); } })
         .catch(cause => { if (!disposed) setError(errorMessage(cause)); });
     }
     reload(); window.addEventListener("focus", reload);

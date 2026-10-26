@@ -57,10 +57,10 @@ export default function BackupPanel() {
         <legend>选择要备份的对象</legend>
         {loading ? <p role="status">正在读取可选对象…</p> : !options ? <button className="ym-button" type="button" onClick={() => setAttempt(value => value + 1)}>重新读取</button>
           : items.length === 0 ? <p>暂无可备份对象。</p> : <div className="ym-backup-options">
-            {items.map(item => <label className="ym-backup-option" key={item.id}><input type="checkbox" checked={ids.includes(item.id)} onChange={event => setIds(previous => event.target.checked ? [...previous, item.id] : previous.filter(id => id !== item.id))} /><span>{item.name}</span></label>)}
+            {items.map(item => <label className="ym-backup-option" key={item.id}><input className="ym-selection-checkbox" type="checkbox" checked={ids.includes(item.id)} onChange={event => setIds(previous => event.target.checked ? [...previous, item.id] : previous.filter(id => id !== item.id))} /><span>{item.name}</span></label>)}
           </div>}
       </fieldset>}
-      {kind === "user_profile" && <label className="ym-backup-option"><input type="checkbox" checked={includeSessions} disabled={busy} onChange={event => setIncludeSessions(event.target.checked)} /><span>同时备份绑定这些用户设定的会话</span></label>}
+      {kind === "user_profile" && <label className="ym-backup-option"><input className="ym-selection-checkbox" type="checkbox" checked={includeSessions} disabled={busy} onChange={event => setIncludeSessions(event.target.checked)} /><span>同时备份绑定这些用户设定的会话</span></label>}
       {kind === "full" && <p className="ym-page-note">包含全部业务数据。恢复时全局喵币、账单、设置等按备份恢复；人设关联和会话追加，不覆盖原会话。</p>}
       {kind === "plugin_data" && <p className="ym-page-note">仅保存插件登记、来源链接、权限申请、设置和存档。不含游戏程序、喵币、账单或运行记录；恢复后权限需要重新确认。</p>}
       <p className="ym-page-note">不包含颜喵管理的 API Key、模型文件、程序包和可重建索引。插件私有存档可能包含插件自行保存的凭据，请妥善保管备份。</p>

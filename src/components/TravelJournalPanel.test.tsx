@@ -98,7 +98,7 @@ it("分页刷新保持当前页，重试只提交生成任务", async () => {
   await screen.findByRole("button",{name:/游记编号12/});
   await act(async()=>fireEvent.focus(window));
   expect(await screen.findByRole("button",{name:/游记编号12/})).toBeTruthy();
-  expect(api.browse).toHaveBeenLastCalledWith("journals",context,"","newest",2);
+  expect(api.browse).toHaveBeenLastCalledWith("journals",context,"","newest",2,[]);
   fireEvent.click(screen.getByRole("button",{name:"重试待生成游记"}));
   await waitFor(()=>expect(api.retry).toHaveBeenCalledWith(context));
   expect(screen.queryByRole("button",{name:/重新生成/})).toBeNull();

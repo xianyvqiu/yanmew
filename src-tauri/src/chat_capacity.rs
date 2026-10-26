@@ -142,6 +142,7 @@ pub fn remember(base: &str, model: &str, value: &Value) {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Budget {
+    pub provider_usage: Option<crate::ai::usage::UsageTotals>,
     pub context_window: Option<u32>,
     pub configured_max_output_tokens: u32,
     pub effective_max_output_tokens: u32,

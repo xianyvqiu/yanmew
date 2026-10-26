@@ -40,6 +40,8 @@ export type Skill = {
     }[];
 };
 export const companionApi = {
+    parseSkillMarkdown: (filename:string,body:string) => invoke<{title:string;summary:string;body:string}>("parse_skill_markdown",{filename,body}),
+    cancelSkillMarkdownImport: () => invoke<void>("cancel_skill_markdown_import"),
     listenSkills: (receive: () => void) => listen("skills-changed", receive),
     skillPreviews: (context: {personaId:string;sessionId:string;contextRevision:number}) => invoke<SkillPreview[]>("get_skill_previews", { context }),
     resolveSkillPreview: (context: {personaId:string;sessionId:string;contextRevision:number}, id:string, accept:boolean) => invoke<void>("resolve_skill_preview", { context, id, accept }),

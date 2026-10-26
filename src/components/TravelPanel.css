@@ -1,6 +1,16 @@
 .ym-travel-panel { display: grid; gap: 16px; min-width: 0; }
 .ym-travel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .ym-travel-tabs [aria-current="page"] { background: var(--ym-accent-soft); }
+.ym-travel-origin { display:block;color:var(--ym-accent-strong);font-size:12px;font-weight:400;line-height:1.6; }
+.ym-trip-filter { margin-block:16px;border:1px solid var(--ym-border);border-radius:14px;background:var(--ym-surface-muted); }
+.ym-trip-filter>summary { cursor:pointer;padding:14px 16px;font-weight:600; }.ym-trip-filter>summary>span { margin-left:10px;font-weight:400;font-size:12px;color:var(--ym-text-secondary); }
+.ym-trip-filter-body { padding:0 16px 16px;animation:ym-reveal-in 220ms var(--ym-ease-standard) both; }.ym-trip-filter-body p { margin:0; }
+.ym-trip-options { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px;max-height:260px;overflow:auto;margin-top:12px; }
+.ym-trip-options>label { display:flex!important;justify-content:flex-start!important;align-items:center;gap:12px;padding:10px;border:1px solid var(--ym-border);border-radius:10px;cursor:pointer; }.ym-trip-options input { appearance:auto;width:17px;height:17px;flex:none;accent-color:var(--ym-accent-strong); }.ym-trip-options span { display:grid;gap:4px;min-width:0;overflow-wrap:anywhere; }.ym-trip-options small { font-size:12px;color:var(--ym-text-secondary); }
+.ym-card-copy { display:grid;gap:8px;min-width:0;width:100%; }.ym-letter-item[data-thumbnail="true"] { grid-template-columns:110px minmax(0,1fr);align-items:center;gap:18px; }
+.ym-card-thumbnail { display:grid;place-items:center;align-self:start;width:110px;aspect-ratio:1;border-radius:12px;background:var(--ym-accent-subtle);overflow:hidden; }.ym-card-thumbnail img { width:100%;height:100%;object-fit:contain; }.ym-souvenir-image-state { font-size:12px;color:var(--ym-text-secondary);text-align:center;padding:8px; }
+.ym-souvenir-image-settings { padding:16px 0;margin-block:10px 20px;border-block:1px solid var(--ym-border); }.ym-souvenir-image-settings label>span { display:grid;gap:6px; }.ym-souvenir-image-settings small { color:var(--ym-text-secondary);font-size:12px;line-height:1.7; }
+@media(max-width:480px) { .ym-letter-item[data-thumbnail="true"] { grid-template-columns:76px minmax(0,1fr);gap:12px; }.ym-card-thumbnail { width:76px; } }
 .ym-travel-history, .ym-letter-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
 .ym-travel-history > li { padding: 14px 0; border-bottom: 1px solid var(--ym-border); }
 .ym-travel-history h3, .ym-letter-detail h3 { margin: 0; font-size: var(--ym-font-heading); }
@@ -32,3 +42,8 @@
 .ym-letter-list.ym-object-grid li { min-width:0; }
 .ym-letter-list.ym-object-grid .ym-letter-item { height:100%; padding:16px; border-radius:16px; }
 .ym-letter-list.ym-object-grid .ym-letter-item strong { overflow-wrap:anywhere; }
+
+.ym-letter-kind { display:inline-flex;align-items:center;width:fit-content;padding:2px 8px;margin-right:8px;border:1px solid var(--ym-border-strong);border-radius:var(--ym-radius-pill);background:var(--ym-surface);color:var(--ym-text-secondary);font-size:12px;line-height:1.7;vertical-align:middle; }
+.ym-letter-kind[data-kind="reply"] { background:var(--ym-accent-subtle);color:var(--ym-accent-strong); }
+
+.ym-letter-meta:has(.ym-letter-read-badge){display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}.ym-letter-read-badge{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:4px 12px;border:1px solid var(--ym-border-strong);border-radius:999px;font-size:14px;font-weight:600;line-height:1.5;white-space:nowrap}.ym-letter-read-badge[data-read="false"]{color:var(--ym-accent-strong);background:var(--ym-accent-soft);border-color:var(--ym-accent)}.ym-letter-read-badge[data-read="true"]{color:var(--ym-success);background:var(--ym-success-soft);border-color:color-mix(in srgb,var(--ym-success) 40%,var(--ym-border))}

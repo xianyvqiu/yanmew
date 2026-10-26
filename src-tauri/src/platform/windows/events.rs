@@ -12,6 +12,7 @@ impl crate::events::MemoryEventSink for PetEvents {
     }
 }
 impl crate::events::ReminderEventSink for PetEvents {
+    fn chat_messages_changed(&self,session_id:&str){let _=self.0.emit("chat-messages-changed",serde_json::json!({"sessionId":session_id}));}
     fn reminders_changed(&self) {
         let _ = self.0.emit(crate::events::REMINDERS_CHANGED, ());
     }
@@ -20,6 +21,7 @@ impl crate::events::ReminderEventSink for PetEvents {
     }
 }
 impl PetEventSink for PetEvents {
+    fn weather_changed(&self) { let _ = self.0.emit("weather-changed", ()); }
     fn wander(&self, view: &View) { crate::platform::windows::wander::tick(&self.0, view); }
     fn state_bubble(&self, bubble: &crate::events::PetStateBubble) {
         let _ = self.0.emit(crate::events::PET_STATE_BUBBLE, bubble);

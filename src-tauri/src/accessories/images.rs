@@ -327,7 +327,7 @@ pub(crate) fn cleanup_one(runtime: &Runtime, relative: &str, protected: &[String
             return Ok(());
         }
         let used: bool = store.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
+            "SELECT EXISTS(SELECT 1 FROM accessories WHERE image_file=?1 UNION ALL SELECT 1 FROM souvenirs WHERE image_file=?1 UNION ALL SELECT 1 FROM pet_artworks WHERE image_file=?1 OR preview_file=?1)",
             [relative],
             |row| row.get(0),
         )?;

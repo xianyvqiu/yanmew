@@ -19,6 +19,9 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+pub(crate) mod toss;
+pub(crate) mod chase;
+pub(crate) use toss::{track_drag, try_launch};
 
 const KEY: &str = "pet_desktop_preferences";
 const INTERVAL: Duration = Duration::from_secs(5);
@@ -32,14 +35,19 @@ pub enum Dock {
     PeekRight,
     RestSit,
     RestLie,
+    Top,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Preferences {
+    #[serde(default)]
+    upper_layout:bool,
+    #[serde(default)]
+    floor_inset:f64,
     fullscreen_wander: bool,
     dock: Dock,
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WalkDirection { Left, Right }
 #[derive(Clone, Serialize)]
@@ -48,13 +56,18 @@ pub struct Walking { pub direction: WalkDirection, pub persona_id: String, pub s
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    pub floor_inset:f64,
+    pub upper_layout: bool,
     pub fullscreen_wander: bool,
     pub dock: Dock,
     pub revision: u64,
     pub walking: Option<Walking>,
+    pub toss: Option<toss::Toss>,
+    pub chase: Option<chase::Chase>,
 }
 #[derive(Default)]
 struct Inner {
+    upper_layout: bool,
     preferences: Preferences,
     revision: u64,
     layout: Option<Layout>,
@@ -63,20 +76,45 @@ struct Inner {
     walking: Option<Walking>,
     last_check: Option<Duration>,
     target: Option<(i32, i32)>,
+    toss: Option<toss::Toss>,
+    chase: Option<chase::Chase>,
+    drag_trace: toss::DragTrace,
+    drag_serial: u64,
+    pending_anchor: Option<Rect>,
+    drag_cursor_offset: Option<(i32,i32)>,
+    chase_ended_at: Option<std::time::Instant>,
+    finishing_drag: bool,
 }
 #[derive(Default)]
 pub struct Desktop {
     inner: Mutex<Inner>,
     epoch: AtomicU64,
+    toss_epoch: AtomicU64,
 }
 impl Inner {
-    fn stop_motion(&mut self) { self.motion = None; if self.walking.take().is_some() { self.revision += 1; } }
+    fn docking_body(&self)->Option<Rect> {
+        let l=self.layout.as_ref()?;let anchor=l.anchor.unwrap_or(l.body);let body=self.pending_anchor.unwrap_or(anchor);
+        if matches!(self.preferences.dock,Dock::Top|Dock::None) {if let Some(visible)=l.contact.as_ref().and_then(|c|c.visible_rect()) {return Some(Rect{y:visible.y+body.y-anchor.y,..visible})}}
+        Some(body)
+    }
+    fn chase_due(&self,now:std::time::Instant,cooldown:Duration)->bool {self.chase_ended_at.is_none_or(|ended|now.saturating_duration_since(ended)>=cooldown)}
+    fn stop_motion(&mut self) { self.motion = None; if self.chase.take().is_some() {self.chase_ended_at=Some(std::time::Instant::now());self.revision+=1;} if self.walking.take().is_some() { self.revision += 1; } }
+    fn show_walking_after_move(&mut self, generation: u64, walking: &Walking) -> Option<Snapshot> {
+        if self.motion != Some(generation) || self.walking.is_some() { return None; }
+        self.walking = Some(walking.clone());
+        self.revision += 1;
+        Some(self.snapshot())
+    }
     fn snapshot(&self) -> Snapshot {
         Snapshot {
+            floor_inset:if matches!(self.preferences.dock,Dock::RestSit|Dock::RestLie){self.preferences.floor_inset}else{0.0},
+            upper_layout:self.upper_layout && matches!(self.preferences.dock,Dock::None|Dock::Top),
             fullscreen_wander: self.preferences.fullscreen_wander,
             dock: self.preferences.dock,
             revision: self.revision,
             walking: self.walking.clone(),
+            toss: self.toss.clone(),
+            chase: self.chase.clone(),
         }
     }
     fn allowed(&self, view: &View) -> bool {
@@ -99,7 +137,7 @@ fn load(c: &Connection) -> AppResult<Preferences> {
         })
         .optional()?;
     raw.map(|s| {
-        serde_json::from_str(&s).map_err(|_| {
+        serde_json::from_str::<Preferences>(&s).and_then(|p|if p.floor_inset.is_finite() && (0.0..=100_000.0).contains(&p.floor_inset){Ok(p)}else{Err(serde::de::Error::custom("invalid floor inset"))}).map_err(|_| {
             AppError::new(
                 "DESKTOP_STATE_INVALID",
                 "桌宠游走与停靠设置无效，请保留数据并检查应用版本",
@@ -132,17 +170,45 @@ impl Desktop {
             return Ok(());
         }
         let cancel = layout.paused || s.layout.as_ref().is_some_and(|old| old.persona_id != layout.persona_id || old.session_id != layout.session_id || old.context_revision != layout.context_revision || old.area.width != layout.area.width || old.area.height != layout.area.height);
+        if s.toss.as_ref().is_some_and(|t| t.persona_id!=layout.persona_id || t.session_id!=layout.session_id || t.context_revision!=layout.context_revision)
+            || s.layout.as_ref().is_some_and(|old|old.area.width!=layout.area.width||old.area.height!=layout.area.height) {
+            self.toss_epoch.fetch_add(1,Ordering::SeqCst);
+            if s.toss.take().is_some(){s.revision+=1;}
+        }
         if cancel { self.epoch.fetch_add(1, Ordering::SeqCst); s.stop_motion(); }
+        if s.pending_anchor.is_some_and(|b|layout.anchor.is_some_and(|a|(a.y-b.y).abs()<1.0)) {s.pending_anchor=None;}
         s.layout = Some(layout);
         Ok(())
     }
     pub fn begin_drag(&self) -> AppResult<()> {
         self.epoch.fetch_add(1, Ordering::SeqCst);
+        self.toss_epoch.fetch_add(1,Ordering::SeqCst);
         let mut s = self.inner.lock().map_err(|_| AppError::storage())?;
+        if let Some(t)=s.toss.as_mut(){t.phase=toss::Phase::Caught;s.revision+=1;}
+        s.drag_cursor_offset=None;
         s.dragging = true;
+        s.finishing_drag=false;
+        s.drag_serial+=1;
+        s.drag_trace=toss::DragTrace::default();
         s.stop_motion();
         s.target = None;
         Ok(())
+    }
+    pub fn capture_drag_cursor(&self,window:&WebviewWindow)->AppResult<()> {
+        let point=window.outer_position().map_err(|_|AppError::storage())?;
+        self.inner.lock().map_err(|_|AppError::storage())?.drag_cursor_offset=toss::cursor().map(|c|(c.0-point.x,c.1-point.y));Ok(())
+    }
+    pub fn drag_position(&self,cursor:(i32,i32))->Option<(i32,i32)> {
+        let s=self.inner.lock().ok()?;if !s.dragging{return None}let offset=s.drag_cursor_offset?;Some((cursor.0-offset.0,cursor.1-offset.1))
+    }
+    pub fn preserve_upper_position(&self,window:&WebviewWindow)->AppResult<bool> {
+        let (dock,body,inset)={let s=self.inner.lock().map_err(|_|AppError::storage())?;if s.dragging||s.motion.is_some()||s.toss.is_some(){return Ok(true)}(s.preferences.dock,s.docking_body(),s.preferences.floor_inset)};
+        if matches!(dock,Dock::RestSit|Dock::RestLie)&&inset>0.0 {self.realign_dock(window)?;return Ok(true)}
+        let Some(body)=body else{return Ok(false)};if !matches!(dock,Dock::None|Dock::Top){return Ok(false)}
+        let (point,size,area,scale)=geometry(window)?;
+        if dock!=Dock::Top && point.1>=area.y{return Ok(false)}
+        let next=snap_body(dock,point,size,area,body,scale);
+        if next!=point {window.set_position(PhysicalPosition::new(next.0,next.1)).map_err(|_|AppError::storage())?;}Ok(true)
     }
     pub fn end_drag(&self) -> AppResult<()> {
         self.inner.lock().map_err(|_| AppError::storage())?.dragging = false;
@@ -151,6 +217,17 @@ impl Desktop {
     pub fn is_dragging(&self) -> AppResult<bool> {
         Ok(self.inner.lock().map_err(|_| AppError::storage())?.dragging)
     }
+    pub fn claim_drag_finish(&self) -> AppResult<bool> {
+        let mut s=self.inner.lock().map_err(|_|AppError::storage())?;
+        if !s.dragging||s.finishing_drag{return Ok(false)}
+        s.finishing_drag=true;Ok(true)
+    }
+    pub fn release_velocity(&self, scale:f64)->AppResult<Option<f64>> {
+        let mut s=self.inner.lock().map_err(|_|AppError::storage())?;
+        if let Some(point)=toss::cursor(){s.drag_trace.record(std::time::Instant::now(),point);}
+        Ok(s.drag_trace.upward_speed(std::time::Instant::now(),scale))
+    }
+    pub fn has_toss(&self)->bool {self.inner.lock().is_ok_and(|s|s.toss.is_some())}
     /// 尺寸/DPI变化后保持既有停靠，不重新识别边缘或抽取动作；原生调用在锁外。
     pub fn realign_dock(&self, window: &WebviewWindow) -> AppResult<()> {
         let dock = {
@@ -163,8 +240,10 @@ impl Desktop {
         if dock == Dock::None || window.is_minimized().map_err(|_| AppError::storage())? {
             return Ok(());
         }
-        let (point, size, area, _) = geometry(window)?;
-        let target = snap(dock, point, size, area);
+        let (point, size, area, scale) = geometry(window)?;
+        let floor_inset=self.inner.lock().map_err(|_|AppError::storage())?.preferences.floor_inset;
+        let body=self.inner.lock().map_err(|_|AppError::storage())?.docking_body();
+        let target = if matches!(dock,Dock::RestSit|Dock::RestLie){snap_floor(dock,point,size,area,floor_inset,scale)}else{body.map(|b|snap_body(dock,point,size,area,b,scale)).unwrap_or_else(||snap(dock,point,size,area))};
         if target != point {
             window.set_position(PhysicalPosition::new(target.0, target.1))
                 .map_err(|_| AppError::storage())?;
@@ -172,18 +251,27 @@ impl Desktop {
         Ok(())
     }
     pub fn initialize(&self, window: &WebviewWindow, runtime: &Runtime) -> AppResult<()> {
-        let preferences = runtime.read(|s, _| load(&s.connection))?;
-        let dock = preferences.dock;
+        let (preferences,saved) = runtime.read(|s, _| Ok((load(&s.connection)?,crate::config::get_window_position(&s.connection)?)))?;
+        let dock = preferences.dock;let floor_inset=preferences.floor_inset;
         {
             let mut s=self.inner.lock().map_err(|_|AppError::storage())?;
-            s.preferences=preferences;s.revision+=1;
+            s.upper_layout=preferences.upper_layout;s.preferences=preferences;s.revision+=1;
         }
         if dock != Dock::None {
-            let (point, size, area, _) = geometry(window)?;
-            let target = snap(dock, point, size, area);
+            let (point, size, area, scale) = geometry(window)?;
+            let target = snap_floor(dock,point,size,area,floor_inset,scale);
             window
                 .set_position(PhysicalPosition::new(target.0, target.1))
                 .map_err(|_| AppError::storage())?;
+        }
+        if dock==Dock::None && self.inner.lock().map_err(|_|AppError::storage())?.upper_layout {
+            if let Some(saved)=saved {
+                let (_,size,area,_)=geometry(window)?;
+                if saved.1<area.y && area.intersection(saved,size)>0 {
+                    let point=(area.fit(saved,size).0,saved.1);
+                    window.set_position(PhysicalPosition::new(point.0,point.1)).map_err(|_|AppError::storage())?;
+                }
+            }
         }
         publish(window.app_handle(),&self.snapshot()?);
         Ok(())
@@ -264,6 +352,7 @@ pub async fn get_pet_dock_expression(
                 Dock::PeekRight => "peek_right",
                 Dock::RestSit => "rest_sit",
                 Dock::RestLie => "rest_lie",
+                Dock::Top => "normal",
                 Dock::None => return Ok(String::new()),
             };
             let mut random = rt.random.lock().map_err(|_| AppError::storage())?;
@@ -311,6 +400,20 @@ pub async fn get_pet_lift_expression(window: WebviewWindow, runtime: tauri::Stat
     })).await.map_err(|_|AppError::storage())?
 }
 
+#[tauri::command]
+pub async fn get_pet_error_expression(window: WebviewWindow, runtime: tauri::State<'_, Runtime>, persona_id: String) -> AppResult<String> {
+    authorize(&window)?;
+    let rt = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || rt.read(|s,_| {
+        let category="error";
+        let mut random=rt.random.lock().map_err(|_|AppError::storage())?;
+        let id=crate::error::parse_id(&persona_id)?;
+        match crate::pet_creation::select(&s.connection,id,category,None,random.as_mut())? {
+            Some(image) => Ok(image), None => crate::expressions::choose_local(&s.connection,id,category,random.as_mut()),
+        }
+    })).await.map_err(|_|AppError::storage())?
+}
+
 type Geometry = ((i32, i32), PhysicalSize<u32>, Area, f64);
 fn geometry(window: &WebviewWindow) -> AppResult<Geometry> {
     let p = window.outer_position().map_err(|_| AppError::storage())?;
@@ -333,9 +436,30 @@ fn snap(dock: Dock, point: (i32, i32), size: PhysicalSize<u32>, area: Area) -> (
         Dock::PeekLeft => p.0 = area.x,
         Dock::PeekRight => p.0 = area.fit((i32::MAX, p.1), size).0,
         Dock::RestSit | Dock::RestLie => p.1 = area.fit((p.0, i32::MAX), size).1,
+        Dock::Top => p.1=area.y,
         Dock::None => {}
     }
     p
+}
+// 透明窗口可以越过屏幕上缘；约束立绘，而不是把透明留白整个拉回屏幕。
+fn snap_floor(dock:Dock,point:(i32,i32),size:PhysicalSize<u32>,area:Area,inset:f64,scale:f64)->(i32,i32) {
+    let mut p=snap(dock,point,size,area);
+    if matches!(dock,Dock::RestSit|Dock::RestLie){p.1=p.1.saturating_add((inset*scale).round() as i32);}p
+}
+fn reanchor(point:(i32,i32),body:Rect,next_y:f64,scale:f64)->((i32,i32),Rect) {
+    ((point.0,point.1+((body.y-next_y)*scale).round() as i32),Rect{y:next_y,..body})
+}
+fn fit_body(point:(i32,i32),size:PhysicalSize<u32>,area:Area,body:Rect,scale:f64)->(i32,i32) {
+    let mut fitted=area.fit(point,size);
+    let min_y=(f64::from(area.y)-body.y*scale+4.0*scale).round() as i32;
+    let max_y=area.fit((point.0,i32::MAX),size).1.max(min_y);
+    fitted.1=point.1.clamp(min_y,max_y);fitted
+}
+fn snap_body(dock:Dock,point:(i32,i32),size:PhysicalSize<u32>,area:Area,body:Rect,scale:f64)->(i32,i32) {
+    if matches!(dock,Dock::None|Dock::Top) {
+        let mut p=fit_body(point,size,area,body,scale);
+        if dock==Dock::Top {p.1=(f64::from(area.y)-body.y*scale+4.0*scale).round() as i32;}p
+    }else {snap(dock,point,size,area)}
 }
 fn detect(
     point: (i32, i32),
@@ -358,6 +482,7 @@ fn detect(
         None
     };
     let floor = bottom >= f64::from(area.y) + f64::from(area.height) - threshold;
+    if side.is_none() && !floor && top<=f64::from(area.y)+8.0*scale {return Ok(Dock::Top)}
     if floor && (side.is_none() || random.below(2)? == 1) {
         return Ok(if random.below(2)? == 0 {
             Dock::RestSit
@@ -373,10 +498,10 @@ pub async fn finish_drag(window: &WebviewWindow, runtime: Runtime) -> AppResult<
     let (point, size, area, scale) = geometry(window)?;
     let app = window.app_handle().clone();
     let handle = app.clone();
-    let snapshot = tauri::async_runtime::spawn_blocking(move || {
+    let (snapshot,body,point) = tauri::async_runtime::spawn_blocking(move || {
         runtime.read(|store, _| {
             let managed = handle.state::<Desktop>();
-            let (body, mut preferences) = {
+            let (body, visible, free_y, old_dock, old_upper, had_toss, mut preferences) = {
                 let s = managed.inner.lock().map_err(|_| AppError::storage())?;
                 (
                     s.layout
@@ -388,27 +513,41 @@ pub async fn finish_drag(window: &WebviewWindow, runtime: Runtime) -> AppResult<
                             width: 96.0,
                             height: 84.0,
                         }),
+                    s.layout.as_ref().and_then(|l|l.contact.as_ref().and_then(|c|c.visible_rect())),
+                    s.layout.as_ref().and_then(|l|l.free_y),
+                    s.preferences.dock,
+                    s.upper_layout,
+                    s.toss.is_some(),
                     s.preferences.clone(),
                 )
             };
             preferences.dock = {
                 let mut random = runtime.random.lock().map_err(|_| AppError::storage())?;
-                detect(point, body, area, scale, random.as_mut())?
+                let dock=detect(point, body, area, scale, random.as_mut())?;
+                if dock==Dock::Top && visible.is_some_and(|v|f64::from(point.1)+v.y*scale>f64::from(area.y)+8.0*scale) {Dock::None}else{dock}
             };
+            let upper=matches!(preferences.dock,Dock::None|Dock::Top) && (preferences.dock==Dock::Top || f64::from(point.1)+body.y*scale < f64::from(area.y)+80.0*scale);
+            let next_y=if upper {4.0} else if preferences.dock==Dock::None && (old_dock==Dock::Top||old_upper||had_toss) {free_y.unwrap_or(f64::from(size.height)/scale-body.height-56.0)} else {body.y};
+            let (point,next_body)=reanchor(point,body,next_y,scale);
+            preferences.upper_layout=upper;preferences.floor_inset=0.0;
             save(&store.connection, &preferences)?;
             let mut s = managed.inner.lock().map_err(|_| AppError::storage())?;
+            s.pending_anchor=((next_y-body.y).abs()>0.5).then_some(next_body);
+            s.upper_layout=upper;
             s.preferences = preferences;
             s.revision += 1;
             s.dragging = false;
+            s.toss=None;
             s.target = None;
             s.stop_motion();
             managed.epoch.fetch_add(1, Ordering::SeqCst);
-            Ok(s.snapshot())
+            let docking_body=if matches!(s.preferences.dock,Dock::Top|Dock::None) {visible.map(|v|Rect{y:v.y+next_y-body.y,..v}).unwrap_or(next_body)}else{next_body};
+            Ok((s.snapshot(),docking_body,point))
         })
     })
     .await
     .map_err(|_| AppError::storage())??;
-    let target = snap(snapshot.dock, point, size, area);
+    let target = snap_body(snapshot.dock, point, size, area,body,scale);
     window
         .set_position(PhysicalPosition::new(target.0, target.1))
         .map_err(|_| AppError::storage())?;
@@ -428,6 +567,12 @@ fn next_step(start: (i32, i32), target: (i32, i32), limit: f64) -> (i32, i32) {
         (f64::from(start.0) + x / length * limit).round() as i32,
         (f64::from(start.1) + y / length * limit).round() as i32,
     )
+}
+fn outside_arrival_tolerance(start: (i32, i32), end: (i32, i32), scale: f64) -> bool {
+    (f64::from(end.0) - f64::from(start.0)).hypot(f64::from(end.1) - f64::from(start.1)) > 8.0 * scale
+}
+fn walking_pose_ready(start: (i32, i32), current: (i32, i32), end: (i32, i32), scale: f64) -> bool {
+    outside_arrival_tolerance(start, current, scale) && outside_arrival_tolerance(current, end, scale)
 }
 #[cfg(windows)]
 fn near_mouse(window: &WebviewWindow, scale: f64) -> bool {
@@ -451,7 +596,7 @@ fn near_mouse(_: &WebviewWindow, _: f64) -> bool {
 }
 fn chat_open(app: &tauri::AppHandle) -> bool {
     app.get_webview_window("chat")
-        .is_some_and(|w| w.is_visible().unwrap_or(true))
+        .is_some_and(|w| w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false))
 }
 pub fn tick(app: &tauri::AppHandle, view: &View) {
     let runtime = app.state::<Runtime>();
@@ -465,13 +610,13 @@ pub fn tick(app: &tauri::AppHandle, view: &View) {
         };
         if !s.allowed(view) {
             managed.epoch.fetch_add(1, Ordering::SeqCst);
-            let changed=s.walking.is_some();
+            let changed=s.walking.is_some() || s.chase.is_some();
             s.stop_motion();
             s.last_check = Some(sample.running);
             if changed { let snapshot=s.snapshot(); drop(s); publish(app,&snapshot); }
             return;
         }
-        if s.motion.is_some()
+        if s.toss.is_some() || s.chase.is_some() || s.motion.is_some()
             || s.last_check
                 .is_some_and(|last| sample.running.saturating_sub(last) < INTERVAL)
         {
@@ -493,6 +638,10 @@ pub fn tick(app: &tauri::AppHandle, view: &View) {
     {
         return;
     }
+    let cooldown = runtime.read(|store, _| {
+        let settings = crate::config::get(&store.connection)?;
+        Ok(Duration::from_secs(settings["pet_chase_cooldown_minutes"].parse::<u64>().unwrap_or(10) * 60))
+    }).unwrap_or(Duration::from_secs(600));
     let plan = (|| -> AppResult<_> {
         let mut random = runtime.random.lock().map_err(|_| AppError::storage())?;
         let mut s = managed.inner.lock().map_err(|_| AppError::storage())?;
@@ -501,7 +650,7 @@ pub fn tick(app: &tauri::AppHandle, view: &View) {
         }
         let target = if let Some(p) = s
             .target
-            .filter(|p| ((p.0 - point.0) as f64).hypot((p.1 - point.1) as f64) > 8.0 * scale)
+            .filter(|p| outside_arrival_tolerance(point, *p, scale))
         {
             area.fit(p, size)
         } else {
@@ -516,22 +665,26 @@ pub fn tick(app: &tauri::AppHandle, view: &View) {
             )
         };
         s.target = Some(target);
-        let end = area.fit(next_step(point, target, 140.0 * scale), size);
-        if point == end {
+        let body=s.docking_body();
+        let end = body.map(|b|fit_body(next_step(point,target,140.0*scale),size,area,b,scale)).unwrap_or_else(||area.fit(next_step(point,target,140.0*scale),size));
+        // 复用到达容差，不为几像素的剩余距离重播行走和站立表情。
+        if !outside_arrival_tolerance(point, end, scale) {
             return Ok(None);
         }
+        let chase = s.chase_due(std::time::Instant::now(),cooldown) && chase::draw(random.as_mut())?;
         let generation = managed.epoch.fetch_add(1, Ordering::SeqCst) + 1;
         s.motion = Some(generation);
-        s.walking=Some(Walking { direction: if end.0 < point.0 { WalkDirection::Left } else { WalkDirection::Right }, persona_id:view.persona_id.clone(),session_id:view.session_id.clone().unwrap_or_default(),context_revision:view.context_revision });
-        s.revision+=1;
-        Ok(Some((generation, end, s.snapshot())))
+        let walking=Walking { direction: if end.0 < point.0 { WalkDirection::Left } else { WalkDirection::Right }, persona_id:view.persona_id.clone(),session_id:view.session_id.clone().unwrap_or_default(),context_revision:view.context_revision };
+        if chase { s.chase=Some(chase::Chase::new(&walking));s.revision+=1; }
+        Ok(Some((generation, end, walking, chase)))
     })();
-    let Ok(Some((generation, end, snapshot))) = plan else {
+    let Ok(Some((generation, end, walking, chase))) = plan else {
         return;
     };
-    publish(app,&snapshot);
     let app = app.clone();
     std::thread::spawn(move || {
+        if chase { chase::run(&app,&window,generation,point,size,area,scale,walking);return; }
+        let mut last_position = point;
         for step in 1..=24 {
             std::thread::sleep(Duration::from_millis(60));
             let state = app.state::<Desktop>();
@@ -548,11 +701,18 @@ pub fn tick(app: &tauri::AppHandle, view: &View) {
                 (f64::from(point.0) + f64::from(end.0 - point.0) * fraction).round() as i32,
                 (f64::from(point.1) + f64::from(end.1 - point.1) * fraction).round() as i32,
             );
+            if position == last_position { continue; }
             if window
                 .set_position(PhysicalPosition::new(position.0, position.1))
                 .is_err()
             {
                 break;
+            }
+            last_position = position;
+            // 离开起点容差且尚未进入终点容差才显示行走，避免微移后暂停或收尾时闪出动作。
+            if walking_pose_ready(point, position, end, scale) {
+                let snapshot = state.inner.lock().ok().and_then(|mut s| s.show_walking_after_move(generation, &walking));
+                if let Some(snapshot) = snapshot { publish(&app, &snapshot); }
             }
         }
         let state = app.state::<Desktop>();
@@ -663,19 +823,75 @@ mod tests {
             &Preferences {
                 fullscreen_wander: true,
                 dock: Dock::RestSit,
+                upper_layout:true,floor_inset:102.0,
             },
         )
         .unwrap();
-        assert_eq!(load(&c).unwrap().dock, Dock::RestSit);
+        assert_eq!(load(&c).unwrap().dock, Dock::RestSit);assert!(load(&c).unwrap().upper_layout);assert_eq!(load(&c).unwrap().floor_inset,102.0);
+        let legacy:Preferences=serde_json::from_str(r#"{"fullscreenWander":true,"dock":"none"}"#).unwrap();assert!(!legacy.upper_layout);assert_eq!(legacy.floor_inset,0.0);
         c.execute("UPDATE settings SET value='{}' WHERE key=?1", [KEY])
             .unwrap();
         assert!(load(&c).is_err());
     }
     #[test]
+    fn tiny_wander_displacements_use_existing_arrival_tolerance_at_each_dpi() {
+        for scale in [1.0, 1.5, 2.0] {
+            let start = (-1400, -80);
+            let tolerance = (8.0 * scale) as i32;
+            for delta in [0, 1, tolerance] {
+                assert!(!outside_arrival_tolerance(start, (start.0 + delta, start.1), scale));
+            }
+            assert!(outside_arrival_tolerance(start, (start.0 + tolerance + 1, start.1), scale));
+            assert!(outside_arrival_tolerance(start, next_step(start, (-600, 600), 140.0 * scale), scale));
+            let end = (start.0 + 140, start.1);
+            assert!(!walking_pose_ready(start, (start.0 + 1, start.1), end, scale));
+            assert!(walking_pose_ready(start, (start.0 + 60, start.1), end, scale));
+            assert!(!walking_pose_ready(start, (end.0 - 1, end.1), end, scale));
+            let tiny_end = (start.0 + tolerance + 1, start.1);
+            for delta in 0..=tolerance + 1 {
+                assert!(!walking_pose_ready(start, (start.0 + delta, start.1), tiny_end, scale));
+            }
+        }
+    }
+    #[test]
+    fn walking_starts_after_move_and_cancelled_plans_cannot_restore_it() {
+        let walking = Walking { direction: WalkDirection::Left, persona_id:"1".into(),session_id:"1".into(),context_revision:0 };
+        let mut state = Inner { motion:Some(7), ..Inner::default() };
+        assert!(state.snapshot().walking.is_none());
+        assert!(state.show_walking_after_move(6, &walking).is_none());
+        let snapshot = state.show_walking_after_move(7, &walking).unwrap();
+        assert!(snapshot.walking.is_some());
+        assert!(state.show_walking_after_move(7, &walking).is_none());
+        assert_eq!(state.revision, snapshot.revision);
+        state.stop_motion();
+        assert!(state.show_walking_after_move(7, &walking).is_none());
+        state.motion = Some(8);
+        state.stop_motion();
+        assert!(state.show_walking_after_move(8, &walking).is_none());
+        assert!(state.snapshot().walking.is_none());
+    }
+    #[test]
+    fn catching_cancels_toss_and_preserves_body_anchor_until_drag_release() {
+        let desktop=Desktop::default();let token=desktop.toss_epoch.load(Ordering::SeqCst);
+        let body=Rect{x:62.0,y:102.0,width:196.0,height:196.0};
+        desktop.inner.lock().unwrap().toss=Some(toss::Toss{phase:toss::Phase::Down,persona_id:"1".into(),session_id:"1".into(),context_revision:0,body,controls_below:true});
+        desktop.begin_drag().unwrap();let snapshot=desktop.snapshot().unwrap();let pose=snapshot.toss.unwrap();
+        assert_eq!(pose.phase,toss::Phase::Caught);assert_eq!(pose.body.x,body.x);assert_eq!(pose.body.y,body.y);assert_eq!(pose.body.height,body.height);
+        assert_ne!(desktop.toss_epoch.load(Ordering::SeqCst),token);assert!(desktop.is_dragging().unwrap());
+    }
+    #[test]
+    fn top_edge_uses_body_anchor_and_finalizes_drag_once() {
+        let a=area();let size=PhysicalSize::new(320,400);
+        assert!(matches!(detect((-900,-260),body(),a,1.0,&mut Draw(vec![])).unwrap(),Dock::Top));
+        assert_eq!(snap(Dock::Top,(-900,-500),size,a),(-900,-100));
+        assert!(matches!(detect((-900,100),body(),a,1.0,&mut Draw(vec![])).unwrap(),Dock::None));
+        let desktop=Desktop::default();desktop.begin_drag().unwrap();assert!(desktop.claim_drag_finish().unwrap());assert!(!desktop.claim_drag_finish().unwrap());
+    }
+    #[test]
     fn walking_geometry_does_not_cancel_motion_but_pause_does() {
         let desktop=Desktop::default();
         let mut layout=Layout {persona_id:"1".into(),session_id:"1".into(),context_revision:0,layout_revision:1,
-            area:Rect{x:0.0,y:0.0,width:320.0,height:280.0},body:body(),anchor:Some(body()),
+            area:Rect{x:0.0,y:0.0,width:320.0,height:280.0},body:body(),anchor:Some(body()),free_y:None,contact:None,
             offset:crate::pet::wander::Point{x:0.0,y:0.0},paused:false};
         desktop.update(layout.clone()).unwrap();
         { let mut s=desktop.inner.lock().unwrap();s.motion=Some(7);s.walking=Some(Walking{direction:WalkDirection::Left,persona_id:"1".into(),session_id:"1".into(),context_revision:0}); }
@@ -686,4 +902,28 @@ mod tests {
         desktop.update(layout).unwrap();
         assert!(desktop.snapshot().unwrap().walking.is_none());
     }
+    #[test]
+    fn top_detection_uses_body_and_release_reanchoring_keeps_screen_position() {
+        let a=area();let size=PhysicalSize::new(320,400);let b=body();
+        assert_eq!(detect((-900,a.y),b,a,1.0,&mut Draw(vec![])).unwrap(),Dock::None);
+        let point=(-900,a.y-b.y as i32+5);assert_eq!(detect(point,b,a,1.0,&mut Draw(vec![])).unwrap(),Dock::Top);
+        let top=Rect{y:4.0,..b};let snapped=snap_body(Dock::Top,point,size,a,top,1.0);assert_eq!(snapped.1+top.y as i32,a.y+4);
+        let dragged=(snapped.0,snapped.1+40);let free=Rect{y:200.0,..b};let (corrected,free)=reanchor(dragged,top,free.y,1.0);
+        let fitted=snap_body(Dock::None,corrected,size,a,free,1.0);assert_eq!(f64::from(fitted.1)+free.y,f64::from(dragged.1)+top.y);
+        let d=Desktop::default();d.begin_drag().unwrap();d.inner.lock().unwrap().drag_cursor_offset=Some((120,18));assert_eq!(d.drag_position((600,7)),Some((480,-11)));d.end_drag().unwrap();assert!(d.drag_position((600,7)).is_none());
+    }
+
+    #[test]
+    fn top_visible_body_compensation_tracks_transparent_margin_and_dpi() {
+        let d=Desktop::default();let b=body();let layout=Layout{persona_id:"1".into(),session_id:"1".into(),context_revision:0,layout_revision:1,
+            area:Rect{x:0.0,y:0.0,width:320.0,height:400.0},body:b,anchor:Some(b),free_y:Some(200.0),offset:crate::pet::wander::Point::default(),paused:false,
+            contact:Some(crate::pet::wander::Contact{bounds:Rect{x:b.x,y:b.y+12.0,width:96.0,height:64.0},rows:vec![u32::MAX;32]})};
+        d.update(layout).unwrap();{let mut s=d.inner.lock().unwrap();s.preferences.dock=Dock::Top;s.pending_anchor=Some(Rect{y:4.0,..b});}
+        assert_eq!(d.inner.lock().unwrap().docking_body().unwrap().y,16.0);
+        {let mut s=d.inner.lock().unwrap();s.preferences.dock=Dock::None;s.upper_layout=true;}
+        let visible=d.inner.lock().unwrap().docking_body().unwrap();let point=(-900,area().y-7);
+        assert_eq!(snap_body(Dock::None,point,PhysicalSize::new(320,400),area(),visible,1.0),point);
+        for scale in [1.0,1.25,1.5,2.0] {let p=(100,130);let (next,body)=reanchor(p,b,4.0,scale);assert!((f64::from(next.1)+body.y*scale-(f64::from(p.1)+b.y*scale)).abs()<=0.5);}
+    }
+
 }

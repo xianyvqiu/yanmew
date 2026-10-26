@@ -74,7 +74,9 @@ export type ChatRound = {
   createdAt: string; completedAt: string | null; stopReason: string | null;
 };
 export type RoundSnapshot = { round: ChatRound; userMessage: Message; assistantMessage: Message | null };
+export type ProviderUsage = { requests: number; inputRequests: number; cachedRequests: number; inputTokens: number; cachedTokens: number };
 export type ChatContextBudget = {
+  providerUsage?: ProviderUsage | null;
   contextWindow: number | null; configuredMaxOutputTokens: number; effectiveMaxOutputTokens: number;
   estimatedInputTokens: number; capacitySource: string; estimated: boolean; reduced: boolean;
 };
@@ -104,6 +106,7 @@ export type ReminderOccurrence = {
   id: RecordId; reminderId: RecordId; name: string; content: string; scheduledAt: string;
   status: ReminderStatus; deliveryState: ReminderDeliveryState;
   completedAt: string | null; createdAt: string;
+  autoCompleted?: boolean;
 };
 export type ReminderOccurrencePage = { items: ReminderOccurrence[]; nextAfterId: RecordId | null };
 export type PetActivity = {
@@ -119,6 +122,8 @@ export type PetWanderLayout = {
   area: PetWanderPoint & { width: number; height: number };
   body: PetWanderPoint & { width: number; height: number };
   anchor?: PetWanderPoint & { width: number; height: number };
+  freeY?:number;
+  contact?:{bounds:PetWanderPoint & {width:number;height:number};rows:number[]};
   offset: PetWanderPoint; paused: boolean;
 };
 export type PetWanderTarget = Pick<PetWanderLayout, "personaId" | "sessionId" | "contextRevision" | "layoutRevision" | "offset">;
@@ -139,6 +144,7 @@ export type AppError = { code: string; message: string; field?: string };
 export type SecretUpdate = { action: "keep" } | { action: "clear" } | { action: "set"; value: string };
 export type WeatherSettings = { apiHost: string | null; hasApiKey: boolean };
 export type WeatherView = {
+  information?: WeatherInformation | null;
   contextRevision: number;
   availability: "available" | "cached" | "stale" | "unavailable";
   data: {
@@ -149,6 +155,20 @@ export type WeatherView = {
   error: { code: string; message: string; field?: string } | null;
 };
 export type WeatherInput = { apiHost: string | null; apiKey?: SecretUpdate };
+export type WeatherCare = { personaId:string; name:string; text:string };
+export type WeatherCareStatus = {eventKey:string;state:"generating"|"failed"|"ready";error:string|null};
+export type WeatherFeed<T> = {items:T[];checkedAt:string|null;error:string|null;care:WeatherCare|null;careStatus?:Record<string,WeatherCareStatus>};
+export type WeatherWarning = {id:string;title:string;description:string;level:string;issuedAt:string;url:string;source:string};
+export type WeatherTyphoon = {id:string;name:string;intensity:string;publishedAt:string;windSpeed:number|null;distanceKm:number;points:{longitude:number;latitude:number;forecast:boolean}[];url:string};
+export type WeatherInformation = {
+ position:{latitude:number;longitude:number;locatedAt:string};
+ region:{name:string;province:string;city:string;district:string}|null;
+ forecast:{fetchedAt:string;feelsLike:number|null;humidity:number|null;windSpeed:number|null;windDirection:number|null;
+ hourly:{time:number;temperature:number|null;rain:number|null;code:number}[];
+ daily:{date:string;low:number|null;high:number|null;rain:number|null;uv:number|null;sunrise:number|null;sunset:number|null;code:number}[]}|null;
+ forecastError:string|null;warnings:WeatherFeed<WeatherWarning>;typhoons:WeatherFeed<WeatherTyphoon>;
+ links:{title:string;url:string;summary:string}[];searchError:string|null;
+};
 export type Provider = {
   purposes?:string[];
   createdAt?:string|null;updatedAt?:string|null;
@@ -177,7 +197,7 @@ export type ChatBackgroundInput = {
   image: { fileName: string; base64: string } | null; reset: boolean;
   appearance?: ChatAppearance;
 };
-export type ExpressionLibrary = { lifted?:string[]; click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[]; standby: string[]; craving?:string[]; craving_favorite?:string[]; eating_favorite?:string[] };
+export type ExpressionLibrary = { wait_pet?:string[]; toss_up?:string[]; toss_down?:string[]; landing?:string[]; error?:string[]; lifted?:string[]; click: { happy: string[]; surprised: string[]; shy: string[] }; hungry: string[]; eating: string[]; sleepy: string[]; bored: string[]; thinking: string[]; standby: string[]; craving?:string[]; craving_favorite?:string[]; eating_favorite?:string[] };
 export type CurrentContext = { personaId: RecordId; sessionId: RecordId | null; contextRevision: number };
 export type UserProfile = { id: RecordId; name: string; content: string; createdAt: string; updatedAt: string };
 export type Session = {
@@ -193,7 +213,7 @@ export type Message = {
 };
 export type MessagePage = { items: Message[]; nextAfterId: RecordId | null };
 export type NumericSettingKey =
-  | "pet_chat_autocollapse_minutes" | "hungry_minutes" | "standby_minutes" | "idle_event_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
+  | "pet_chase_cooldown_minutes" | "pet_chat_autocollapse_minutes" | "hungry_minutes" | "standby_minutes" | "idle_event_minutes" | "sleep_min_minutes" | "sleep_max_minutes"
   | "short_memory_min_chars" | "short_memory_max_chars" | "long_memory_min_chars" | "long_memory_max_chars"
   | "memory_merge_count" | "recent_message_count" | "recent_long_memory_count"
   | "travel_journal_min_chars" | "travel_journal_max_chars" | "tool_call_rounds" | "notebook_max_chars"
@@ -259,7 +279,7 @@ export type WebSearchProviderInput = { name: string; kind: WebSearchKind; baseUr
 
 export type LetterKind = "user" | "midway" | "return" | "reply";
 export interface Letter {
-  id: RecordId; sessionId: RecordId; travelId: RecordId | null;
+  id: RecordId; sessionId: RecordId; travelId: RecordId | null; travel?:TravelOrigin|null;
   sender: "user" | "ai"; content: string; replyToId: RecordId | null;
   hasBeenReplied: boolean; replyDueAt: string | null;
   replyState: "none" | "pending" | "completed" | "cancelled";
@@ -305,10 +325,10 @@ export type AccessoryCraftPreview = {
 };
 
 /** 普通文字伴手礼，旅行饰品在Accessory表和管理页中展示。 */
-export type Souvenir = { id:RecordId;sessionId:RecordId;travelId:RecordId|null;content:string;note:string;isFavorite:boolean;createdAt:string };
+export type Souvenir = {title?:string|null;imageFile?:string|null;travel?:TravelOrigin|null; id:RecordId;sessionId:RecordId;travelId:RecordId|null;content:string;note:string;isFavorite:boolean;createdAt:string };
 export type GiftGenerationStatus = { active:RecordId|null;pendingCount:number;failures:TravelGenerationStatus["failures"];notice:string|null };
 
-export type TravelJournalSummary = { id:RecordId;sessionId:RecordId;travelId:RecordId;title:string;createdAt:string;updatedAt:string };
+export type TravelJournalSummary = {travel?:TravelOrigin|null; id:RecordId;sessionId:RecordId;travelId:RecordId;title:string;createdAt:string;updatedAt:string };
 export type TravelJournal = TravelJournalSummary & {content:string};
 export type TravelJournalExpected = Pick<TravelJournal,"title"|"content"|"updatedAt">;
 export type TravelJournalDeleted = {deletedId:RecordId;sessionId:RecordId;travelId:RecordId};
@@ -361,7 +381,9 @@ export interface ReminderEmailDelivery { id: string; recipient: string; subject:
 export interface ReminderEmailView { connection: ReminderEmailConnection; revision: number; enabled: boolean; verified: boolean; hasSecret: boolean; deliveries: ReminderEmailDelivery[] }
 export interface ReminderEmailInput { connection: ReminderEmailConnection; revision: number; secret: { action: "keep" | "clear" } | { action: "set"; value: string } }
 
-export type PetArtCategory = "normal"|"standby"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat"|"craving"|"craving_favorite"|"eating_favorite"|"peek_left"|"peek_right"|"rest_sit"|"rest_lie"|"walk_left"|"walk_right"|"lifted";
+export type PetArtCategory = "normal"|"standby"|"click"|"hungry"|"eating"|"sleepy"|"bored"|"thinking"|"chat"|"craving"|"craving_favorite"|"eating_favorite"|"peek_left"|"peek_right"|"rest_sit"|"rest_lie"|"walk_left"|"walk_right"|"lifted"|"error"|"toss_up"|"toss_down"|"landing"|"wait_pet";
 export type PetArtworkInput = {kind:"base"|"expression";name:string;prompt:string;description:string;category:PetArtCategory;enabled:boolean};
 export type PetArtwork = PetArtworkInput & {id:string;personaId:string;imageFile:string|null;previewFile:string|null;revision:number;createdAt:string;updatedAt:string};
 export type PetCreation = {enabled:boolean;revision:number;items:PetArtwork[]};
+
+export type TravelOrigin = {id:RecordId;destination:string|null;startedAt:string};

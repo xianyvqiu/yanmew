@@ -1,0 +1,8 @@
+{
+  "gpt/toss_down": "5411495874acf882f064061be38bf6cc26a1af686dc002a464d79abd989deed1",
+  "gemini/toss_down": "a5f59f7dc809d107474ac14023f71deb76f961872f3e09e334ac29c6d5fdcc2c",
+  "claude/toss_up": "b7d7fb3db8e400437b813d0eff565959d4330e4d5853db93de9bc049ed780e9e",
+  "gemini/toss_up": "24236c1b6afe229053b4ae0c6920f5f88c95bfa57b1d30e6a27edea275fecffa",
+  "gpt/toss_up": "8481aa239e65f99d2736df85e02539a22977566be84f0b8857547e8a29ec77a6",
+  "claude/toss_down": "6a4e946015a5df61fcdc998b1bdb5439a8957e7761eff25959462c23109e0a12"
+}

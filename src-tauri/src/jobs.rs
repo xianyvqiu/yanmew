@@ -10,6 +10,7 @@ pub async fn run(
     proactive_events: Arc<dyn crate::events::ProactiveEventSink>,
     letter_events: Arc<dyn crate::events::LetterEventSink>,
     travel_events: Arc<dyn crate::events::TravelEventSink>,
+    location_source: Arc<dyn crate::platform::contracts::LocationSource>,
 ) {
     let mut revision = None;
     let mut last_error = None;
@@ -21,10 +22,14 @@ pub async fn run(
     let mut calendar_date = None;
     let mut calendar_error = None;
     let mut real_money = crate::real_money::cycles::Worker::default();
+    let mut weather = crate::weather::Worker::default();
+    let mut weather_information = crate::weather::information::Worker::default();
     loop {
         if runtime.jobs_cancel.check().is_err() {
             break;
         }
+        weather.tick(&runtime, location_source.clone(), sink.clone());
+        weather_information.tick(&runtime, sink.clone());
         let money_runtime=runtime.clone();
         match tauri::async_runtime::spawn_blocking(move||money_runtime.read(|s,_|real_money.tick(&mut s.connection,money_runtime.clock.sample()?.utc)).map(|changed|(real_money,changed))).await {
             Ok(Ok((worker,changed)))=>{real_money=worker;if changed{proactive_events.real_money_changed();}},
@@ -85,6 +90,7 @@ pub async fn run(
                 reminder_error = Some(error.message);
             }
         }
+        crate::reminders::presentation::tick(&runtime, reminders.clone());
         crate::reminder_email::tick(&runtime);
         let worker = runtime.clone();
         let result = tauri::async_runtime::spawn_blocking(move || worker.pet_view())

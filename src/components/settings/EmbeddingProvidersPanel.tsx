@@ -64,6 +64,7 @@ export default function EmbeddingProvidersPanel() {
     {loading && <p role="status">正在读取 Embedding 配置…</p>}
     {error && (!error.field || editing === undefined) && <p className="ym-page-error" role="alert">{error.message}</p>}
     {notice && <p role="status">{notice}</p>}
+    {editing !== undefined && <ProviderForm embedding key={editing?.id ?? "new"} provider={editing ?? null} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
     {!loading && <label className="ym-field">当前 Embedding 模型<select disabled={disabled} value={providers.find(p => p.isActive)?.id ?? ""} onChange={event => { void run(() => embeddingApi.select(event.target.value), "模型已切换，后台将恢复补建"); }}>
       {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name} · {provider.kind === "local" ? "本地" : "联网"}</option>)}
     </select></label>}
@@ -71,7 +72,7 @@ export default function EmbeddingProvidersPanel() {
       {status.unavailable > 0 && <p>{status.unavailable} 条超出本地模型长度，本次仅使用全文搜索。</p>}
       {status.error && <p className="ym-page-error">{status.error.message}；全文搜索仍可使用。修复后点击当前模型的“测试连接”恢复补建。</p>}
     </div>}
-    {editing !== undefined && <ProviderForm embedding provider={editing ?? null} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
+
     <ul className="ym-provider-list">{providers.map(provider => <li key={provider.id}>
       <div className="ym-page-heading"><h3>{provider.name}</h3><span>{provider.isBuiltin ? "内置 · " : ""}{provider.isActive ? "当前项" : ""}</span></div>
       <dl><dt>模型</dt><dd>{provider.model}</dd><dt>运行方式</dt><dd>{provider.kind === "local" ? "本地 CPU，无需联网" : provider.baseUrl}</dd>{provider.kind === "online" && <><dt>API Key</dt><dd>{provider.hasApiKey ? "已保存" : "未保存"}</dd></>}</dl>

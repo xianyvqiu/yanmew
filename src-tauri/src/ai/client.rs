@@ -72,6 +72,7 @@ impl AiClient {
         crate::providers::validate_url(&config.base_url)?;
         let mut body = openai_compatible::request_body(&config.model, input, stream)?;
         openai_compatible::apply_message_protocol(&config.base_url, &mut body);
+        super::usage::request(&config.base_url, &mut body);
         if crate::chat_capacity::output_parameter(config) == "max_completion_tokens" {
             if let Some(value) = body.as_object_mut().and_then(|v| v.remove("max_tokens")) {
                 body["max_completion_tokens"] = value;
@@ -88,7 +89,8 @@ impl AiClient {
             request = request.bearer_auth(key);
         }
         let response = cancel
-            .wait(self.timeouts.first_event, async {
+            // 非流式服务可能直到整段生成完成才返回响应头，不能套用首 token 时限。
+            .wait(if stream { self.timeouts.first_event } else { self.timeouts.total }, async {
                 request.send().await.map_err(transport)
             })
             .await?;
@@ -152,7 +154,7 @@ impl AiClient {
                 let mut response = self.send(config, input, false, cancel).await?;
                 let mut bytes = Vec::new();
                 while let Some(chunk) = cancel
-                    .wait(self.timeouts.idle, async {
+                    .wait(self.timeouts.total, async {
                         response.chunk().await.map_err(transport)
                     })
                     .await?
@@ -163,7 +165,7 @@ impl AiClient {
                     bytes.extend_from_slice(&chunk);
                 }
                 cancel.check()?;
-                openai_compatible::complete_response(&bytes).map_err(|mut error| {
+                (if input.tools.is_empty(){openai_compatible::complete_response(&bytes)}else{openai_compatible::complete_tool_response(&bytes)}).map_err(|mut error| {
                     if error.code == "AI_TRUNCATED" {
                         error.message = format!(
                             "模型达到本次最大输出上限（{} tokens，可能包含思考内容），尚未生成完整结果；可在提供商高级设置调整最大输出。原数据未修改",

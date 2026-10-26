@@ -34,7 +34,7 @@ it("月历标出今天、农历和多个节日，点击后显示全部详情",as
   fireEvent.click(screen.getByRole("button",{name:"新增日期"}));expect(add).toHaveBeenCalledWith("2026-10-14");
 });
 it("新连接只填写连接信息，不再要求填写某一种用途的模型",async()=>{
-  render(<ProvidersPanel/>);await screen.findByRole("button",{name:"共享连接"});fireEvent.click(screen.getByRole("button",{name:"新增提供商"}));
+  render(<ProvidersPanel/>);await screen.findByRole("heading",{name:"共享连接"});fireEvent.click(screen.getByRole("button",{name:"新增提供商"}));
   expect(screen.queryByLabelText("模型名称")).toBeNull();fireEvent.change(screen.getByLabelText("提供商名称"),{target:{value:"新连接"}});fireEvent.click(screen.getByRole("button",{name:"保存"}));
   await waitFor(()=>expect(api.createProvider).toHaveBeenCalledWith({name:"新连接",baseUrl:null,apiKey:{action:"keep"}}));
 });
@@ -68,7 +68,7 @@ it("人设列表仅显示摘要，进入详情后初始设定可以独立修改"
 });
 it("插件列表直接显示三个操作，自带卸载按钮灰色禁用",()=>{
   render(<PluginManagerPanel/>);const built=within(screen.getByRole("button",{name:"自带游戏"}).closest("article")!);expect((built.getByRole("button",{name:"卸载"}) as HTMLButtonElement).disabled).toBe(true);
-  expect(built.getByRole("button",{name:"停用"})).toBeTruthy();expect(built.getByRole("button",{name:"清除数据并重载"})).toBeTruthy();
+  expect(built.getByRole("switch",{name:"启用 自带游戏"}).getAttribute("aria-checked")).toBe("true");expect(built.getByRole("button",{name:"清除数据并重载"})).toBeTruthy();
   const community=within(screen.getByRole("button",{name:"社区游戏"}).closest("article")!);expect((community.getByRole("button",{name:"卸载"}) as HTMLButtonElement).disabled).toBe(false);
 });
 it("天气随本地时刻切换昼夜，不修改应用主题",()=>{

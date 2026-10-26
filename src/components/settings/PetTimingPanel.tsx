@@ -5,7 +5,7 @@ import "./PetTimingPanel.css";
 
 const MAX_INTEGER = 2_147_483_647;
 const timingKeys = [
-  "pet_chat_autocollapse_minutes", "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
+  "pet_chase_cooldown_minutes", "pet_chat_autocollapse_minutes", "hungry_minutes", "standby_minutes", "idle_event_minutes", "sleep_min_minutes", "sleep_max_minutes",
   "travel_min_online_hours", "travel_max_online_hours",
   "intimacy_threshold_1", "intimacy_threshold_2", "intimacy_threshold_3", "intimacy_threshold_4",
   "accessory_cost_1", "accessory_cost_2", "accessory_cost_3", "accessory_cost_4",
@@ -15,14 +15,15 @@ type Draft = Record<PetTimingKey, string>;
 type FieldErrors = Partial<Record<PetTimingKey, string>>;
 
 const definitions: Record<PetTimingKey, { label: string; unit: string; group: string }> = {
+  pet_chase_cooldown_minutes: {label:"追逐鼠标冷却",unit:"分钟",group:"timing"},
   pet_chat_autocollapse_minutes: {label:"宠窗聊天自动收起（0关闭）",unit:"分钟",group:"timing"},
   hungry_minutes: { label: "饥饿触发", unit: "分钟", group: "timing" },
   standby_minutes: { label: "待机等待时间", unit: "分钟", group: "timing" },
   idle_event_minutes: { label: "无聊／睡觉触发时间", unit: "分钟", group: "timing" },
   sleep_min_minutes: { label: "睡眠最短时长", unit: "分钟", group: "timing" },
   sleep_max_minutes: { label: "睡眠最长时长", unit: "分钟", group: "timing" },
-  travel_min_online_hours: { label: "出行最短在线时长", unit: "小时", group: "travel" },
-  travel_max_online_hours: { label: "出行最长在线时长", unit: "小时", group: "travel" },
+  travel_min_online_hours: { label: "再次出门前的最短等待", unit: "小时", group: "travel" },
+  travel_max_online_hours: { label: "再次出门前的最长等待", unit: "小时", group: "travel" },
   intimacy_threshold_1: { label: "档位 1 亲密度", unit: "点", group: "levels" },
   intimacy_threshold_2: { label: "档位 2 亲密度", unit: "点", group: "levels" },
   intimacy_threshold_3: { label: "档位 3 亲密度", unit: "点", group: "levels" },
@@ -65,7 +66,7 @@ function validate(draft: Draft): FieldErrors {
   }
   const pairs: [PetTimingKey, PetTimingKey, string][] = [
     ["sleep_min_minutes", "sleep_max_minutes", "睡眠最长时长须大于或等于最短时长。"],
-    ["travel_min_online_hours", "travel_max_online_hours", "出行最长在线时长须大于或等于最短时长。"],
+    ["travel_min_online_hours", "travel_max_online_hours", "再次出门前的最长等待须大于或等于最短时长。"],
   ];
   for (const [minimum, maximum, message] of pairs) {
     if (parsed[minimum] !== undefined && parsed[maximum] !== undefined && parsed[minimum]! > parsed[maximum]!) errors[maximum] = message;
@@ -207,10 +208,21 @@ export default function PetTimingPanel() {
 
   return <section className="ym-page-card ym-pet-timing-panel" aria-labelledby={`${id}-title`}>
     <h2 id={`${id}-title`}>时间与桌宠</h2>
-    <p className="ym-page-note">计时规则为全局配置，桌宠活动时按当前会话分别累计。</p>
+    <p className="ym-page-note">计时规则为全局配置，桌宠活动时按当前会话分别累计。全屏游走在“…”中开启；停靠、拖动、待机或睡觉时不移动。快捷输入、回复气泡或错误面板展开时暂停，收起后恢复。聊天详情显示时也会暂停，关闭或最小化后可恢复游走。</p>
     {readError ? <div className="ym-page-error" role="alert">配置读取失败：{readError}
       <button className="ym-button" type="button" onClick={() => void readSettings()}>重试读取</button>
     </div> : loading ? <p role="status">正在读取设置…</p> : draft && <form onSubmit={save}>
+      <div className="ym-pet-timing-toolbar"><div className="ym-pet-timing-actions"><span className="ym-pet-timing-status">{saving ? "正在保存设置" : changed ? "有未保存的修改" : "设置已同步"}</span>
+        <button className="ym-button" type="button" disabled={saving || defaultsLoading} onClick={() => void restoreDefaults()}>
+          {defaultsLoading ? "正在读取默认值…" : "恢复默认值"}
+        </button>
+        <button className="ym-button ym-pet-timing-save" type="submit" disabled={saving || defaultsLoading || !changed || hasErrors}>
+          {saving ? "正在保存…" : "保存"}
+        </button>
+      </div>
+      {operationError && <p className="ym-page-error" role="alert">操作失败：{operationError}</p>}
+      {notice && <p className="ym-pet-timing-notice" role="status">{notice}</p>}
+      </div>
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>计时</legend><p className="ym-page-note">聊天自动收起从鼠标离开且无操作后计算，0表示关闭；生成回复、读取图片或有未发送草稿时保留输入和气泡，不删除聊天记录。</p>
         <div className="ym-pet-timing-grid">{timingKeys.filter(key => definitions[key].group === "timing").map(field)}</div>
@@ -219,7 +231,8 @@ export default function PetTimingPanel() {
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>出行</legend>
         <div className="ym-pet-timing-grid">{timingKeys.filter(key => definitions[key].group === "travel").map(field)}</div>
-        <p className="ym-page-note">只有当前会话在家空闲时累计出行时间。范围变化只影响以后抽取的旅行倒计时。</p>
+        <p className="ym-page-note">这两个值决定在家等待多久后再次出门，不是旅行持续时间。系统在范围内随机抽取一次等待时长，只在当前会话在家且可空闲计时时累计；暂停或关闭期间不补算，普通互动不会清空已累计时间。修改只影响下次抽取，不重算当前等待。</p>
+        <p className="ym-page-note">出门时会另外确定返回时间，在“出行”页查看“计划返回”。到点自动回来，关闭软件期间也照常计时。切换人设或会话会取消当前旅行，不发放返回奖励。</p>
       </fieldset>
       <fieldset className="ym-pet-timing-group" disabled={saving}>
         <legend>四档亲密度与饰品价格</legend>
@@ -231,16 +244,7 @@ export default function PetTimingPanel() {
         </div>)}</div>
         <p className="ym-page-note">饰品制作先使用尚未使用的最低档，前三档各一次，第四档可重复。修改档位不会退还或补发喵币，也不会改变已使用档位。</p>
       </fieldset>
-      <div className="ym-pet-timing-actions">
-        <button className="ym-button" type="button" disabled={saving || defaultsLoading} onClick={() => void restoreDefaults()}>
-          {defaultsLoading ? "正在读取默认值…" : "恢复默认值"}
-        </button>
-        <button className="ym-button ym-pet-timing-save" type="submit" disabled={saving || defaultsLoading || !changed || hasErrors}>
-          {saving ? "正在保存…" : "保存"}
-        </button>
-      </div>
-      {operationError && <p className="ym-page-error" role="alert">操作失败：{operationError}</p>}
-      {notice && <p className="ym-pet-timing-notice" role="status">{notice}</p>}
+
     </form>}
   </section>;
 }

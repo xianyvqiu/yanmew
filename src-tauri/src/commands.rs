@@ -767,9 +767,11 @@ pub async fn interact_pet(
 ) -> AppResult<crate::pet::controller::View> {
     authorize(&window)?;
     let worker = runtime.inner().clone();
-    let view = tauri::async_runtime::spawn_blocking(move || worker.pet_interact(input))
-        .await
-        .map_err(|_| AppError::storage())??;
+    let petted=if window.label()=="main" {app.state::<crate::pet_desktop::Desktop>().claim_petting(&input)?}else{None};
+    let happy=petted.is_some();
+    let result = tauri::async_runtime::spawn_blocking(move || worker.pet_interact_with_petting(input,happy)).await;
+    if let Some(snapshot)=petted {crate::pet_desktop::publish(&app,&snapshot);}
+    let view=result.map_err(|_| AppError::storage())??;
     let _ = app.emit(crate::events::PET_ACTIVITY_CHANGED, &view);
     Ok(view)
 }
@@ -784,17 +786,26 @@ pub async fn set_pet_dragging(
         return Err(AppError::new("PERMISSION_DENIED", "只有主宠窗可以更新拖动状态"));
     }
     let position = window.state::<crate::pet_position::WindowPosition>().inner().clone();
-    if dragging { let desktop=window.state::<crate::pet_desktop::Desktop>(); desktop.begin_drag()?; crate::pet_desktop::publish(window.app_handle(),&desktop.snapshot()?); position.begin_drag(&window)?; }
+    if dragging { let desktop=window.state::<crate::pet_desktop::Desktop>(); desktop.begin_drag()?; desktop.capture_drag_cursor(&window)?; crate::pet_desktop::publish(window.app_handle(),&desktop.snapshot()?); position.begin_drag(&window)?; crate::pet_desktop::track_drag(&window); }
     if !dragging { return finish_pet_drag(&window).await; }
     let worker = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(true))).await.map_err(|_|AppError::storage())?
 }
 
 pub(crate) async fn finish_pet_drag(window: &WebviewWindow) -> AppResult<()> {
-    if !window.state::<crate::pet_desktop::Desktop>().is_dragging()? { return Ok(()); }
+    let desktop=window.state::<crate::pet_desktop::Desktop>();
+    if !desktop.claim_drag_finish()? { return Ok(()); }
+    let velocity=desktop.release_velocity(window.scale_factor().map_err(|_|AppError::storage())?)?;
     let runtime = window.state::<Runtime>().inner().clone();
     let worker = runtime.clone();
     let result = tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(false))).await.map_err(|_|AppError::storage())?;
+    if velocity.is_some() && result.is_ok() {
+        desktop.end_drag()?;
+        window.state::<crate::pet_position::WindowPosition>().inner().clone().finish_drag(window,runtime.clone()).await?;
+        if crate::pet_desktop::try_launch(window,runtime.clone(),velocity).await? { return result; }
+        // 未满足抛接资格时继续普通吸附，重新标记以保存吸附后的最终位置。
+        window.state::<crate::pet_position::WindowPosition>().begin_drag(window)?;
+    }
     let docked = crate::pet_desktop::finish_drag(window, runtime.clone()).await;
     let ended = window.state::<crate::pet_desktop::Desktop>().end_drag();
     let saved = window.state::<crate::pet_position::WindowPosition>().inner().clone().finish_drag(window, runtime).await;
@@ -841,11 +852,11 @@ async fn check_provider(runtime: Runtime, id: i64) -> AppResult<()> {
     })
     .await?;
     let client=runtime.ai.clone()?;
-    let result = crate::providers::test_connection(&client, crate::providers::ConnectionTest {
+    let result = if config.model=="未配置" {crate::providers::probe::test(&client,&config).await} else {crate::providers::test_connection(&client, crate::providers::ConnectionTest {
         base_url:config.base_url.clone(),model:config.model.clone(),api_key:config.api_key.clone(),
         max_output_tokens:config.max_output_tokens,context_window_override:config.context_window_override,
-    }).await;
-    if result.is_ok() {client.discover_capacity(&config).await;}
+    }).await};
+    if result.is_ok() && config.model!="未配置" {client.discover_capacity(&config).await;}
     let health_result = result.clone();
     let worker = runtime.clone();
     storage(runtime, move |s, p| {
@@ -1245,6 +1256,7 @@ pub async fn list_messages(
     context_revision: u64,
     after_id: Option<String>,
     limit: Option<i64>,
+    backward: Option<bool>,
 ) -> AppResult<crate::models::MessagePage> {
     authorize(&window)?;
     let persona_id = parse_id(&persona_id)?;
@@ -1258,7 +1270,8 @@ pub async fn list_messages(
                 "当前会话已经改变，请刷新后重试",
             ));
         }
-        crate::sessions::messages(
+        let read=if backward.unwrap_or(false){crate::sessions::recent_messages}else{crate::sessions::messages};
+        read(
             &store.connection,
             persona_id,
             session_id,
@@ -1299,6 +1312,18 @@ pub fn cancel_weather_refresh(window: WebviewWindow, runtime: State<'_, Runtime>
     Ok(())
 }
 #[tauri::command]
+pub async fn refresh_weather_information(window: WebviewWindow, runtime: State<'_, Runtime>, context_revision:u64)->AppResult<()> {
+    authorize(&window)?;
+    let events=std::sync::Arc::new(crate::platform::windows::events::PetEvents(window.app_handle().clone()));
+    crate::weather::information::refresh(runtime.inner().clone(),context_revision,events).await
+}
+#[tauri::command]
+pub async fn retry_weather_care(window:WebviewWindow,runtime:State<'_,Runtime>,context_revision:u64,kind:String)->AppResult<()> {
+    authorize(&window)?;
+    let events=std::sync::Arc::new(crate::platform::windows::events::PetEvents(window.app_handle().clone()));
+    crate::weather::information::retry_care(runtime.inner().clone(),context_revision,&kind,events).await
+}
+#[tauri::command]
 pub async fn save_weather_settings(
     window: WebviewWindow,
     runtime: State<'_, Runtime>,
@@ -1309,6 +1334,8 @@ pub async fn save_weather_settings(
     storage(runtime.inner().clone(), move |s, p| {
         let settings = crate::config::save_weather(&mut s.connection, input, p)?;
         requests.cancel_key("weather");
+        requests.cancel_key("weather-information");
+        requests.cancel_key("weather-care");
         s.weather = Default::default();
         Ok(settings)
     })
@@ -2355,6 +2382,14 @@ pub async fn list_souvenirs(window:WebviewWindow,runtime:State<'_,Runtime>,conte
     storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::list(&store.connection,session,before,limit)}).await
 }
 #[tauri::command]
+pub async fn get_souvenir_image_settings(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<bool>{authorize(&window)?;storage(runtime.inner().clone(),|store,_|crate::souvenirs::images_enabled(&store.connection)).await}
+#[tauri::command]
+pub async fn set_souvenir_image_settings(window:WebviewWindow,app:AppHandle,runtime:State<'_,Runtime>,enabled:bool)->AppResult<bool>{authorize(&window)?;let result=storage(runtime.inner().clone(),move|store,_|crate::souvenirs::set_images_enabled(&store.connection,enabled)).await?;let _=app.emit("souvenir-image-settings-changed",enabled);Ok(result)}
+#[tauri::command]
+pub async fn get_souvenir_image(window:WebviewWindow,runtime:State<'_,Runtime>,context:ChatContextInput,id:String)->AppResult<crate::accessories::images::ImageView>{
+ authorize(&window)?;let(persona,session,revision)=accessory_target(&context)?;let id=parse_id(&id)?;let worker=runtime.inner().clone();tauri::async_runtime::spawn_blocking(move||crate::souvenirs::image(&worker,persona,session,revision,id)).await.map_err(|_|AppError::storage())?
+}
+#[tauri::command]
 pub async fn get_souvenir(window:WebviewWindow,runtime:State<'_,Runtime>,context:crate::memory::management::Context,id:String)->AppResult<crate::models::Souvenir> {
     authorize(&window)?;let id=parse_id(&id)?;
     storage(runtime.inner().clone(),move|store,_|{let session=souvenir_scope(store,&context)?;crate::souvenirs::get(&store.connection,session,id)}).await
@@ -2547,3 +2582,15 @@ pub async fn upload_accessory_craft(window:WebviewWindow,app:AppHandle,runtime:S
 
 #[tauri::command]
 pub async fn get_pet_mail_status(window:WebviewWindow,runtime:State<'_,Runtime>,persona_id:String,session_id:String,context_revision:u64)->AppResult<serde_json::Value>{authorize(&window)?;let scope=letter_scope(&persona_id,&session_id,context_revision)?;storage(runtime.inner().clone(),move|s,_|{crate::letters::require_current(&s.connection,s.context_revision,scope)?;let trip=crate::travel::queries::current(&s.connection,scope.session)?;let trip_id=trip.map(|t|t.id);let unread=if let Some(id)=trip_id.as_deref(){s.connection.query_row("SELECT count(*) FROM letters WHERE session_id=?1 AND travel_id=?2 AND sender='ai' AND is_read=0",rusqlite::params![scope.session,parse_id(id)?],|r|r.get::<_,i64>(0))?}else{0};Ok(serde_json::json!({"travelId":trip_id,"unread":unread}))}).await}
+
+#[tauri::command]
+pub async fn get_onboarding_pending(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<bool> {
+    authorize(&window)?;
+    storage(runtime.inner().clone(), |s, _| crate::config::onboarding_pending(&s.connection)).await
+}
+#[tauri::command]
+pub async fn finish_onboarding(window: WebviewWindow, runtime: State<'_, Runtime>) -> AppResult<()> {
+    authorize(&window)?;
+    if window.label() != "settings" { return Err(AppError::new("PERMISSION_DENIED", "请在设置窗口完成新手教程")); }
+    storage(runtime.inner().clone(), |s, _| crate::config::finish_onboarding(&s.connection)).await
+}

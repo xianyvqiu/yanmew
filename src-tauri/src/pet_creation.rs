@@ -1,4 +1,5 @@
 //! 人设级图片桌宠：原业务状态不变，正式图片与待确认预览分开持久化。
+mod prompts;
 use crate::{
     error::{AppError, AppResult},
     runtime::Runtime,
@@ -129,7 +130,7 @@ pub fn save(
         || input.description.chars().count() > 1000
         || !["base", "expression"].contains(&input.kind.as_str())
         || ![
-            "normal", "standby", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat", "craving", "craving_favorite", "eating_favorite", "peek_left", "peek_right", "rest_sit", "rest_lie", "walk_left", "walk_right", "lifted",
+            "normal", "standby", "click", "hungry", "eating", "sleepy", "bored", "thinking", "chat", "craving", "craving_favorite", "eating_favorite", "peek_left", "peek_right", "rest_sit", "rest_lie", "walk_left", "walk_right", "lifted", "error", "toss_up", "toss_down", "landing", "wait_pet",
         ]
         .contains(&input.category.as_str())
     {
@@ -233,13 +234,14 @@ pub fn preview(
 ) -> AppResult<Artwork> {
     preview_guarded(runtime, persona, id, revision, bytes, None)
 }
+struct GenerationGuard<'a>{library_revision:u64,config_revision:u64,cancel:&'a crate::state::Cancellation,persona:&'a prompts::Persona}
 fn preview_guarded(
     runtime: &Runtime,
     persona: i64,
     id: i64,
     revision: u64,
     bytes: &[u8],
-    guard: Option<(u64, u64, &crate::state::Cancellation)>,
+    guard: Option<GenerationGuard<'_>>,
 ) -> AppResult<Artwork> {
     let png = normalize(bytes)?;
     let paths = runtime.paths.as_ref().map_err(Clone::clone)?;
@@ -253,10 +255,11 @@ fn preview_guarded(
     let mut published = None;
     let result = runtime.read(|s, _| {
         require_current(&s.connection, persona)?;
-        if let Some((library_revision, config_revision, cancel)) = guard {
-            cancel.check()?;
-            if library(&s.connection, persona)?.revision != library_revision
-                || crate::image_generation::revision(&s.connection)? != config_revision
+        if let Some(guard) = guard {
+            guard.cancel.check()?;
+            guard.persona.require_unchanged(&s.connection,persona)?;
+            if library(&s.connection, persona)?.revision != guard.library_revision
+                || crate::image_generation::revision(&s.connection)? != guard.config_revision
             {
                 return Err(conflict());
             }
@@ -376,7 +379,7 @@ pub async fn generate(
     let lease = runtime
         .requests
         .start(format!("pet-art:{persona}:{id}"), persona)?;
-    let (art, base, config, library_revision) = runtime.read(|s, p| {
+    let (art, base, config, library_revision, persona_data) = runtime.read(|s, p| {
         require_current(&s.connection, persona)?;
         let a = get(&s.connection, persona, id)?;
         if a.revision != revision {
@@ -397,21 +400,25 @@ pub async fn generate(
             .ok_or_else(|| AppError::validation("base", "请先接受初始形象"))?;
         let cfg = crate::image_generation::snapshot(&s.connection, p)?
             .ok_or_else(|| AppError::validation("image", "请先在提供商中开启生图并配置模型"))?;
-        Ok((a, base, cfg, lib.revision))
+        Ok((a, base, cfg, lib.revision, prompts::Persona::read(&s.connection,persona)?))
     })?;
     let paths = runtime.paths.as_ref().map_err(Clone::clone)?;
     let url = crate::accessories::images::read(paths, &base)?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(url.split_once(',').ok_or_else(AppError::storage)?.1)
         .map_err(|_| AppError::storage())?;
+    let requirement=prompts::compose(&art,&persona_data)?;
+    runtime.read(|s,_|{lease.cancel.check()?;require_current(&s.connection,persona)?;persona_data.require_unchanged(&s.connection,persona)})?;
     let result = crate::image_generation::openai_compatible::edit(
         &runtime.ai.clone()?,
         &config,
         &bytes,
-        &art.prompt,
+        &requirement,
         &lease.cancel,
     )
     .await?;
+    let cutout_paths = paths.clone(); let cutout_cancel = lease.cancel.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || crate::background_removal::ensure(&cutout_paths, &result, &cutout_cancel, false)).await.map_err(|_| AppError::storage())??;
     lease.cancel.check()?;
     // 最终检查与预览发布在同一个存储串行区间内复核，配置变化不会成为正式结果。
     runtime.read(|s, _| {
@@ -429,7 +436,7 @@ pub async fn generate(
         id,
         revision,
         &result,
-        Some((library_revision, config.revision, &lease.cancel)),
+        Some(GenerationGuard{library_revision,config_revision:config.revision,cancel:&lease.cancel,persona:&persona_data}),
     )?;
     Ok(saved)
 }
@@ -453,9 +460,9 @@ pub fn choices(c: &Connection, persona: i64) -> AppResult<Option<Vec<Artwork>>> 
             .collect(),
     ))
 }
-/// 停靠专属动作由窗口状态选择，不混入普通聊天的AI表情候选。
+/// 聊天开放当前人设全部已启用正式图，用户新增表情无需固定类别白名单。
 pub fn chat_choices(c:&Connection,persona:i64)->AppResult<Option<Vec<Artwork>>> {
-    Ok(choices(c,persona)?.map(|items|items.into_iter().filter(|a|!matches!(a.category.as_str(),"peek_left"|"peek_right"|"rest_sit"|"rest_lie"|"walk_left"|"walk_right"|"lifted")).collect()))
+    choices(c,persona)
 }
 pub fn select(
     c: &Connection,
@@ -485,6 +492,14 @@ pub fn select(
         }
     };
     Ok(selected.map(|a| marker(&a.id)))
+}
+/// 普通点击与颜文字共用反应抽签；复用点击/聊天素材，不把行走等专属动作混入。
+pub(crate) fn select_click(c:&Connection,persona:i64,reaction:u64,random:&mut dyn crate::pet::RandomSource)->AppResult<Option<String>> {
+    let words:&[&str]=match reaction {0=>&["开心","快乐","喜悦","高兴","happy"],1=>&["惊讶","吃惊","惊喜","诧异","surpris"],2=>&["害羞","羞涩","脸红","shy"],_=>return Err(AppError::storage())};
+    let Some(items)=choices(c,persona)?else{return Ok(None)};
+    let candidates=items.iter().filter(|a|a.kind=="expression"&&matches!(a.category.as_str(),"click"|"chat")&&words.iter().any(|word|a.name.to_lowercase().contains(word))).collect::<Vec<_>>();
+    if candidates.is_empty(){return select(c,persona,"click",None,random)}
+    Ok(candidates.get(random.below(candidates.len() as u64)? as usize).map(|a|marker(&a.id)))
 }
 #[cfg(test)]
 mod tests;

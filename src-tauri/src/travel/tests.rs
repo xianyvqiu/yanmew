@@ -61,8 +61,8 @@ fn facts() -> Facts {
 #[test]
 fn wait_draw_includes_both_seconds_endpoints_and_stays_on_interaction() {
     let mut c = db();
-    assert_eq!(draw_wait(&c, &mut Fixed(0)).unwrap(), 7200);
-    assert_eq!(draw_wait(&c, &mut Fixed(7200)).unwrap(), 14400);
+    assert_eq!(draw_wait(&c, &mut Fixed(0)).unwrap(), 14400);
+    assert_eq!(draw_wait(&c, &mut Fixed(14400)).unwrap(), 28800);
     assert!(!advance(&mut c, 3));
     assert_eq!(wait(&c, 1), Some(7));
     let scope = crate::pet_store::PetWriteScope {
@@ -160,7 +160,7 @@ fn expiry_restores_planned_time_and_gift_type_only_once() {
             "pending".into()
         )
     );
-    assert_eq!(wait(&c, 1), Some(7200));
+    assert_eq!(wait(&c, 1), Some(14400));
     assert_eq!(
         c.query_row("SELECT reply_state FROM letters", [], |r| r
             .get::<_, String>(0))
@@ -171,7 +171,7 @@ fn expiry_restores_planned_time_and_gift_type_only_once() {
         recover_returns(&mut c, now() + chrono::Duration::days(2), &mut Fixed(99)).unwrap(),
         0
     );
-    assert_eq!(wait(&c, 1), Some(7200));
+    assert_eq!(wait(&c, 1), Some(14400));
     assert_eq!(travel(&c).1, "returned");
 }
 #[test]
@@ -197,7 +197,7 @@ fn switch_cancels_pending_work_and_retains_existing_letter() {
             "cancelled".into()
         )
     );
-    assert!((7200..=14400).contains(&wait(&c, 1).unwrap()));
+    assert!((14400..=28800).contains(&wait(&c, 1).unwrap()));
     assert_eq!(wait(&c, 2), Some(99));
     assert_eq!(
         c.query_row("SELECT reply_state FROM letters", [], |r| r
@@ -217,7 +217,7 @@ fn switch_cancels_pending_work_and_retains_existing_letter() {
 fn new_sessions_draw_wait_in_the_creation_transaction() {
     let mut c = db();
     let s = crate::sessions::create(&mut c, 1).unwrap();
-    assert!((7200..=14400).contains(&wait(&c, s.id.parse().unwrap()).unwrap()));
+    assert!((14400..=28800).contains(&wait(&c, s.id.parse().unwrap()).unwrap()));
 }
 #[test]
 fn facts_are_immutable_and_cancelled_results_are_discarded() {
@@ -268,7 +268,7 @@ fn invalid_timeline_and_incomplete_ai_output_never_become_facts() {
     invalid.activities[1].elapsed_minutes = 61;
     assert!(invalid.validate(60).is_err());
     let mut choice = crate::ai::provider::Choice {
-        reasoning_content: None,
+        usage: None, reasoning_content: None,
         index: 0,
         content: serde_json::to_string(&f).unwrap(),
         tools: vec![],

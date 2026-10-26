@@ -1,23 +1,18 @@
-import { useEffect, useRef } from "react";
+import {useChatScroll} from "../hooks/useChatScroll";
 import ChatComposer from "./ChatComposer";
 import ChatMessageText from "./ChatMessageText";
 import type { usePetChat } from "../windows/usePetChat";
 
 type PetChatState = ReturnType<typeof usePetChat>;
 export function PetChatBubble({ chat, onDetails }: { chat: PetChatState; onDetails: () => void }) {
-  const body = useRef<HTMLDivElement>(null);
-  const follow = useRef(true);
-  useEffect(() => {
-    if (follow.current && body.current) body.current.scrollTop = body.current.scrollHeight;
-  }, [chat.reply?.text]);
+  const scroll=useChatScroll<HTMLDivElement>(`${chat.attachmentOwnerKey}:${Boolean(chat.reply)}`,Boolean(chat.reply),chat.reply?.text);
   if (!chat.reply) return null;
   return <section className="pet-chat-bubble" data-pet-interactive aria-label="桌宠聊天回复">
-    <div ref={body} className="pet-chat-bubble__body" aria-live="polite" aria-busy={chat.reply.streaming}
-      onScroll={() => { const element = body.current; if (element) follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24; }}>
+    <div ref={scroll.viewport} className="pet-chat-bubble__body" aria-live="polite" aria-busy={chat.reply.streaming}><div ref={scroll.content}>
       <ChatMessageText content={chat.reply.text} />
       {chat.reply.error && <p className="pet-chat-message-error" role="alert">{chat.reply.error}</p>}
       {chat.reply.notice && !chat.reply.streaming && <p className="pet-chat-note">{chat.reply.notice}</p>}
-    </div>
+    </div></div>
     <div className="pet-chat-bubble__actions">
       <button className="ym-button" onClick={onDetails}>聊天详情</button>
       <button className="ym-button" aria-label="收起聊天回复" onClick={chat.dismissReply}>收起</button>

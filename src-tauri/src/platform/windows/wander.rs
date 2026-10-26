@@ -20,6 +20,7 @@ pub async fn update_pet_wander_layout(window: tauri::WebviewWindow, app: tauri::
         let desktop=handle.state::<crate::pet_desktop::Desktop>();
         desktop.update(layout)?; desktop.snapshot()
     })).await.map_err(|_|AppError::storage())??;
+    app.state::<crate::pet_desktop::Desktop>().preserve_upper_position(&window)?;
     crate::pet_desktop::publish(&app,&snapshot);
     Ok(())
 }
@@ -92,7 +93,7 @@ mod tests {
         Layout { persona_id: "1".into(), session_id: "1".into(), context_revision: 0,
             layout_revision: 1, area: Rect { x: 0.0, y: 0.0, width: 300.0, height: 250.0 },
             body: Rect { x: 100.0, y: 100.0, width: 60.0, height: 50.0 },
-            offset: Point::default(), paused: false, anchor: None }
+            offset: Point::default(), paused: false, anchor:None,free_y:None,contact:None}
     }
     fn view() -> View {
         View { persona_id: "1".into(), session_id: Some("1".into()), context_revision: 0,

@@ -15,30 +15,35 @@ describe("现实记账模块入口",()=>{
  it("主页不展开预算表单或筛选，进入明细和数据面板各司其职",async()=>{
     const summary={income:"10000",expense:"1234",net:"8766",count:2};
     const report:RealReport={entries:[],summary,balance:"10000",page:1,totalPages:1,categories:[],assets:[],timeline:[{key:"2026-10-20",name:"2026-10-20",summary}],bucket:"day",rangeStart:"2026-10-01",rangeEnd:"2026-10-20"};
-    mocks.query.mockResolvedValue(report);render(<RealMoneyPanel/>);
-    await screen.findByRole("button",{name:"预算"});
-    expect(screen.queryByLabelText("每日预算（元）")).toBeNull();expect(screen.queryByText("日均消费")).toBeNull();
+    mocks.query.mockResolvedValue(report);render(<main className="ym-window-shell__content"><RealMoneyPanel/></main>);
+    await screen.findByRole("button",{name:"编辑今日预算"});
+    expect(screen.queryByLabelText("每日预算（元）")).toBeNull();expect(screen.getAllByText("日均消费")).toHaveLength(3);
     expect(screen.queryByLabelText("现实账单筛选")).toBeNull();expect(screen.queryByText("区间收入")).toBeNull();
-    expect(screen.getByText("2 项待确认")).toBeTruthy();expect(mocks.query).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("2项待确认")).toBeTruthy();expect(mocks.query).toHaveBeenCalledWith(expect.objectContaining({start:"2026-10-14",end:"2026-10-20"}));
     fireEvent.click(screen.getByRole("button",{name:"账单"}));await screen.findByText("没有符合条件的现实账单");
+    const scroll=screen.getByRole("main");
+    scroll.scrollTop=220;
     expect(screen.queryByText("总资产")).toBeNull();expect(screen.queryByText("区间收入")).toBeNull();
+    expect(screen.getByRole("navigation",{name:"现实记账模块"})).toBeTruthy();expect(screen.getByRole("button",{name:"账单"}).getAttribute("aria-current")).toBe("page");expect(screen.queryByText("返回现实记账")).toBeNull();
     fireEvent.click(screen.getByRole("button",{name:"筛选账单"}));
-    fireEvent.change(screen.getByLabelText("分类"),{target:{value:"1"}});
+    fireEvent.change(screen.getByRole("combobox",{name:"分类"}),{target:{value:"1"}});
     await waitFor(()=>expect(mocks.query.mock.lastCall?.[0].categoryId).toBe("1"));
-    fireEvent.click(screen.getByRole("button",{name:"账单数据面板"}));await screen.findByRole("img",{name:/收支柱状图/});
+    fireEvent.click(screen.getByRole("button",{name:"数据面板"}));await screen.findByRole("img",{name:/收支柱状图/});
+    expect(scroll.scrollTop).toBe(0);
     expect(screen.getByText("区间收入")).toBeTruthy();expect(screen.queryByLabelText("现实账单分页")).toBeNull();
-    fireEvent.click(screen.getByRole("button",{name:"返回账单"}));
+    fireEvent.click(screen.getByRole("button",{name:"账单"}));
+    expect(scroll.scrollTop).toBe(220);
     fireEvent.click(screen.getByRole("button",{name:"筛选账单"}));
-    expect((screen.getByLabelText("分类")as HTMLSelectElement).value).toBe("1");
-    fireEvent.click(screen.getByRole("button",{name:"返回现实记账"}));fireEvent.click(screen.getByRole("button",{name:"预算"}));
-    expect(screen.getByLabelText("每日预算（元）")).toBeTruthy();expect(screen.queryByText("总资产")).toBeNull();
+    expect((screen.getByRole("combobox",{name:"分类"})as HTMLSelectElement).value).toBe("1");
+    fireEvent.click(screen.getByRole("button",{name:"总览"}));fireEvent.click(screen.getByRole("button",{name:"编辑今日预算"}));
+    expect(screen.getByLabelText("预算金额（元）")).toBeTruthy();expect(screen.queryByText("总资产")).toBeNull();
  });
 });
 describe("现实记账金额与表单",()=>{
  it("以整数分显示超出JS安全整数的金额，编辑值不丢精度",()=>{expect(moneyText("9007199254740993")).toBe("90,071,992,547,409.93");expect(moneyInput("-1234")).toBe("-12.34");});
  it("手动录入传递元的文本、资产、分类和记账者",async()=>{const run=vi.fn().mockResolvedValue(undefined);render(<RealEntryEditor overview={base} busy={false} run={run} onClose={()=>{}}/>);fireEvent.change(screen.getByLabelText("标题"),{target:{value:"午餐"}});fireEvent.change(screen.getByLabelText("金额（人民币元）"),{target:{value:"12.34"}});fireEvent.click(screen.getByRole("button",{name:"保存"}));await waitFor(()=>expect(run).toHaveBeenCalledWith(expect.objectContaining({type:"save_entry",recurrence:null,entry:expect.objectContaining({amount:"12.34",assetId:"1",categoryId:"1",recorder:"用户"})}),expect.any(Function)));});
  it("只改资产名不回写打开表单时的旧余额",()=>{const run=vi.fn().mockResolvedValue(undefined);render(<RealAssetEditor asset={asset} busy={false} run={run} onClose={()=>{}}/>);fireEvent.change(screen.getByLabelText("资产名称"),{target:{value:"日常资产"}});fireEvent.click(screen.getByRole("button",{name:"保存"}));expect(run.mock.calls[0][0]).toMatchObject({type:"save_asset",name:"日常资产",balance:null});});
- it("预算空值表示不设，0表示零预算，保持文本精度",()=>{const run=vi.fn().mockResolvedValue(undefined);render(<RealMoneyBudgets overview={base} busy={false} run={run}/>);fireEvent.change(screen.getByLabelText("每日预算（元）"),{target:{value:"0"}});fireEvent.change(screen.getByLabelText("每月预算（元）"),{target:{value:"1234.56"}});fireEvent.click(screen.getByRole("button",{name:"保存预算"}));expect(run.mock.calls[0][0]).toEqual({type:"save_budgets",day:"0",month:"1234.56",year:null});});
+ it("点击预算卡片只修改当前预算，空值与零值独立保存",()=>{const run=vi.fn().mockResolvedValue(undefined);const overview={...base,budgets:base.budgets.map(b=>b.period==="month"?{...b,amountCents:"123456",remainingCents:"122222",remainingDailyCents:"10185"}:b)};render(<RealMoneyBudgets overview={overview} busy={false} run={run}/>);fireEvent.click(screen.getByRole("button",{name:"编辑今日预算"}));fireEvent.change(screen.getByLabelText("预算金额（元）"),{target:{value:"0"}});fireEvent.click(screen.getByRole("button",{name:"保存预算"}));expect(run.mock.calls[0][0]).toEqual({type:"save_budgets",day:"0",month:"1234.56",year:null});});
 });
 describe("漏期确认与写入重试",()=>{
  it("先展示漏期、取消保留勾选，确认后仅补选中项目",async()=>{render(<RealMoneyPanel request={{date:null}}/>);const checkbox=await screen.findByRole("checkbox",{name:/选择 每日早餐/});fireEvent.click(checkbox);fireEvent.click(screen.getByRole("button",{name:"补记已选"}));expect(mocks.mutate).not.toHaveBeenCalled();fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"取消"}));expect((checkbox as HTMLInputElement).checked).toBe(true);fireEvent.click(screen.getByRole("button",{name:"补记已选"}));fireEvent.click(within(screen.getByRole("dialog")).getByRole("button",{name:"确认"}));await waitFor(()=>expect(mocks.mutate).toHaveBeenCalledWith(expect.any(String),{type:"resolve_missed",ids:["6"],throughId:null,record:true}));});

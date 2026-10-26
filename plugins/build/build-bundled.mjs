@@ -14,7 +14,9 @@ for (const filename of catalogue.packages) {
   if (!/^[a-z0-9-]+\.yanmew-game$/.test(filename)) throw new Error('随包清单包含不安全的文件名');
   const source = join(root, 'plugins/first-party', filename.replace('.yanmew-game', ''));
   copyFileSync(join(root, 'plugins/first-party/shared/runtime.js'), join(source, 'ui/runtime.js'));
-  copyFileSync(join(root, 'plugins/first-party/shared/window.css'), join(source, 'ui/window.css'));
+  if (['minesweeper.yanmew-game', '2048.yanmew-game'].includes(filename)) {
+    for (const shared of ['classic.css', 'classic-runtime.js']) copyFileSync(join(root, 'plugins/first-party/shared', shared), join(source, 'ui', shared));
+  } else copyFileSync(join(root, 'plugins/first-party/shared/window.css'), join(source, 'ui/window.css'));
   // 临时目标已解析并限制在资源目录；CLI 不覆盖已有输出，验证成功才替换发布文件。
   const temporary = join(target, filename.replace('.yanmew-game', '.tmp.yanmew-game'));
   if (existsSync(temporary)) rmSync(temporary);
