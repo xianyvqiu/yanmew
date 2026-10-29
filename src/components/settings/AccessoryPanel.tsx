@@ -1,6 +1,6 @@
 import AccessoryUpload from "./AccessoryUpload";
 import AccessoryPlacementEditor from "./AccessoryPlacementEditor";
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import {useRemoteCardBrowser} from "../../hooks/useRemoteCardBrowser";
 import { useEffect, useRef, useState } from "react";
 import { accessoriesApi, errorMessage } from "../../api";
@@ -63,6 +63,7 @@ export default function AccessoryPanel({ context }: { context: CurrentContext })
             <button className="ym-button" data-variant="danger" disabled={busy || browser.loading || item.isWorn} onClick={() => { setError(""); setConfirmation({ item, sell: false }); }}>删除</button></div>
           </>}
         </div></li>)}</ul>
+      {!selected&&<CardBrowserPagination browser={browser} label="饰品" disabled={busy}/>}
 
     </section>
     {placement&&<div ref={placementPanel}><AccessoryPlacementEditor context={context} item={placement} onClose={()=>setPlacement(null)} onSaved={()=>{setPlacement(null);browser.refresh();}}/></div>}

@@ -59,3 +59,56 @@ async fn generic_picture_uses_full_endpoint_and_accepts_images_envelope() {
  let bytes=generate_picture(&client(),&cfg,"一只猫在花园里",&Cancellation::default()).await.unwrap();assert_eq!(bytes,vec![1,2,3]);
  let requests=server.requests.lock().unwrap();assert_eq!(requests.len(),1);assert_eq!(requests[0]["prompt"],"一只猫在花园里");assert!(requests[0].get("background").is_none());drop(requests);server.finish();
 }
+
+#[test]
+fn siliconflow_reference_request_uses_json_image_and_model_specific_fields() {
+ let mut cfg=snapshot("https://api.siliconflow.cn/v1/images/generations".into());cfg.provider.model="Qwen/Qwen-Image-Edit-2509".into();
+ let request=edit_request(&client(),&cfg,b"reference-image-content","保持当前人设，挥手",true).unwrap().build().unwrap();
+ assert_eq!(request.url().as_str(),"https://api.siliconflow.cn/v1/images/generations");
+ assert_eq!(request.headers().get(reqwest::header::CONTENT_TYPE).unwrap(),"application/json");
+ let value:Value=serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+ assert_eq!(value["model"],cfg.provider.model);assert_eq!(value["image"],format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(b"reference-image-content")));
+ assert_eq!(value["prompt"],"保持当前人设，挥手");assert!(value.get("image_size").is_none());assert!(value.get("background").is_none());assert!(value.get("output_format").is_none());
+ cfg.provider.model="Kwai-Kolors/Kolors".into();assert_eq!(siliconflow_edit_body(&cfg,b"image","挥手")["image_size"],"1024x1024");
+}
+#[tokio::test]
+async fn siliconflow_reference_requests_reach_service_and_only_service_failure_is_reported() {
+ for model in ["Tongyi-MAI/Z-Image-Turbo", "future-image-model"] {
+  for status in [200,400] {
+   let mut cfg=snapshot("https://api.siliconflow.cn/v1".into());cfg.provider.model=model.into();
+   let http=client();
+   let mut request=edit_request(&http,&cfg,b"reference","挥手",true).unwrap().build().unwrap();
+   assert_eq!(request.url().as_str(),"https://api.siliconflow.cn/v1/images/generations");
+   let server=Server::new_at(vec![response(status,if status==200{json!({"images":[{"b64_json":"AQID"}]})}else{json!({"error":"provider rejected the request"})})],"/v1/images/generations");
+   // Keep the production request body and headers, but send only to this local fixture.
+   *request.url_mut()=Url::parse(&format!("{}/images/generations",server.url)).unwrap();
+   let response=http.search_http().execute(request).await.unwrap();
+   if status==200 {
+    let bytes=body(response,MAX_RESPONSE).await.unwrap();
+    assert_eq!(parse_for(&cfg,serde_json::from_slice(&bytes).unwrap(),&Cancellation::default()).await.unwrap(),vec![1,2,3]);
+   } else {
+    let error=edit_failure(response.status().as_u16());
+    assert!(error.message.contains("HTTP 400"));assert!(!error.message.contains("本次未发送"));
+   }
+   let requests=server.requests.lock().unwrap();assert_eq!(requests.len(),1);assert_eq!(requests[0]["model"],model);
+   assert_eq!(requests[0]["image"],format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(b"reference")));
+   drop(requests);server.finish();
+   assert_eq!(generation_body(&cfg,"画猫",false)["model"],model);
+  }
+ }
+}
+#[tokio::test]
+async fn reference_edit_failure_reports_http_reason_and_does_not_retry() {
+ use std::io::{Read,Write};
+ let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let url=format!("http://{}/v1",listener.local_addr().unwrap());
+ let worker=std::thread::spawn(move||{let(mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();let mut raw=Vec::new();let mut buf=[0u8;4096];let end=loop{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);if let Some(end)=raw.windows(4).position(|x|x==b"\r\n\r\n"){break end+4;}};let headers=String::from_utf8_lossy(&raw[..end]);let len:usize=headers.lines().find_map(|x|x.to_lowercase().strip_prefix("content-length:").map(|x|x.trim().parse().unwrap())).unwrap();while raw.len()<end+len{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);}stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();});
+ let err=edit(&client(),&snapshot(url),b"reference","挥手",&Cancellation::default()).await.unwrap_err();assert!(err.message.contains("HTTP 404"));assert!(err.message.contains("图像编辑接口"));worker.join().unwrap();
+ assert!(edit_failure(401).message.contains("Key"));assert!(edit_failure(429).message.contains("限流"));
+}
+
+#[test]
+fn chat_reference_request_keeps_background_and_still_attaches_image() {
+ let request=edit_request(&client(),&snapshot("http://127.0.0.1:1/v1".into()),b"reference-image","自己在海边",false).unwrap().build().unwrap();
+ assert!(request.url().path().ends_with("/images/edits"));let payload=String::from_utf8_lossy(request.body().unwrap().as_bytes().unwrap());
+ assert!(payload.contains("reference-image"));assert!(payload.contains("自己在海边"));assert!(!payload.contains("name=\"background\""));assert!(!payload.contains("name=\"output_format\""));
+}

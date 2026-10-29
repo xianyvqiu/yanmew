@@ -1,5 +1,7 @@
 //! 人设级图片桌宠：原业务状态不变，正式图片与待确认预览分开持久化。
 mod prompts;
+mod reference;
+pub(crate) use reference::png as reference_png;
 use crate::{
     error::{AppError, AppResult},
     runtime::Runtime,
@@ -202,7 +204,8 @@ pub fn set_enabled(c: &Connection, persona: i64, enabled: bool, revision: u64) -
     Ok(())
 }
 /// 保持原图的透明画布与构图，统一尺寸，不裁掉单张图片的留白。
-pub fn normalize(bytes: &[u8]) -> AppResult<Vec<u8>> {
+pub fn normalize(bytes: &[u8]) -> AppResult<Vec<u8>> { normalize_size(bytes,256) }
+fn normalize_size(bytes: &[u8],size:u32) -> AppResult<Vec<u8>> {
     let rgba = crate::accessories::images::decode_transparent(bytes, false).map_err(|_| {
         AppError::new(
             "INVALID_PET_IMAGE",
@@ -210,14 +213,14 @@ pub fn normalize(bytes: &[u8]) -> AppResult<Vec<u8>> {
         )
     })?;
     let resized = image::DynamicImage::ImageRgba8(rgba)
-        .resize(254, 254, image::imageops::FilterType::Lanczos3)
+        .resize(size-2, size-2, image::imageops::FilterType::Lanczos3)
         .into_rgba8();
-    let mut canvas = image::RgbaImage::new(256, 256);
+    let mut canvas = image::RgbaImage::new(size, size);
     image::imageops::overlay(
         &mut canvas,
         &resized,
-        i64::from((256 - resized.width()) / 2),
-        i64::from((256 - resized.height()) / 2),
+        i64::from((size - resized.width()) / 2),
+        i64::from((size - resized.height()) / 2),
     );
     let mut out = std::io::Cursor::new(Vec::new());
     image::DynamicImage::ImageRgba8(canvas)
@@ -243,7 +246,8 @@ fn preview_guarded(
     bytes: &[u8],
     guard: Option<GenerationGuard<'_>>,
 ) -> AppResult<Artwork> {
-    let png = normalize(bytes)?;
+    let base = runtime.read(|s,_|Ok(get(&s.connection,persona,id)?.kind=="base"))?;
+    let png = if base {normalize_size(bytes,1024)?} else {normalize(bytes)?};
     let paths = runtime.paths.as_ref().map_err(Clone::clone)?;
     runtime.read(|s, _| {
         require_current(&s.connection, persona)?;
@@ -403,10 +407,8 @@ pub async fn generate(
         Ok((a, base, cfg, lib.revision, prompts::Persona::read(&s.connection,persona)?))
     })?;
     let paths = runtime.paths.as_ref().map_err(Clone::clone)?;
-    let url = crate::accessories::images::read(paths, &base)?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(url.split_once(',').ok_or_else(AppError::storage)?.1)
-        .map_err(|_| AppError::storage())?;
+    let reference_paths=paths.clone();
+    let bytes=tauri::async_runtime::spawn_blocking(move||reference_png(&reference_paths,&base)).await.map_err(|_|AppError::storage())??;
     let requirement=prompts::compose(&art,&persona_data)?;
     runtime.read(|s,_|{lease.cancel.check()?;require_current(&s.connection,persona)?;persona_data.require_unchanged(&s.connection,persona)})?;
     let result = crate::image_generation::openai_compatible::edit(

@@ -138,6 +138,40 @@ fn all_custom_image_categories_are_searchable_and_selectable_with_pagination(){
  assert_eq!(selected["expression"],format!("@pet-image:{id}"));
 }
 struct PictureDirectory(PathBuf);
+
+#[test]
+fn chat_stickers_send_once_keep_history_and_disclose_catalog_only_on_demand() {
+    for reply in ["今天也要开开心心。", ""] { tauri::async_runtime::block_on(async {
+        let server=Server::new(vec![
+            Response::json(json!({"expression":"(^_^)"})),
+            Response::sse(&call("tags","list_chat_sticker_tags",json!({}))),
+            Response::sse(&call("search","search_chat_stickers",json!({"tagIds":["1"]}))),
+            Response::sse(&call("send-once","send_chat_sticker",json!({"stickerId":"1"}))),
+            Response::sse(&call("send-once","send_chat_sticker",json!({"stickerId":"1"}))),
+            Response::sse(&(text_event(reply)+&finish_event("stop"))),
+        ]);
+        let dir=PictureDirectory::new();let mut runtime=crate::runtime::test_runtime(&server.url);runtime.paths=Ok(crate::platform::contracts::AppPaths::portable(dir.0.clone()));
+        let mut bytes=std::io::Cursor::new(Vec::new());image::DynamicImage::new_rgba8(3,3).write_to(&mut bytes,image::ImageFormat::Png).unwrap();
+        let file=crate::chat_images::publish(runtime.paths.as_ref().unwrap(),bytes.get_ref(),"开心.png").unwrap();
+        runtime.read(|s,_|{s.connection.execute_batch("INSERT INTO sticker_libraries(id,title,created_at,updated_at) VALUES(1,'不应自动注入的私人库名','2026-10-28T00:00:00Z','2026-10-28T00:00:00Z');INSERT INTO sticker_tags(id,name,created_at,updated_at) VALUES(1,'独特开心标签','2026-10-28T00:00:00Z','2026-10-28T00:00:00Z');INSERT INTO persona_sticker_libraries VALUES(1,1,'2026-10-28T00:00:00Z');")?;
+            s.connection.execute("INSERT INTO chat_stickers(id,library_id,title,description,filename,image_file,media_type,created_at,updated_at) VALUES(1,1,'秘密猫表情','很开心时使用','开心.png',?1,'image/png','2026-10-28T00:00:00Z','2026-10-28T00:00:00Z')",[&file])?;s.connection.execute("INSERT INTO sticker_tag_links VALUES(1,1)",[])?;Ok(())}).unwrap();
+        let(prepared,_)=submit(&runtime,1,1,0,"发一个合适的表情包吧".into()).unwrap();
+        let saved=run_persisted(&client(),prepared,|_|{}).await.unwrap();let message=saved.assistant_message.unwrap();assert_eq!(message.content,reply);assert_eq!(message.images.len(),1);assert_eq!(message.images[0].source_kind,"sticker");assert_ne!(message.images[0].image_file,file);
+        let requests=server.requests.lock().unwrap();let initial=requests[1]["messages"].to_string();assert!(!initial.contains("私人库名"));assert!(!initial.contains("独特开心标签"));assert!(!initial.contains("秘密猫表情"));drop(requests);server.finish();
+        runtime.read(|s,_|{crate::stickers::mutate(&mut s.connection,crate::stickers::Mutation::Delete{entity:"libraries".into(),id:"1".into(),revision:0})?;crate::chat_images::cleanup(&s.connection,runtime.paths.as_ref().unwrap())?;let read=crate::chat_images::data_url(runtime.paths.as_ref().unwrap(),&message.images[0])?;assert!(read.starts_with("data:image/png;base64,"));assert_eq!(crate::chat_images::list(&s.connection,crate::error::parse_id(&message.id)? )?.len(),1);Ok(())}).unwrap();
+    });}
+}
+
+#[test]
+fn chat_stickers_reject_unbound_ids_and_cancelled_requests() {
+    let runtime=crate::runtime::test_runtime("http://127.0.0.1:9/v1");
+    let(prepared,_)=submit(&runtime,1,1,0,"发个表情包".into()).unwrap();
+    let call=ToolCall{index:0,id:"send".into(),name:"send_chat_sticker".into(),arguments:json!({"stickerId":"999"})};
+    assert_eq!(super::sticker_tools::send(&runtime,&prepared.lease,1,1,0,&call).unwrap_err().code,"NOT_FOUND");
+    prepared.lease.cancel.cancel();
+    assert!(super::sticker_tools::send(&runtime,&prepared.lease,1,1,0,&call).is_err());
+    assert!(runtime.read(|s,_|Ok(crate::chat_images::list(&s.connection,1)?.is_empty())).unwrap());
+}
 impl PictureDirectory {
     fn new() -> Self {
         let path = std::env::temp_dir().canonicalize().unwrap().join(format!(
@@ -275,5 +309,39 @@ fn generated_image_cutout_keeps_original_and_saves_once() {
   let original=crate::chat_images::managed_file(runtime.paths.as_ref().unwrap(),&file).unwrap();assert_eq!(fs::read(original).unwrap(),*bytes.get_ref());
   let result=fs::read(crate::chat_images::managed_file(runtime.paths.as_ref().unwrap(),&images[0].image_file).unwrap()).unwrap();assert!(crate::background_removal::inspect(&crate::background_removal::decode(&result).unwrap()).has_transparency);
   runtime.read(|s,_|{assert_eq!(s.connection.query_row("SELECT COUNT(*) FROM message_images",[],|r|r.get::<_,i64>(0))?,2);Ok(())}).unwrap();server.finish();
+ });
+}
+
+#[test]
+fn reference_parameter_is_optional_and_only_offered_for_image_mode() {
+ for image_mode in [false,true] {
+  let definitions=visual_tools::definitions(image_mode);let tool=definitions.iter().find(|t|t["function"]["name"]=="generate_chat_image").unwrap();
+  assert_eq!(tool["function"]["parameters"]["properties"].get("useReference").is_some(),image_mode);
+  assert_eq!(tool["function"]["parameters"]["required"],json!(["prompt"]));
+ }
+}
+#[test]
+fn own_reference_picture_attaches_default_png_and_saves_one_normal_chat_image() {
+ tauri::async_runtime::block_on(async {
+  use std::io::{Read,Write};use base64::Engine;
+  let mut bytes=std::io::Cursor::new(Vec::new());image::DynamicImage::new_rgb8(4,4).write_to(&mut bytes,image::ImageFormat::Png).unwrap();
+  let returned=base64::engine::general_purpose::STANDARD.encode(bytes.get_ref());
+  let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let image_url=format!("http://{}/v1",listener.local_addr().unwrap());
+  let worker=std::thread::spawn(move||{
+   let(mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();let mut raw=Vec::new();let mut buf=[0u8;4096];let end=loop{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);if let Some(i)=raw.windows(4).position(|s|s==b"\r\n\r\n"){break i+4;}};
+   let header=String::from_utf8_lossy(&raw[..end]).to_lowercase();assert!(header.starts_with("post /v1/images/edits "));let len:usize=header.lines().find_map(|s|s.strip_prefix("content-length:")).unwrap().trim().parse().unwrap();while raw.len()<end+len{let n=stream.read(&mut buf).unwrap();assert!(n>0);raw.extend_from_slice(&buf[..n]);}
+   let payload=String::from_utf8_lossy(&raw[end..]);assert!(payload.contains("filename=\"reference.png\""));assert!(payload.contains("黄昏的海边"));assert!(payload.contains("用户自己的角色"));assert!(!payload.contains("name=\"background\""));assert!(!payload.contains("name=\"output_format\""));assert!(raw[end..].windows(8).any(|w|w==b"\x89PNG\r\n\x1a\n"));
+   let body=json!({"data":[{"b64_json":returned}]}).to_string();write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+  });
+  let arguments=json!({"prompt":"画你自己站在黄昏的海边，有海浪和天空背景","useReference":true});
+  let server=Server::new(vec![Response::sse(&call("reference-picture","generate_chat_image",arguments.clone())),Response::sse(&call("reference-picture","generate_chat_image",arguments)),Response::sse(&(text_event("图片画好了。")+&finish_event("stop")))]);
+  let dir=PictureDirectory::new();let mut runtime=crate::runtime::test_runtime(&server.url);runtime.paths=Ok(crate::platform::contracts::AppPaths::portable(dir.0.clone()));
+  let mut rgba=image::RgbaImage::new(4,4);rgba.put_pixel(1,1,image::Rgba([120,150,220,255]));let mut data=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(rgba).write_to(&mut data,image::ImageFormat::Png).unwrap();
+  let png=crate::accessories::images::normalize(data.get_ref()).unwrap();let file=crate::accessories::images::publish(runtime.paths.as_ref().unwrap(),&png).unwrap();
+  runtime.read(|s,_|{s.connection.execute("INSERT INTO providers(id,name,base_url,api_key_encrypted) VALUES(2,'绘图',?1,'fake-image-key')",[&image_url])?;s.connection.execute_batch("INSERT INTO provider_models(provider_id,purpose,model) VALUES(2,'image','image-test');INSERT INTO provider_roles(purpose,provider_id,enabled) VALUES('image',2,1);UPDATE personas SET pet_image_enabled=1,name='用户自己的角色' WHERE id=1;")?;s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,image_file,created_at,updated_at) VALUES(1,'base','默认图','normal',?1,'a','a')",[file])?;Ok(())}).unwrap();
+  let reference_client=AiClient::new(crate::ai::client::Timeouts{connect:std::time::Duration::from_secs(1),first_event:std::time::Duration::from_secs(5),idle:std::time::Duration::from_secs(5),total:std::time::Duration::from_secs(20)}).unwrap();
+  let(prepared,_)=submit(&runtime,1,1,0,"画你自己在海边".into()).unwrap();let saved=run_persisted(&reference_client,prepared,|_|{}).await.unwrap();let message=saved.assistant_message.unwrap();assert_eq!(message.images.len(),1);
+  let image_file=crate::chat_images::managed_file(runtime.paths.as_ref().unwrap(),&message.images[0].image_file).unwrap();let rgba=image::open(image_file).unwrap().to_rgba8();assert!(rgba.pixels().all(|p|p[3]==255));
+  let requests=server.requests.lock().unwrap();assert!(requests.last().unwrap()["messages"].as_array().unwrap().iter().any(|m|m["role"]=="tool"&&m["content"].as_str().unwrap_or("").contains("usedDefaultAppearance\":true")));drop(requests);worker.join().unwrap();server.finish();
  });
 }

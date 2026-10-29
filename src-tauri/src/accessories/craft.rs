@@ -21,7 +21,7 @@ use std::{
 
 #[cfg(test)]
 mod tests;
-pub const RULES:&str="饰品制作只在适合互动且达到当前可用档位时按需发起，不必每轮调用。先使用尚未制作的最低档，前三档各一次，第四档可重复。request_accessory_craft只准备候选，用户确认后才会购买，不能声称已经扣币、制作完成或佩戴。display_text必须是少量实际图标字符、Emoji、颜文字或符号组合，不能填写普通名称/说明，name保存名称，description用当前人设口吻写简介。生图可在准备预览时消耗用户服务商额度，即使未购买；不能承诺取消会撤销费用。不要擅自替用户确认或取消，不得请求任意币数、路径或换用其他生图服务。";
+pub const RULES:&str="适合互动且达到可用档位时，可按需request_accessory_craft，不必每轮调用。先用最低未用档位，前三档各一次，第四档可重复。工具只提供候选，购买由用户确认，不代为确认或取消。预览生图可能使用服务商额度，取消购买不退该费用。";
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Text {
@@ -219,8 +219,8 @@ fn preview(candidate: &Candidate, image: Option<String>) -> Preview {
     }
 }
 pub(crate) fn definition() -> Value {
-    json!({"type":"function","function":{"name":"request_accessory_craft","description":"条件满足且互动适合时，请求准备饰品预览；用户确认才扣喵币/使用档位。外观必须是图标字符、Emoji、颜文字或符号，简介使用当前人设口吻。",
-    "parameters":{"type":"object","properties":{"name":{"type":"string","maxLength":80},"display_text":{"type":"string","maxLength":40,"description":"实际视觉符号，例如🎀、👑、✿；不是饰品名称"},"description":{"type":"string","maxLength":1000,"description":"用当前人设口吻写饰品简介"}},"required":["name","display_text","description"],"additionalProperties":false}}})
+    json!({"type":"function","function":{"name":"request_accessory_craft","description":"准备一份饰品预览。",
+    "parameters":{"type":"object","properties":{"name":{"type":"string","maxLength":80},"display_text":{"type":"string","maxLength":40,"description":"少量实际图标、Emoji、颜文字或符号，例如🎀、👑、✿；不能用名称或说明充数"},"description":{"type":"string","maxLength":1000,"description":"用当前人设口吻写饰品简介"}},"required":["name","display_text","description"],"additionalProperties":false}}})
 }
 pub(crate) fn hint(store: &Store, session: i64) -> String {
     let available = quote(&store.connection, session).ok().flatten();

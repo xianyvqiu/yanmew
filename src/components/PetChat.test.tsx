@@ -5,7 +5,7 @@ import { usePetChat } from "../windows/usePetChat";
 import { PetChatBubble, PetChatInput } from "./PetChat";
 import type { ChatReplyEvent, ChatRequestSnapshot, PetActivity, RoundSnapshot } from "../types";
 
-const api = vi.hoisted(() => ({ listen:vi.fn(),listenMessages:vi.fn(),current:vi.fn(),lastRound:vi.fn(),messages:vi.fn(),submit:vi.fn(),cancel:vi.fn() }));
+const api = vi.hoisted(() => ({ image:vi.fn(),listen:vi.fn(),listenMessages:vi.fn(),current:vi.fn(),lastRound:vi.fn(),messages:vi.fn(),submit:vi.fn(),cancel:vi.fn() }));
 vi.mock("../api",()=>({ chatApi:api,sessionApi:api,webSearchApi:{open:vi.fn()},errorMessage:(error:Error)=>error.message }));
 const pet:PetActivity={personaId:"1",sessionId:"2",contextRevision:3,revision:1,activity:"normal",expression:"(・ω・)",intimacy:0,sleepUntil:null,error:null,canInteract:true,canWander:true};
 const round:RoundSnapshot={round:{id:"10",sessionId:"2",status:"pending",createdAt:"2026-10-15",completedAt:null,stopReason:null},userMessage:{id:"20",sessionId:"2",roundId:"10",role:"user",content:"你好",expression:null,createdAt:"2026-10-15"},assistantMessage:null};
@@ -20,6 +20,14 @@ beforeEach(()=>{
   api.current.mockResolvedValue(null);api.lastRound.mockResolvedValue(null);api.messages.mockResolvedValue({items:[],nextAfterId:null});api.submit.mockResolvedValue(receipt);api.cancel.mockResolvedValue(round);
 });
 afterEach(cleanup);
+it("宠窗展示已保存的聊天GIF表情包，保持原聊天按钮",async()=>{
+  api.image.mockResolvedValue("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==");
+  render(<Harness/>);await waitFor(()=>expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(false));
+  fireEvent.change(screen.getByRole("textbox"),{target:{value:"来个表情包"}});fireEvent.click(screen.getByRole("button",{name:"发送"}));await screen.findByRole("region",{name:"桌宠聊天回复"});
+  const saved:RoundSnapshot={...round,round:{...round.round,status:"completed"},assistantMessage:{...round.userMessage,id:"21",role:"assistant",content:"",images:[{id:"8",filename:"猫猫.gif",imageFile:"assets/chat_images/img-sticker.gif",mediaType:"image/gif",caption:"聊天表情包：猫猫",sourceKind:"sticker"}]}};
+  api.lastRound.mockResolvedValue(saved);await act(async()=>receive({...receipt,type:"finished",seq:1,finish:"stop",saved}));
+  expect(await screen.findByAltText("猫猫.gif")).toBeTruthy();expect(api.image).toHaveBeenCalledWith({personaId:"1",sessionId:"2",contextRevision:3},"8");expect(screen.getByRole("button",{name:"聊天详情"})).toBeTruthy();expect(screen.queryByText("这次回复暂未完成，请查看聊天详情。")).toBeNull();
+});
 it("宠窗发送复用当前会话，头顶流式更新；收起输入不取消，完成后保留正文",async()=>{
   const details=vi.fn();render(<Harness onDetails={details}/>);
   await waitFor(()=>expect((screen.getByRole("textbox",{name:"聊天消息"}) as HTMLTextAreaElement).disabled).toBe(false));

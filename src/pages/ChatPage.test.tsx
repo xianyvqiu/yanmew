@@ -103,6 +103,45 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("ChatPage", () => {
+  it("换表情并开始输出时出行后台刷新不打断输入焦点和选区", async () => {
+    const round=completedRound();
+    const request:ChatRequestSnapshot={requestId:"focus-request",personaId:persona.id,sessionId:"session-1",contextRevision:1,
+      roundId:"10",seq:0,partialContent:"",expression:null,
+      round:{...round,round:{...round.round,status:"pending"},assistantMessage:null}};
+    api.current.mockResolvedValue(request);
+    let receive!:(event:ChatReplyEvent)=>void;
+    api.listen.mockImplementation(async (listener:(event:ChatReplyEvent)=>void)=>{receive=listener;return()=>{};});
+    const current=snapshot("session-1");const onRefresh=vi.fn();
+    const page=render(<ChatPage snapshot={current} onRefresh={onRefresh}/>);
+    const input=screen.getByRole("textbox",{name:"聊天消息"}) as HTMLTextAreaElement;
+    await waitFor(()=>expect(input.disabled).toBe(false));
+    input.focus();fireEvent.change(input,{target:{value:"我还在输入下一句话"}});input.setSelectionRange(2,5);
+    travelState.loading=true;
+    page.rerender(<ChatPage snapshot={current} onRefresh={onRefresh}/>);
+    const event={requestId:request.requestId,personaId:persona.id,sessionId:"session-1",contextRevision:1,roundId:"10",saved:null};
+    await act(async()=>{receive({...event,type:"expression",expression:"(^_^) ",seq:1});receive({...event,type:"text",text:"开始回答",seq:2});});
+    expect(screen.getByRole("textbox",{name:"聊天消息"})).toBe(input);
+    expect(input.disabled).toBe(false);expect(document.activeElement).toBe(input);
+    expect([input.selectionStart,input.selectionEnd]).toEqual([2,5]);expect(input.value).toBe("我还在输入下一句话");
+    travelState.loading=false;page.rerender(<ChatPage snapshot={current} onRefresh={onRefresh}/>);
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input,{target:{value:"我还在输入下一句话，继续写"}});
+    expect(input.value).toBe("我还在输入下一句话，继续写");expect(api.cancel).not.toHaveBeenCalled();
+  });
+
+  it("等待出行状态确认时可写草稿但发送按钮和回车仍不能发送",async()=>{
+    travelState.loading=true;
+    const current=snapshot("session-1");const onRefresh=vi.fn();
+    const page=render(<ChatPage snapshot={current} onRefresh={onRefresh}/>);
+    const input=screen.getByRole("textbox",{name:"聊天消息"}) as HTMLTextAreaElement;
+    await waitFor(()=>expect(input.disabled).toBe(false));
+    input.focus();fireEvent.change(input,{target:{value:"先写好草稿"}});
+    expect(screen.getByRole("button",{name:"发送"})).toHaveProperty("disabled",true);
+    fireEvent.keyDown(input,{key:"Enter"});expect(api.submit).not.toHaveBeenCalled();
+    travelState.loading=false;page.rerender(<ChatPage snapshot={current} onRefresh={onRefresh}/>);
+    expect(screen.getByRole("button",{name:"发送"})).toHaveProperty("disabled",false);
+    expect(input.value).toBe("先写好草稿");expect(document.activeElement).toBe(input);
+  });
   it("AI历史渲染Markdown、用户保留标记，双方都复制各自原文且不修改消息", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");

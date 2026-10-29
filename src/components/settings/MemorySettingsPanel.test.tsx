@@ -19,8 +19,8 @@ const makeSettings = (overrides: Partial<Settings> = {}) => ({
 }) as Settings;
 const current = makeSettings();
 const labels = {
-  short_memory_min_chars: "短期记忆最少字数", short_memory_max_chars: "短期记忆最多字数",
-  long_memory_min_chars: "长期记忆最少字数", long_memory_max_chars: "长期记忆最多字数",
+  short_memory_min_chars: "短期记忆建议最少字数", short_memory_max_chars: "短期记忆建议最多字数",
+  long_memory_min_chars: "长期记忆建议最少字数", long_memory_max_chars: "长期记忆建议最多字数",
   memory_merge_count: "每条长期记忆使用短期记忆数 k", recent_message_count: "进入上下文的最近消息原文数",
   recent_long_memory_count: "直接进入上下文的最近长期记忆数 m", travel_journal_min_chars: "旅行游记最少字数",
   travel_journal_max_chars: "旅行游记最多字数",

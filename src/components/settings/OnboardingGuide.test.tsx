@@ -1,51 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import OnboardingGuide, { OnboardingDialog, onboardingApi } from "./OnboardingGuide";
-
-beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
-  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
-  vi.spyOn(onboardingApi, "pending").mockResolvedValue(false);
-  vi.spyOn(onboardingApi, "finish").mockResolvedValue();
-});
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-
-it("新用户自动引导，提供商步骤只定位、不提供配置输入", async () => {
-  vi.mocked(onboardingApi.pending).mockResolvedValue(true);
-  const navigate = vi.fn();
-  render(<OnboardingGuide replay={0} onNavigate={navigate}/>);
-  await screen.findByRole("dialog");
-  fireEvent.click(screen.getByText("下一步"));
-  expect(navigate).toHaveBeenLastCalledWith("提供商");
-  expect(screen.getByText(/暂不填写或测试连接/)).toBeTruthy();
-  expect(screen.queryByRole("textbox")).toBeNull();
-  fireEvent.click(screen.getByText("跳过教程"));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(onboardingApi.finish).toHaveBeenCalledTimes(1);
-});
-it("老用户不自动出现，手动重开仍可从欢迎开始并完成", async () => {
-  const navigate=vi.fn();
-  const view=render(<OnboardingGuide replay={0} onNavigate={navigate}/>);
-  await act(async()=>{});
-  expect(screen.queryByRole("dialog")).toBeNull();
-  view.rerender(<OnboardingGuide replay={1} onNavigate={navigate}/>);
-  await screen.findByRole("dialog");
-  for(let i=0;i<3;i++)fireEvent.click(screen.getByText("下一步"));
-  fireEvent.click(screen.getByText("上一步"));
-  expect(navigate).toHaveBeenLastCalledWith("人设");
-  fireEvent.click(screen.getByText("下一步"));
-  fireEvent.click(screen.getByText("完成教程"));
-  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
-  view.rerender(<OnboardingGuide replay={2} onNavigate={navigate}/>);
-  expect(await screen.findByText("初次见面，欢迎来到颜喵")).toBeTruthy();
-});
-it("保存失败保留教程，Esc可重试跳过", async () => {
-  vi.mocked(onboardingApi.finish).mockRejectedValueOnce(new Error("磁盘忙"));
-  const close=vi.fn();
-  render(<OnboardingDialog onNavigate={()=>{}} onClose={close}/>);
-  fireEvent.click(screen.getByText("跳过教程"));
-  expect(await screen.findByRole("alert")).toHaveProperty("textContent",expect.stringContaining("磁盘忙"));
-  expect(close).not.toHaveBeenCalled();
-  fireEvent(screen.getByRole("dialog"),new Event("cancel",{bubbles:true,cancelable:true}));
-  await waitFor(()=>expect(close).toHaveBeenCalledTimes(1));
-});
+import {act,cleanup,render,screen,waitFor} from "@testing-library/react";
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+import Guide,{OnboardingDialog,onboardingApi,onboardingSteps,type GuideState} from "./OnboardingGuide";
+let receive:(value:{token:number;step:number;action:string})=>void;
+const published=()=>{const values=vi.mocked(onboardingApi.publish).mock.calls.map(c=>c[0]).filter((s):s is GuideState=>Boolean(s));return values[values.length-1]!;};
+async function action(value:string){const state=published();await act(async()=>receive({token:state.token,step:state.step,action:value}));}
+beforeEach(()=>{vi.spyOn(onboardingApi,"pending").mockResolvedValue(false);vi.spyOn(onboardingApi,"finish").mockResolvedValue();vi.spyOn(onboardingApi,"publish").mockResolvedValue();vi.spyOn(onboardingApi,"listen").mockImplementation(async fn=>{receive=fn;return()=>{};});});afterEach(()=>{cleanup();vi.restoreAllMocks();});
+it("首次自动引导与手动重开，教程不要求填写提供商",async()=>{vi.mocked(onboardingApi.pending).mockResolvedValue(true);const navigate=vi.fn();const view=render(<Guide replay={0} onNavigate={navigate}/>);await waitFor(()=>expect(published()?.page).toBe("提供商"));expect(published().text).toBe(onboardingSteps[0]!.text);expect(navigate).not.toHaveBeenCalled();await action("view");await waitFor(()=>expect(published().viewing).toBe(true));expect(navigate).toHaveBeenCalledWith("提供商");await action("skip");await waitFor(()=>expect(onboardingApi.publish).toHaveBeenLastCalledWith(null));view.rerender(<Guide replay={1} onNavigate={navigate}/>);await waitFor(()=>expect(published().viewing).toBe(false));});
+it("逐步覆盖全部设置和宠窗聊天窗口，跨窗步骤不误导到设置页面",async()=>{const navigate=vi.fn(),close=vi.fn();render(<OnboardingDialog onNavigate={navigate} onClose={close}/>);await waitFor(()=>expect(published()?.step).toBe(0));for(let i=0;i<onboardingSteps.length;i++){expect(published().step).toBe(i);await action("view");await waitFor(()=>expect(published().viewing).toBe(true));await action("next");if(i<onboardingSteps.length-1)await waitFor(()=>expect(published().step).toBe(i+1));}await waitFor(()=>expect(close).toHaveBeenCalled());expect(navigate.mock.calls.map(c=>c[0])).toEqual(onboardingSteps.filter(s=>!s.target).map(s=>s.page));expect(onboardingSteps.some(s=>s.target==="main")).toBe(true);expect(onboardingSteps.some(s=>s.target==="chat")).toBe(true);});
+it("旧用户不自动显示，过期原生按钮回执不跳步",async()=>{const view=render(<Guide replay={0} onNavigate={()=>{}}/>);await act(async()=>{});expect(onboardingApi.publish).not.toHaveBeenCalled();view.rerender(<Guide replay={1} onNavigate={()=>{}}/>);await waitFor(()=>expect(published()?.step).toBe(0));await act(async()=>receive({token:0,step:0,action:"next"}));expect(published().viewing).toBe(false);await action("view");await action("next");await waitFor(()=>expect(published().step).toBe(1));await action("previous");await waitFor(()=>expect(published().step).toBe(0));});
+it("保存失败保留原生层并可重试，离开卸载会清除遮罩",async()=>{vi.mocked(onboardingApi.finish).mockRejectedValueOnce(new Error("磁盘忙"));const close=vi.fn();const view=render(<OnboardingDialog onNavigate={()=>{}} onClose={close}/>);await waitFor(()=>expect(published()?.step).toBe(0));await action("skip");expect(await screen.findByRole("alert")).toHaveProperty("textContent",expect.stringContaining("磁盘忙"));expect(close).not.toHaveBeenCalled();await waitFor(()=>expect(published().busy).toBe(false));await action("skip");await waitFor(()=>expect(close).toHaveBeenCalledTimes(1));view.unmount();await waitFor(()=>expect(onboardingApi.publish).toHaveBeenLastCalledWith(null));});

@@ -1,4 +1,4 @@
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import {useRemoteCardBrowser} from "../../hooks/useRemoteCardBrowser";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, festivalsApi } from "../../api";
@@ -89,6 +89,7 @@ export default function FestivalPanel({ context }: { context: CurrentContext }) 
             <button className="ym-button" data-variant="danger" disabled={busy || draft !== null} onClick={() => { setRemoving(record); setError(""); }}>删除 {record.name}</button></div>
           </>}
         </li>)}</ul>
+      <CardBrowserPagination browser={browser} label="自定义日期" disabled={busy||draft!==null}/>
 
       </>
       {draft && <form ref={formRef} className="ym-festival-form" aria-label={editing ? "编辑日期" : "新增日期"} onSubmit={event => { event.preventDefault(); save(); }}>

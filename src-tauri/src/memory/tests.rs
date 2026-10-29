@@ -166,7 +166,7 @@ fn cancellation_deleted_source_and_existing_memory_are_preserved() {
     assert_eq!(count(&runtime, 1), 0);
 }
 #[test]
-fn structured_output_and_han_range_are_checked_without_truncation() {
+fn structured_output_checks_format_but_length_is_a_soft_target() {
     let config = Configuration {
         provider: None,
         minimum: 12,
@@ -180,9 +180,12 @@ fn structured_output_and_han_range_are_checked_without_truncation() {
         parse_output(&json!({"content":SUMMARY}).to_string(), &config).unwrap(),
         SUMMARY
     );
+    for content in ["太短".to_owned(), "汉".repeat(101), "No Chinese required".to_owned()] {
+        assert_eq!(parse_output(&json!({"content":content}).to_string(), &config).unwrap(), content);
+    }
     for bad in [
-        json!({"content":"太短"}),
-        json!({"content":"汉".repeat(101)}),
+        json!({"content":"  "}),
+        json!({"content":"正文\u{0000}"}),
         json!({"content":SUMMARY,"extra":1}),
     ] {
         assert_eq!(

@@ -27,6 +27,22 @@ async function open() {
   await waitFor(() => expect(screen.getByRole("button", { name: "保存外观" }).closest("fieldset")?.disabled).toBe(false));
 }
 
+it("默认文字颜色随人设变化，独立选色保留并可恢复跟随",async()=>{
+  const saved=vi.fn();const page=render(<ChatBackgroundSettings persona={persona} onSaved={saved}/>);await open();
+  const preview=screen.getByLabelText("聊天背景预览");
+  expect(preview.style.getPropertyValue("--ym-chat-user-text")).toBe("#888888");
+  expect(preview.style.getPropertyValue("--ym-chat-assistant-text")).toBe("#888888");
+  fireEvent.change(screen.getByLabelText("AI文字颜色"),{target:{value:"#abcdef"}});
+  page.rerender(<ChatBackgroundSettings persona={{...persona,color:"#112233"}} onSaved={saved}/>);
+  expect(preview.style.getPropertyValue("--ym-chat-user-text")).toBe("#112233");
+  expect(preview.style.getPropertyValue("--ym-chat-assistant-text")).toBe("#abcdef");
+  expect(screen.getByLabelText("用户文字颜色")).toHaveProperty("value","#112233");
+  fireEvent.click(screen.getByRole("button",{name:"AI文字颜色跟随人设颜色"}));
+  expect(preview.style.getPropertyValue("--ym-chat-assistant-text")).toBe("#112233");
+  fireEvent.click(screen.getByRole("button",{name:"保存外观"}));await screen.findByText("聊天外观已保存");
+  expect(api.save).toHaveBeenCalledWith("1",expect.objectContaining({appearance:DEFAULT_CHAT_APPEARANCE}),undefined);
+});
+
 it("气泡和双方文字颜色只预览，保存后可重读，恢复样式不清背景", async () => {
   const saved = vi.fn();
   render(<ChatBackgroundSettings persona={persona} onSaved={saved} />);
@@ -43,7 +59,7 @@ it("气泡和双方文字颜色只预览，保存后可重读，恢复样式不�
   expect(api.save).toHaveBeenCalledWith("1", expect.objectContaining({ appearance: { bubbleStyle: "frosted", userTextColor: "#123456", assistantTextColor: "#abcdef" } }), undefined);
   fireEvent.click(screen.getByRole("button", { name: "恢复默认样式" }));
   expect(preview.dataset.bubbleStyle).toBe("solid");
-  expect(preview.style.getPropertyValue("--ym-chat-user-text")).toBe("var(--ym-text)");
+  expect(preview.style.getPropertyValue("--ym-chat-user-text")).toBe(persona.color);
   expect(api.save).toHaveBeenCalledOnce();
 });
 

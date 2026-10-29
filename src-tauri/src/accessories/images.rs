@@ -199,13 +199,13 @@ pub(crate) fn managed_file(paths: &AppPaths, relative: &str) -> AppResult<PathBu
     }
     Ok(path)
 }
-/// 校验已经持久化的256像素透明PNG，不改变内容。
+/// 校验受管透明PNG；256像素用于表情/饰品，1024像素用于默认参考形象。
 pub(crate) fn validate_png(bytes: &[u8]) -> AppResult<()> {
     if image::guess_format(bytes).map_err(|_| invalid())? != ImageFormat::Png {
         return Err(invalid());
     }
     let rgba = decode(bytes)?;
-    if rgba.dimensions() != (IMAGE_SIZE, IMAGE_SIZE) {
+    if ![(IMAGE_SIZE, IMAGE_SIZE), (1024, 1024)].contains(&rgba.dimensions()) {
         return Err(invalid());
     }
     Ok(())
@@ -230,11 +230,7 @@ pub(crate) fn read(paths: &AppPaths, relative: &str) -> AppResult<String> {
 
 /// 只接受归一化PNG；文件先刷新并发布，调用方才可开始引用它的数据库事务。
 pub(crate) fn publish(paths: &AppPaths, png: &[u8]) -> AppResult<String> {
-    if image::guess_format(png).map_err(|_| invalid())? != ImageFormat::Png
-        || decode(png)?.dimensions() != (IMAGE_SIZE, IMAGE_SIZE)
-    {
-        return Err(invalid());
-    }
+    validate_png(png)?;
     let staging = directory(paths, true, true)?;
     let final_directory = directory(paths, false, false)?;
     for _ in 0..16 {

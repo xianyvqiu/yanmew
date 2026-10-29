@@ -1,6 +1,6 @@
 import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
 import InlineDetailCard from "./InlineDetailCard";
-import CardBrowserControls from "./CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, travelApi, travelJournalsApi } from "../api";
@@ -151,6 +151,7 @@ function JournalPage(props: { context: CurrentContext }) {
           <button className="ym-button" data-variant="danger" disabled={busy || missing} onClick={() => { setActionError(""); setConfirmation({ kind: "delete", journal: detail }); }}>删除游记</button>
         </div></>}
       </> : <p className="ym-page-note">{selected ? "游记详情暂不可用，请刷新后重试。" : "选择一篇游记，查看完整内容。"}</p>}</InlineDetailCard></li>)}</ul>
+      <CardBrowserPagination browser={browser} label="游记" disabled={busy||editing}/>
 
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="journal-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       <h2 id="journal-confirm-title">{confirmation?.kind === "delete" ? "删除这篇游记？" : "放弃未保存的修改？"}</h2>

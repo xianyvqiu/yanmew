@@ -23,7 +23,7 @@ select option,select optgroup { color:var(--ym-text); background:var(--ym-surfac
 .ym-reminder-form__choices label>input[type="checkbox"]::before { display:none; }
 .ym-window-shell .ym-browser-controls { display:grid; grid-template-columns:minmax(0,1fr) minmax(165px,.45fr); gap:16px; }
 .ym-window-shell .ym-browser-controls>.ym-field { min-width:0; width:100%; white-space:normal; }
-.ym-window-shell .ym-browser-controls .ym-browser-pages,.ym-browser-controls>p { grid-column:1/-1; justify-content:flex-end; }
+.ym-browser-controls>p { grid-column:1/-1; justify-content:flex-end; }
 .ym-window-shell .ym-browser-controls :is(input,select) { width:100%; box-sizing:border-box; }
 .ym-window-shell .ym-module-toggle { width:100%; display:flex; justify-content:space-between; text-align:left; padding:17px 18px; min-height:58px; font-size:16px; margin-block:18px; background:var(--ym-accent-subtle); }
 .ym-module-toggle::after { content:"⌄"; color:var(--ym-accent-strong); transform:rotate(0); transition:transform 180ms var(--ym-ease-standard); }

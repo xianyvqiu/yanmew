@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 const scopedTitle="人设与会话设置";
 export const settingsGroups = [
   { title: "基础服务", items: ["通用", "提供商", "人设", "用户设定", "Skill 仓库", "记忆", "时间与桌宠", "提醒", "时间与天气"] },
-  { title: "扩展服务", items: ["喵币与签到", "现实记账", "喵币账单", "食物", "日历", "小游戏插件"] },
+  { title: "扩展服务", items: ["喵币与签到", "现实记账", "喵币账单", "食物", "日历", "聊天表情包库", "小游戏插件"] },
   { title: scopedTitle, items: ["桌宠状态", "桌宠自定义创作", "出行", "饰品"] },
 ];
 
@@ -30,7 +30,7 @@ function NavigationGroup({ title, open, onToggle, children }: {
   </section>;
 }
 
-export default function SettingsNavigation({ page, onSelect }: { page: string; onSelect: (page: string) => void }) {
+export default function SettingsNavigation({ page, onSelect, tutorialPage }: { page: string; onSelect: (page: string) => void; tutorialPage?: string | null }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const previousPage = useRef(page);
   const toggle = (title: string) => setExpanded(current => ({ ...current, [title]: !current[title] }));
@@ -41,7 +41,12 @@ export default function SettingsNavigation({ page, onSelect }: { page: string; o
     const group = settingsGroups.find(group => group.items.includes(page));
     if (group) setExpanded(current => ({ ...current, [group.title]: true, ...(group.title !== scopedTitle ? { "全局设置": true } : {}) }));
   }, [page]);
-  const items = (group: typeof settingsGroups[number]) => group.items.map((item, index) => <button key={item} type="button" className="ym-button ym-settings-nav-item"
+  useEffect(() => {
+    if (!tutorialPage) return;
+    const group = settingsGroups.find(group => group.items.includes(tutorialPage));
+    if (group) setExpanded(current => ({ ...current, [group.title]: true, ...(group.title !== scopedTitle ? { "全局设置": true } : {}) }));
+  }, [tutorialPage]);
+  const items = (group: typeof settingsGroups[number]) => group.items.map((item, index) => <button key={item} data-onboarding-page={item} type="button" className="ym-button ym-settings-nav-item"
     style={{ "--ym-nav-delay": `${Math.min(index, 6) * 35}ms` } as CSSProperties}
     onClick={() => onSelect(item)} aria-current={item === page ? "page" : undefined}>{item}</button>);
   return <nav className="ym-settings-nav" aria-label="设置导航">
@@ -49,6 +54,6 @@ export default function SettingsNavigation({ page, onSelect }: { page: string; o
       {settingsGroups.slice(0, 2).map(group => <NavigationGroup key={group.title} title={group.title} open={!!expanded[group.title]} onToggle={() => toggle(group.title)}>{items(group)}</NavigationGroup>)}
     </NavigationGroup>
     <NavigationGroup title={scopedTitle} open={!!expanded[scopedTitle]} onToggle={() => toggle(scopedTitle)}>{items(settingsGroups[2])}</NavigationGroup>
-    <button type="button" className="ym-button ym-settings-nav-item" aria-current={page === "帮助与使用手册" ? "page" : undefined} onClick={() => onSelect("帮助与使用手册")}>帮助与使用手册</button>
+    <button type="button" data-onboarding-page="帮助与使用手册" className="ym-button ym-settings-nav-item" aria-current={page === "帮助与使用手册" ? "page" : undefined} onClick={() => onSelect("帮助与使用手册")}>帮助与使用手册</button>
   </nav>;
 }

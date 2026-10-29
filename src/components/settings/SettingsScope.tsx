@@ -1,4 +1,5 @@
 const scopes:Record<string,{label:string;description:string}>={
+  "聊天表情包库":{label:"全局表情包库",description:"库、表情包和标签统一管理，可绑定给多个人设。伙伴按需在聊天消息中发送，和桌宠外观表情分别管理。"},
   "通用":{label:"全局共享",description:"主题、聊天工具、邮件、自启与备份设置，对所有人设和会话生效。"},
   "提供商":{label:"全局共享",description:"连接、Key和模型用途由所有人设共用，切换人设不会切换这组服务设置。"},
   "人设":{label:"全局人设库",description:"这里管理整个颜喵可用的人设。每个人设分别保存自己的设定、外观和表情库，修改其中一位不会改动其他人设。"},

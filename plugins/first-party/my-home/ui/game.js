@@ -77,7 +77,6 @@ const FISH_ROD_DURABILITY = 80;
 const FISH_ROD_PRICE = 30;
 const FISH_LOW_RANGE = [10, 8000];
 const FISH_HIGH_RANGE = [20, 15000];
-const FISH_ESCAPE_RATE = 1 / 3;
 
 const BARN_OPEN_COST = 60;
 const BARN_OPEN_AFFINITY = 500;
@@ -637,7 +636,7 @@ function renderPond() {
 
     <div style="font-size:10.5px;color:var(--ink-dim);text-align:center;line-height:1.6;">
       每 1000 克鱼卖 1 金币 · 每天最多钓 ${FISH_DAILY_LIMIT} 次<br>
-      鱼竿用 ${FISH_ROD_DURABILITY} 次后会坏掉
+      鱼竿用 ${FISH_ROD_DURABILITY} 次后会坏掉<br>点按或按住提竿，跟住绿色活动区 · 抛竿扣费，离开算失败
     </div>
   `;
 
@@ -651,34 +650,45 @@ function renderPond() {
   $('#pond-sell').addEventListener('click', sellFish);
 }
 
+let fishingRound = null;
+function beginFishingChallenge(grams) {
+  const round = { grams, awarded: false };
+  fishingRound = round;
+  window.HomeFishing.open({
+    grams,
+    onResult: async caught => {
+      if (!caught) return true;
+      if (round.awarded) return true;
+      if (fishingRound !== round) return false;
+      let saved = false;
+      await perform('钓鱼收获', () => {
+        if (fishingRound !== round || round.awarded) return;
+        state.fishing.fishGrams += grams;
+        draft.effects.push(() => { round.awarded = true; saved = true; });
+      });
+      return saved;
+    },
+    onClose: () => {
+      if (fishingRound === round) fishingRound = null;
+      if (currentView === 'pond') renderPond();
+    },
+  });
+}
 function doFish(tier) {
+  if (fishingRound || !window.HomeFishing) return;
   const p = state.fishing;
   const cost = tier === 'low' ? FISH_LOW_COST : FISH_HIGH_COST;
+  if (state.affinity < FISH_OPEN_AFFINITY) { toast('熟练度达到30后就能钓鱼啦'); return; }
   if (state.coins < cost) { toast('金币不够哦'); return; }
   if (p.rodDurability <= 0) { toast('鱼竿坏了，先买一根'); return; }
-
-  if (p.lastDay !== dateKey()) {
-    p.lastDay = dateKey();
-    p.dailyCount = 0;
-  }
-  if (p.dailyCount >= FISH_DAILY_LIMIT) { toast('今天已经钓了 20 次了'); return; }
-
-  const btn = tier === 'low' ? $('#pond-low') : $('#pond-high');
-  addCoins(-cost, btn);
-  p.rodDurability -= 1;
-  p.dailyCount += 1;
-  addSkill(AFFINITY_GAIN.fish);
-
-  if (Math.random() < FISH_ESCAPE_RATE) {
-    toast('啊！鱼儿脱竿了！什么都没有钓到呢。');
-  } else {
-    const range = tier === 'low' ? FISH_LOW_RANGE : FISH_HIGH_RANGE;
-    const grams = Math.floor(range[0] + Math.random() * (range[1] - range[0]));
-    p.fishGrams += grams;
-    toast(`哇！钓到了 ${grams} 克鱼！`);
-  }
-  renderPond();
-  renderHome();
+  if (p.lastDay !== dateKey()) { p.lastDay = dateKey(); p.dailyCount = 0; }
+  if (p.dailyCount >= FISH_DAILY_LIMIT) { toast('今天已经钓了20次了'); return; }
+  const range = tier === 'low' ? FISH_LOW_RANGE : FISH_HIGH_RANGE;
+  const grams = Math.floor(range[0] + Math.random() * (range[1] - range[0]));
+  addCoins(-cost, tier === 'low' ? $('#pond-low') : $('#pond-high'));
+  p.rodDurability -= 1; p.dailyCount += 1; addSkill(AFFINITY_GAIN.fish);
+  // 扣费和消耗落盘成功之后才进入挑战；关窗不回滚本次消耗。
+  draft.effects.push(() => beginFishingChallenge(grams));
 }
 
 function buyRod() {

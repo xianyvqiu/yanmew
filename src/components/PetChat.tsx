@@ -1,4 +1,5 @@
 import {useChatScroll} from "../hooks/useChatScroll";
+import ChatImage from "./ChatImage";
 import ChatComposer from "./ChatComposer";
 import ChatMessageText from "./ChatMessageText";
 import type { usePetChat } from "../windows/usePetChat";
@@ -10,6 +11,7 @@ export function PetChatBubble({ chat, onDetails }: { chat: PetChatState; onDetai
   return <section className="pet-chat-bubble" data-pet-interactive aria-label="桌宠聊天回复">
     <div ref={scroll.viewport} className="pet-chat-bubble__body" aria-live="polite" aria-busy={chat.reply.streaming}><div ref={scroll.content}>
       <ChatMessageText content={chat.reply.text} />
+      {chat.reply.images?.map(image=><ChatImage key={image.id} image={image} context={chat.context}/>)}
       {chat.reply.error && <p className="pet-chat-message-error" role="alert">{chat.reply.error}</p>}
       {chat.reply.notice && !chat.reply.streaming && <p className="pet-chat-note">{chat.reply.notice}</p>}
     </div></div>

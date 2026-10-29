@@ -48,7 +48,19 @@ it("模型用途单独选择连接，记忆允许跟随聊天",async()=>{
 it("测试使用已保存连接ID且等待期间禁止重复请求",async()=>{
   let finish!:()=>void;api.testProvider.mockImplementation(()=>new Promise<void>(resolve=>{finish=resolve;}));
   render(<ProvidersPanel/>);const firstCard=await card("模型一");const button=firstCard.getByRole("button",{name:"测试连接"});fireEvent.click(button);fireEvent.click(button);
-  expect(api.testProvider).toHaveBeenCalledTimes(1);expect(api.testProvider).toHaveBeenCalledWith("1");await act(async()=>finish());await screen.findByText("模型一：连接成功（已保存配置）");
+  expect(firstCard.getByRole("status").textContent).toContain("正在测试连接");
+  expect((await card("模型二")).queryByText("正在测试连接")).toBeNull();
+  expect(api.testProvider).toHaveBeenCalledTimes(1);expect(api.testProvider).toHaveBeenCalledWith("1");await act(async()=>finish());await firstCard.findByText("模型一：连接成功（已保存配置）");
+});
+it("测试失败留在当前卡片，其他连接成功不覆盖，编辑时清理旧结果",async()=>{
+  api.testProvider.mockRejectedValueOnce({message:"服务暂时不可用"}).mockResolvedValue(undefined);
+  render(<ProvidersPanel/>);const one=await card("模型一");const two=await card("模型二");
+  fireEvent.click(one.getByRole("button",{name:"测试连接"}));await one.findByText("服务暂时不可用");
+  expect(one.getByRole("alert").textContent).toContain("测试失败");expect(two.queryByRole("alert")).toBeNull();
+  fireEvent.click(two.getByRole("button",{name:"测试连接"}));await two.findByText("模型二：连接成功（已保存配置）");
+  expect(one.getByRole("alert")).toBeTruthy();expect(two.queryByRole("alert")).toBeNull();
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  fireEvent.click(one.getByRole("button",{name:"编辑连接"}));expect(one.queryByRole("alert")).toBeNull();
 });
 it("新增成功后的刷新失败不会再次提交或留下保存表单",async()=>{
   render(<ProvidersPanel/>);await screen.findByRole("heading",{name:"模型一"});fireEvent.click(screen.getByRole("button",{name:"新增提供商"}));fireEvent.change(screen.getByLabelText("提供商名称"),{target:{value:"新增"}});api.listProviders.mockRejectedValueOnce({message:"读取失败"});fireEvent.click(screen.getByRole("button",{name:"保存"}));

@@ -233,3 +233,14 @@ fn published_previews_survive_cleanup_and_stale_upload_keeps_previous_images() {
     assert_eq!(current.image_file, second.image_file);
     assert_eq!(current.preview_file, second.preview_file);
 }
+
+#[test]
+fn base_reference_keeps_detail_while_expression_stays_small() {
+ let mut pixels=image::RgbaImage::new(1024,1024);
+ for x in 100..900 {for y in 100..900 {pixels.put_pixel(x,y,image::Rgba([((x+y)%256)as u8,20,140,255]));}}
+ let mut cursor=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(pixels).write_to(&mut cursor,image::ImageFormat::Png).unwrap();
+ let reference=normalize_size(cursor.get_ref(),1024).unwrap();let expression=normalize(cursor.get_ref()).unwrap();
+ crate::accessories::images::validate_png(&reference).unwrap();crate::accessories::images::validate_png(&expression).unwrap();
+ assert_eq!(image::load_from_memory(&reference).unwrap().width(),1024);
+ assert_eq!(image::load_from_memory(&expression).unwrap().width(),256);
+}

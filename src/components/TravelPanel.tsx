@@ -1,6 +1,6 @@
 import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
 import InlineDetailCard from "./InlineDetailCard";
-import CardBrowserControls from "./CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, lettersApi, travelApi } from "../api";
@@ -132,6 +132,7 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
         {trip.status === "cancelled" ? <p className="ym-page-note">旅行已取消，不生成回来信、伴手礼或游记。</p> : trip.status === "returned" && <p className="ym-page-note">{trip.giftKind ? `历史上带回：${trip.giftKind === "text" ? "普通文字伴手礼" : "可佩戴饰品"}` : "伴手礼内容尚未生成。"}</p>}
         <p className="ym-page-note">这次出行的信件、游记、伴手礼可在对应标签中查看。</p>
       </InlineDetailCard></li>)}</ol>
+      <CardBrowserPagination browser={tripsBrowser} label="出行" disabled={busy}/>
 
     </section> : <section className="ym-page-card" aria-label="邮箱">
       <h2>邮箱</h2>{mailBrowser.loading && <p role="status">正在读取信件…</p>}
@@ -151,6 +152,7 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
           <button className="ym-button" data-variant="danger" disabled={busy} onClick={() => { setDeleting(detail); }}>删除信件</button></div>
       </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</InlineDetailCard>
       </li>)}</ul>
+      <CardBrowserPagination browser={mailBrowser} label="信件" disabled={busy}/>
 
     </section>}
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="letter-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>

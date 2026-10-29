@@ -399,6 +399,7 @@ class message_images {
   TEXT filename
   TEXT image_file
   TEXT media_type
+  TEXT source_kind
   TEXT caption
   TEXT created_at
 }
@@ -583,6 +584,47 @@ class real_operations {
   TEXT result_json
   TEXT created_at
 }
+class sticker_libraries {
+  <<table>>
+  INTEGER id PK
+  TEXT title
+  TEXT description
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class chat_stickers {
+  <<table>>
+  INTEGER id PK
+  INTEGER library_id FK
+  TEXT title
+  TEXT description
+  TEXT filename
+  TEXT image_file
+  TEXT media_type
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class sticker_tags {
+  <<table>>
+  INTEGER id PK
+  TEXT name
+  INTEGER revision
+  TEXT created_at
+  TEXT updated_at
+}
+class sticker_tag_links {
+  <<table>>
+  INTEGER sticker_id PK FK
+  INTEGER tag_id PK FK
+}
+class persona_sticker_libraries {
+  <<table>>
+  INTEGER persona_id PK FK
+  INTEGER library_id PK FK
+  TEXT created_at
+}
 sessions "0..*" --> "0..1" user_profiles : R01 user_profile_id / SET NULL
 sessions "0..*" --> "1" personas : R02 persona_id / CASCADE
 session_pet_states "0..1" --> "1" sessions : R03 session_id / CASCADE
@@ -646,6 +688,11 @@ real_entries "0..*" --> "1" real_assets : R60 asset_id / RESTRICT
 real_entries "0..*" --> "0..1" real_categories : R61 category_id / RESTRICT
 real_occurrences "0..1" --> "0..1" real_entries : R62 entry_id / SET NULL
 real_occurrences "0..*" --> "1" real_schedules : R63 schedule_id / RESTRICT
+chat_stickers "0..*" --> "1" sticker_libraries : R64 library_id / CASCADE
+sticker_tag_links "0..*" --> "1" sticker_tags : R65 tag_id / CASCADE
+sticker_tag_links "0..*" --> "1" chat_stickers : R66 sticker_id / CASCADE
+persona_sticker_libraries "0..*" --> "1" sticker_libraries : R67 library_id / CASCADE
+persona_sticker_libraries "0..*" --> "1" personas : R68 persona_id / CASCADE
 settings ..> sessions : L01 logical
 game_runs ..> game_plugins : L02 logical
 currency_ledger ..> game_plugins : L03 logical

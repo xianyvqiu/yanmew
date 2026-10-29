@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { UserProfile } from "../types";
-import CardBrowserControls from "./CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import { useCardBrowser } from "../hooks/useCardBrowser";
 
 /** 选择只绑定已有设定，详情跳转使用原设置窗口，不复制编辑表单。 */
@@ -25,6 +25,7 @@ export default function UserProfilePicker({ profiles, selectedId, defaultProfile
         </button>
         <button type="button" className="ym-button" aria-label={`查看用户设定详情：${profile.name}`} disabled={busy} onClick={() => onDetails(profile.id)}>详情</button>
       </article>)}</div>
+      <CardBrowserPagination browser={browser} label="用户设定" disabled={busy}/>
     </> : <p className="ym-page-empty">暂无用户设定，请先到设置中的“用户设定”创建。</p>}
     </div>
     <div className="ym-session-dialog-actions"><button className="ym-button" disabled={busy || !selectedId} onClick={() => onSelect(null)}>解除当前绑定</button></div>

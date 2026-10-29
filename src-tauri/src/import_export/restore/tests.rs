@@ -8,6 +8,41 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 const NOW: &str = "2026-10-13T00:00:00Z";
+
+#[test]
+fn chat_stickers_full_and_persona_backups_preserve_gif_tags_bindings_and_sent_copies(){
+    for kind in [PackageKind::Full,PackageKind::PersonaProfile,PackageKind::Session] {
+        let a=Directory::new();let b=Directory::new();let source=fixture(&a.0);let target=fixture(&b.0);
+        let mut bytes=Vec::new();{let mut e=image::codecs::gif::GifEncoder::new(&mut bytes);for color in [[255,0,0,255],[0,255,0,255]]{e.encode_frame(image::Frame::new(image::RgbaImage::from_pixel(3,3,image::Rgba(color)))).unwrap();}}
+        let paths=source.paths.as_ref().unwrap();let original=crate::chat_images::publish(paths,&bytes,"收藏.gif").unwrap();let sent=crate::chat_images::publish(paths,&bytes,"已发送.gif").unwrap();
+        source.read(|s,_|{
+            s.connection.execute("INSERT INTO sticker_libraries(id,title,description,created_at,updated_at) VALUES(91,'猫猫聊天','分享快乐',?1,?1)",[NOW])?;
+            s.connection.execute("INSERT INTO chat_stickers(id,library_id,title,filename,image_file,media_type,created_at,updated_at) VALUES(92,91,'挥手猫','收藏.gif',?1,'image/gif',?2,?2)",params![original,NOW])?;
+            s.connection.execute("INSERT INTO sticker_tags(id,name,created_at,updated_at) VALUES(93,'开心',?1,?1)",[NOW])?;
+            s.connection.execute("INSERT INTO sticker_tag_links VALUES(92,93)",[])?;s.connection.execute("INSERT INTO persona_sticker_libraries VALUES(2,91,?1)",[NOW])?;
+            s.connection.execute("INSERT INTO messages(id,session_id,role,content,created_at) VALUES(95,2,'assistant','开心！',?1)",[NOW])?;
+            s.connection.execute("INSERT INTO message_images(message_id,filename,image_file,media_type,source_kind,created_at) VALUES(95,'已发送.gif',?1,'image/gif','sticker',?2)",params![sent,NOW])?;Ok(())
+        }).unwrap();
+        let backup=make(&source,&a.0,kind,if kind==PackageKind::Full{&[]}else{&["2"]},false);
+        let p=prepare(&target,&backup).unwrap().unwrap();let mut choice=input(&p);for binding in &mut choice.personas{if binding.source_id=="2"{binding.target_id=None;}}
+        confirm(&target,choice).unwrap();
+        target.read(|s,_|{
+            let library:i64=s.connection.query_row("SELECT id FROM sticker_libraries WHERE title='猫猫聊天'",[],|r|r.get(0))?;
+            assert_eq!(s.connection.query_row("SELECT count(*) FROM persona_sticker_libraries WHERE library_id=?1",[library],|r|r.get::<_,i64>(0))?,1);
+            assert_eq!(s.connection.query_row("SELECT count(*) FROM sticker_tag_links x JOIN chat_stickers s ON s.id=x.sticker_id JOIN sticker_tags t ON t.id=x.tag_id WHERE s.library_id=?1 AND t.name='开心'",[library],|r|r.get::<_,i64>(0))?,1);
+            let file:String=s.connection.query_row("SELECT image_file FROM chat_stickers WHERE library_id=?1",[library],|r|r.get(0))?;assert_eq!(fs::read(crate::chat_images::managed_file(target.paths.as_ref().unwrap(),&file)?).unwrap(),bytes);
+            if kind!=PackageKind::PersonaProfile {let copy:String=s.connection.query_row("SELECT image_file FROM message_images WHERE filename='已发送.gif' AND source_kind='sticker'",[],|r|r.get(0))?;assert_eq!(fs::read(crate::chat_images::managed_file(target.paths.as_ref().unwrap(),&copy)?).unwrap(),bytes);s.connection.execute("DELETE FROM sticker_libraries WHERE id=?1",[library])?;crate::chat_images::cleanup(&s.connection,target.paths.as_ref().unwrap())?;assert_eq!(fs::read(crate::chat_images::managed_file(target.paths.as_ref().unwrap(),&copy)?).unwrap(),bytes);}
+            assert_eq!(s.connection.query_row("SELECT count(*) FROM pragma_foreign_key_check",[],|r|r.get::<_,i64>(0))?,0);Ok(())
+        }).unwrap();
+    }
+}
+
+#[test]
+fn chat_stickers_v25_backup_still_restores_without_new_tables(){
+    let a=Directory::new();let b=Directory::new();let source=fixture(&a.0);let target=fixture(&b.0);let backup=make(&source,&a.0,PackageKind::Full,&[],false);
+    rewrite(&backup.0,|manifest,data|{manifest.schema_version=25;for table in ["sticker_libraries","chat_stickers","sticker_tags","sticker_tag_links","persona_sticker_libraries"]{data.as_object_mut().unwrap().remove(table);}for row in data["message_images"].as_array_mut().unwrap(){row.as_object_mut().unwrap().remove("source_kind");}});
+    let p=prepare(&target,&backup).unwrap().unwrap();confirm(&target,input(&p)).unwrap();target.read(|s,_|{assert_eq!(s.connection.query_row("SELECT count(*) FROM sticker_libraries",[],|r|r.get::<_,i64>(0))?,0);assert!(s.connection.query_row("SELECT count(*) FROM messages",[],|r|r.get::<_,i64>(0))?>0);Ok(())}).unwrap();
+}
 #[test]
 fn standby_settings_full_backup_and_v13_legacy_thresholds_restore() {
     for legacy in [false,true] {
@@ -384,6 +419,8 @@ fn rewrite(path: &Path, change: impl FnOnce(&mut Manifest, &mut Value)) {
     }
     drop(zip);
     change(&mut manifest, &mut data);
+    if manifest.schema_version<26 {let tables=data.as_object_mut().unwrap();for table in ["sticker_libraries","chat_stickers","sticker_tags","sticker_tag_links","persona_sticker_libraries"]{tables.remove(table);}if let Some(rows)=tables.get_mut("message_images").and_then(Value::as_array_mut){for row in rows{row.as_object_mut().unwrap().remove("source_kind");}}}
+
     if manifest.schema_version<18{for (table,_) in crate::real_money::TABLES{data.as_object_mut().unwrap().remove(*table);}}
     if manifest.schema_version<15{for table in ["food_inventory","persona_food_settings","food_actions","skills","persona_skills"]{data.as_object_mut().unwrap().remove(table);}}
     if manifest.schema_version < 13 {
@@ -955,7 +992,7 @@ fn reminder_email_import_is_disabled_unverified_and_does_not_replay_outbox() {
 #[test]
 fn pet_creation_backup_keeps_formal_preview_and_accessory_placement(){
  let source_dir=Directory::new();let source=fixture(&source_dir.0);let target_dir=Directory::new();let target=fixture(&target_dir.0);
- let mut image=image::RgbaImage::new(8,8);image.put_pixel(3,3,image::Rgba([120,0,0,255]));let mut cursor=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(image).write_to(&mut cursor,image::ImageFormat::Png).unwrap();let png=crate::pet_creation::normalize(&cursor.into_inner()).unwrap();let file=crate::accessories::images::publish(source.paths.as_ref().unwrap(),&png).unwrap();
+ let mut image=image::RgbaImage::new(1024,1024);image.put_pixel(3,3,image::Rgba([120,0,0,255]));let mut cursor=std::io::Cursor::new(Vec::new());image::DynamicImage::ImageRgba8(image).write_to(&mut cursor,image::ImageFormat::Png).unwrap();let png=cursor.into_inner();let file=crate::accessories::images::publish(source.paths.as_ref().unwrap(),&png).unwrap();
  source.read(|s,_|{s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,prompt,description,category,image_file,preview_file,created_at,updated_at) VALUES(2,'base','初始猫','','默认','normal',?1,?1,?2,?2)",params![file,NOW])?;s.connection.execute("INSERT INTO pet_artworks(persona_id,kind,name,category,image_file,created_at,updated_at) VALUES(2,'expression','待机猫','standby',?1,?2,?2)",params![file,NOW])?;s.connection.execute("UPDATE personas SET pet_image_enabled=1 WHERE id=2",[])?;s.connection.execute("UPDATE accessories SET position_x=125,position_y=-500,scale=1500 WHERE session_id=2",[])?;Ok(())}).unwrap();
  for kind in [PackageKind::PersonaFull,PackageKind::PersonaProfile,PackageKind::Session] {let backup=make(&source,&source_dir.0,kind,&["2"],false);let p=prepare(&target,&backup).unwrap().unwrap();let mut choice=input(&p);choice.personas[0].target_id=None;confirm(&target,choice).unwrap();target.read(|s,_|{let id:i64=s.connection.query_row("SELECT max(id) FROM personas",[],|r|r.get(0))?;let lib=crate::pet_creation::library(&s.connection,id)?;assert!(lib.enabled);assert_eq!(lib.items.len(),2);assert!(lib.items.iter().any(|a|a.category=="standby"&&a.enabled&&a.image_file.is_some()));let a=lib.items.iter().find(|a|a.kind=="base").unwrap();assert!(a.image_file.is_some());assert!(a.preview_file.is_some());assert!(crate::accessories::images::read(target.paths.as_ref().unwrap(),a.image_file.as_ref().unwrap()).is_ok());if kind!=PackageKind::PersonaProfile {let (x,y,scale):(Option<i32>,Option<i32>,i32)=s.connection.query_row("SELECT position_x,position_y,scale FROM accessories ORDER BY id DESC LIMIT 1",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;assert_eq!((x,y,scale),(Some(125),Some(-500),1500));}Ok(())}).unwrap();}
 }

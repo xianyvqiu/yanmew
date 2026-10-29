@@ -100,8 +100,8 @@ pub const DEFAULTS: &[(&str, i64)] = &[
     ("sleep_max_minutes", 120),
     ("short_memory_min_chars", 12),
     ("short_memory_max_chars", 100),
-    ("long_memory_min_chars", 150),
-    ("long_memory_max_chars", 250),
+    ("long_memory_min_chars", 250),
+    ("long_memory_max_chars", 350),
     ("memory_merge_count", 20),
     ("recent_message_count", 30),
     ("recent_long_memory_count", 30),
@@ -362,7 +362,7 @@ mod tests {
         let original = get(&connection).unwrap();
         for (key, expected) in [
             ("short_memory_min_chars", "12"), ("short_memory_max_chars", "100"),
-            ("long_memory_min_chars", "150"), ("long_memory_max_chars", "250"),
+            ("long_memory_min_chars", "250"), ("long_memory_max_chars", "350"),
             ("travel_journal_min_chars", "250"), ("travel_journal_max_chars", "350"),
             ("memory_merge_count", "20"), ("recent_message_count", "30"),
             ("recent_long_memory_count", "30"), ("tool_call_rounds", "30"),

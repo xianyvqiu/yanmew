@@ -28,10 +28,11 @@ export function usePetChat(view: PetActivity | null) {
     if (await (images.length?chat.send(draft,images):chat.send(draft))) { if (currentKey.current === submittedKey) { setDraft(""); setImages([]); } }
   };
   return {
-    ...chat, draft, setDraft, images, setImages, uploading,setUploading,attachmentOwnerKey:key, send,
+    ...chat, context, draft, setDraft, images, setImages, uploading,setUploading,attachmentOwnerKey:key, send,
     dismissReply: () => setTarget(null),
     reply: owned ? {
-      text: active?.partialContent || message?.content || (chat.busy ? "正在想怎么回答你…" : "这次回复暂未完成，请查看聊天详情。"),
+      images: message?.images?.filter(image=>image.sourceKind==="sticker") ?? [],
+      text: active?.partialContent || message?.content || (message?.images?.some(image=>image.sourceKind==="sticker")?"":chat.busy ? "正在想怎么回答你…" : "这次回复暂未完成，请查看聊天详情。"),
       streaming: Boolean(active || chat.busy),
       error: chat.error,
       notice: chat.notice,

@@ -1,0 +1,1 @@
+{"identifier":"onboarding-layer","description":"教程专用透明层，仅使用事件与窗口生命周期，业务命令保留窗口身份校验","windows":["onboarding"],"permissions":["core:default"]}

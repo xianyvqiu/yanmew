@@ -9,6 +9,7 @@ impl Phase { fn category(self)->&'static str {match self{Self::Up=>"toss_up",Sel
 #[derive(Clone,Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct Toss {
+    pub velocity:Velocity,
     pub phase:Phase,
     pub persona_id:String,
     pub session_id:String,
@@ -20,53 +21,102 @@ pub struct Toss {
 fn serialize_body<S:serde::Serializer>(body:&Rect,serializer:S)->Result<S::Ok,S::Error> {
     serde_json::json!({"x":body.x,"y":body.y,"width":body.width,"height":body.height}).serialize(serializer)
 }
+#[derive(Clone,Copy,Debug,Default,Serialize)]
+pub struct Velocity {pub x:f64,pub y:f64}
 #[derive(Default)]
 pub(super) struct DragTrace { samples:VecDeque<(Instant,(i32,i32))> }
 impl DragTrace {
     pub(super) fn record(&mut self, now:Instant, point:(i32,i32)) {
         self.samples.push_back((now,point));
-        while self.samples.front().is_some_and(|s|now.saturating_duration_since(s.0)>Duration::from_millis(140)){self.samples.pop_front();}
+        while self.samples.front().is_some_and(|s|now.saturating_duration_since(s.0)>Duration::from_millis(120)){self.samples.pop_front();}
     }
-    pub(super) fn upward_speed(&self,now:Instant,scale:f64)->Option<f64> {
+    fn velocity(&self,now:Instant,scale:f64)->Option<Velocity> {
         if !scale.is_finite()||scale<=0.0||self.samples.len()<3{return None}
         let first=self.samples.front()?;let last=self.samples.back()?;
         let dt=last.0.saturating_duration_since(first.0).as_secs_f64();
-        if now.saturating_duration_since(last.0)>Duration::from_millis(70)||!(0.04..=0.14).contains(&dt){return None}
-        let up=(f64::from(first.1.1)-f64::from(last.1.1))/scale;
-        let sideways=(f64::from(first.1.0)-f64::from(last.1.0)).abs()/scale;
-        let speed=up/dt;
-        (up>=36.0&&speed>=900.0&&up>sideways).then_some(speed.min(1800.0))
+        if now.saturating_duration_since(last.0)>Duration::from_millis(70)||!(0.04..=0.125).contains(&dt){return None}
+        Some(Velocity{x:(f64::from(last.1.0)-f64::from(first.1.0))/scale/dt,y:(f64::from(last.1.1)-f64::from(first.1.1))/scale/dt})
+    }
+    pub(super) fn upward_velocity(&self,now:Instant,scale:f64)->Option<Velocity> {
+        let velocity=self.velocity(now,scale)?;let speed=velocity.x.hypot(velocity.y);
+        // 任意上向角度均可；过滤水平抖动，不要求竖直速度大于横向速度。
+        if velocity.y>=-60.0||speed<900.0{return None}
+        let factor=(1800.0/speed).min(1.0);Some(Velocity{x:velocity.x*factor,y:velocity.y*factor})
     }
 }
 pub(crate) fn cursor()->Option<(i32,i32)> {
     #[cfg(windows)] {use windows::Win32::{Foundation::POINT,UI::WindowsAndMessaging::GetCursorPos};let mut p=POINT::default();unsafe{GetCursorPos(&mut p)}.ok()?;Some((p.x,p.y))}
     #[cfg(not(windows))] {None}
 }
+#[derive(Default)]
+struct ReleaseWatch {since:Option<Instant>}
+impl ReleaseWatch {
+    fn overdue(&mut self,now:Instant,down:Option<bool>)->bool {
+        if down!=Some(false){self.since=None;return false}
+        now.saturating_duration_since(*self.since.get_or_insert(now))>=Duration::from_millis(96)
+    }
+}
+fn primary_button_down()->Option<bool> {
+    #[cfg(windows)] {use windows::Win32::UI::{Input::KeyboardAndMouse::{GetAsyncKeyState,VK_LBUTTON,VK_RBUTTON},WindowsAndMessaging::{GetSystemMetrics,SM_SWAPBUTTON}};let key=if unsafe{GetSystemMetrics(SM_SWAPBUTTON)}!=0{VK_RBUTTON}else{VK_LBUTTON};Some(unsafe{GetAsyncKeyState(i32::from(key.0))}<0)}
+    #[cfg(not(windows))] {None}
+}
 pub(crate) fn track_drag(window:&WebviewWindow) {
     let window=window.clone();
+    let scale=window.scale_factor().unwrap_or(1.0);
+    #[cfg(windows)] let hwnd=window.hwnd().ok().map(|handle|handle.0 as usize);
     let serial=window.state::<Desktop>().inner.lock().ok().map(|s|s.drag_serial);
-    std::thread::spawn(move||loop{
+    std::thread::spawn(move||{
+      let mut release=ReleaseWatch::default();
+      loop{
+        let down=primary_button_down();
         let desktop=window.state::<Desktop>();
         let Ok(mut state)=desktop.inner.lock()else{break};
         if Some(state.drag_serial)!=serial||!state.dragging||state.finishing_drag{break}
-        if let Some(point)=cursor(){state.drag_trace.record(Instant::now(),point);}
-        drop(state);std::thread::sleep(Duration::from_millis(16));
+        let now=Instant::now();
+        if release.overdue(now,down) {
+            drop(state);
+            // 鼠标已持续松开却没有结束通知，取消遗漏的系统循环并按原流程收尾。
+            #[cfg(windows)] if let Some(hwnd)=hwnd{use windows::Win32::{Foundation::{HWND,LPARAM,WPARAM},UI::WindowsAndMessaging::{PostMessageW,WM_CANCELMODE}};let _=unsafe{PostMessageW(Some(HWND(hwnd as *mut std::ffi::c_void)),WM_CANCELMODE,WPARAM(0),LPARAM(0))};}
+            let window=window.clone();
+            tauri::async_runtime::spawn(async move{
+                if let Err(error)=crate::commands::finish_pet_drag_for(&window,serial).await{crate::pet_position::report(window.app_handle(),&error);}
+                let current=window.state::<Desktop>().drag_finished_for(serial);
+                if current{let _=window.emit("pet-drag-finished",());}
+            });break;
+        }
+        if let Some(point)=cursor(){state.drag_trace.record(now,point);}
+        let velocity=state.drag_trace.velocity(now,scale).unwrap_or_default();
+        let changed=state.drag_velocity.is_none_or(|old|(old.x-velocity.x).abs()>8.0||(old.y-velocity.y).abs()>8.0);
+        let snapshot=if changed{state.drag_velocity=Some(velocity);state.revision+=1;Some(state.snapshot())}else{None};
+        drop(state);if let Some(snapshot)=snapshot{publish(window.app_handle(),&snapshot);}std::thread::sleep(Duration::from_millis(32));
+      }
     });
 }
-struct Trajectory {start:f64,speed:f64,gravity:f64,floor:f64,impact:f64}
+struct Trajectory {
+    x:f64,y:f64,velocity:Velocity,gravity:f64,left:f64,right:f64,ceiling:f64,floor:f64,
+    previous:f64,landed_at:Option<f64>,
+}
 const LANDING_SECONDS:f64=3.0;
+const RESTITUTION:f64=0.62;
 impl Trajectory {
-    fn new(start:f64,ceiling:f64,floor:f64,speed:f64,scale:f64)->Self {
-        let start=start.clamp(ceiling,floor.max(ceiling));let gravity=2800.0*scale;
-        let speed=(speed*scale).min((2.0*gravity*(start-ceiling).max(0.0)).sqrt());
-        let impact=(speed+(speed*speed+2.0*gravity*(floor-start).max(0.0)).sqrt())/gravity;
-        Self{start,speed,gravity,floor,impact}
+    fn new(origin:(f64,f64),bounds:(f64,f64,f64,f64),velocity:Velocity,scale:f64)->Self {
+        let(left,right,ceiling,floor)=bounds;
+        Self{x:origin.0.clamp(left,right),y:origin.1.clamp(ceiling,floor),velocity:Velocity{x:velocity.x*scale,y:velocity.y*scale},gravity:2800.0*scale,left,right,ceiling,floor,previous:0.0,landed_at:None}
     }
-    fn sample(&self,seconds:f64)->(f64,Phase) {
-        if seconds>=self.impact{return(self.floor,Phase::Landed)}
-        (self.start-self.speed*seconds+0.5*self.gravity*seconds*seconds,if seconds<self.speed/self.gravity{Phase::Up}else{Phase::Down})
+    fn phase(&self)->Phase {if self.landed_at.is_some(){Phase::Landed}else if self.velocity.y<0.0{Phase::Up}else{Phase::Down}}
+    fn advance(&mut self,seconds:f64) {
+        let mut remaining=(seconds-self.previous).clamp(0.0,0.25);self.previous=seconds;
+        // 小步积分保持抛物线与反弹连续；长时间停顿不让角色瞬移穿屏。
+        while remaining>0.000001 && self.landed_at.is_none() {
+            let dt=remaining.min(1.0/240.0);remaining-=dt;
+            self.x+=self.velocity.x*dt;self.y+=self.velocity.y*dt+0.5*self.gravity*dt*dt;self.velocity.y+=self.gravity*dt;
+            if self.x<self.left {self.x=(self.left+(self.left-self.x)*RESTITUTION).min(self.right);self.velocity.x=self.velocity.x.abs()*RESTITUTION;}
+            else if self.x>self.right {self.x=(self.right-(self.x-self.right)*RESTITUTION).max(self.left);self.velocity.x=-self.velocity.x.abs()*RESTITUTION;}
+            if self.y<self.ceiling {self.y=(self.ceiling+(self.ceiling-self.y)*RESTITUTION).min(self.floor);self.velocity.y=self.velocity.y.abs()*RESTITUTION;}
+            if self.y>=self.floor&&self.velocity.y>=0.0 {self.y=self.floor;self.velocity=Velocity::default();self.landed_at=Some(seconds-remaining);}
+        }
     }
-    fn settled(&self,seconds:f64)->bool {seconds>=self.impact+LANDING_SECONDS}
+    fn settled(&self,seconds:f64)->bool {self.landed_at.is_some_and(|at|seconds>=at+LANDING_SECONDS)}
 }
 fn matches_view(t:&Toss,v:&View)->bool {
     t.persona_id==v.persona_id&&v.session_id.as_deref()==Some(t.session_id.as_str())&&t.context_revision==v.context_revision
@@ -74,7 +124,7 @@ fn matches_view(t:&Toss,v:&View)->bool {
 }
 fn controls_below(body_top:f64,area_top:i32,scale:f64)->bool {body_top<f64::from(area_top)+60.0*scale}
 
-pub(crate) async fn try_launch(window:&WebviewWindow,runtime:Runtime,velocity:Option<f64>)->AppResult<bool> {
+pub(crate) async fn try_launch(window:&WebviewWindow,runtime:Runtime,velocity:Option<Velocity>)->AppResult<bool> {
     let Some(velocity)=velocity else{return Ok(false)};
     let(point,size,area,scale)=geometry(window)?;
     let window=window.clone();let worker=runtime.clone();
@@ -85,20 +135,23 @@ pub(crate) async fn try_launch(window:&WebviewWindow,runtime:Runtime,velocity:Op
         let Some(old_body)=s.layout.as_ref().map(|l|l.anchor.unwrap_or(l.body))else{return Ok(None)};
         // 抛接画布把身体居中留出上下按钮空间，同时补偿窗口位置保持身体的屏幕位置。
         let body=Rect{x:(f64::from(size.width)/scale-old_body.width)/2.0,y:(f64::from(size.height)/scale-old_body.height)/2.0,..old_body};
-        let origin=(area.fit(((f64::from(point.0)+(old_body.x-body.x)*scale).round() as i32,point.1),size).0,(f64::from(point.1)+(old_body.y-body.y)*scale).round() as i32);
+        let origin=((f64::from(point.0)+(old_body.x-body.x)*scale).round() as i32,(f64::from(point.1)+(old_body.y-body.y)*scale).round() as i32);
         let ceiling=f64::from(area.y)-body.y*scale+4.0*scale;
         let floor=f64::from(area.y)+f64::from(area.height)-(body.y+body.height)*scale;
         if floor<ceiling{return Ok(None)}
-        let trajectory=Trajectory::new(f64::from(origin.1),ceiling,floor,velocity,scale);
+        let left=f64::from(area.x)-body.x*scale+4.0*scale;
+        let right=f64::from(area.x)+f64::from(area.width)-(body.x+body.width)*scale-4.0*scale;
+        if right<left{return Ok(None)}
+        let trajectory=Trajectory::new((f64::from(origin.0),f64::from(origin.1)),(left,right,ceiling,floor),velocity,scale);
         let token=managed.toss_epoch.fetch_add(1,Ordering::SeqCst)+1;
         managed.epoch.fetch_add(1,Ordering::SeqCst);s.stop_motion();s.target=None;
-        s.preferences.dock=Dock::None;s.preferences.floor_inset=0.0;save(&store.connection,&s.preferences)?;
-        s.toss=Some(Toss{phase:trajectory.sample(0.0).1,persona_id:view.persona_id,session_id:view.session_id.unwrap_or_default(),context_revision:view.context_revision,body,controls_below:controls_below(f64::from(origin.1)+body.y*scale,area.y,scale)});
+        s.drag_velocity=None;s.preferences.dock=Dock::None;s.preferences.floor_inset=0.0;save(&store.connection,&s.preferences)?;
+        s.toss=Some(Toss{velocity:Velocity{x:trajectory.velocity.x/scale,y:trajectory.velocity.y/scale},phase:trajectory.phase(),persona_id:view.persona_id,session_id:view.session_id.unwrap_or_default(),context_revision:view.context_revision,body,controls_below:controls_below(f64::from(origin.1)+body.y*scale,area.y,scale)});
         s.revision+=1;
         Ok(Some((window.clone(),token,s.snapshot(),trajectory,origin)))
     })).await.map_err(|_|AppError::storage())??;
     let Some((window,token,snapshot,trajectory,point))=prepared else{return Ok(false)};
-    window.set_position(PhysicalPosition::new(point.0,trajectory.sample(0.0).0.round() as i32)).map_err(|_|AppError::storage())?;
+    window.set_position(PhysicalPosition::new(trajectory.x.round() as i32,trajectory.y.round() as i32)).map_err(|_|AppError::storage())?;
     publish(window.app_handle(),&snapshot);
     std::thread::spawn(move||run(window,runtime,token,trajectory,point,size,area,scale));
     Ok(true)
@@ -109,8 +162,8 @@ fn clear(window:&WebviewWindow,token:u64) {
     if let Ok(mut s)=desktop.inner.lock(){if s.toss.take().is_some(){s.revision+=1;}let snapshot=s.snapshot();drop(s);publish(window.app_handle(),&snapshot);}
     if let Ok((p,size,area,_))=geometry(window){let target=area.fit(p,size);let _=window.set_position(PhysicalPosition::new(target.0,target.1));}
 }
-fn run(window:WebviewWindow,runtime:Runtime,token:u64,trajectory:Trajectory,point:(i32,i32),size:PhysicalSize<u32>,area:Area,scale:f64) {
-    let started=Instant::now();let mut last_check=Instant::now()-Duration::from_secs(1);let mut last_position=None;
+fn run(window:WebviewWindow,runtime:Runtime,token:u64,mut trajectory:Trajectory,_point:(i32,i32),size:PhysicalSize<u32>,area:Area,scale:f64) {
+    let started=Instant::now();let mut last_check=Instant::now()-Duration::from_secs(1);let mut last_position=None;let mut last_visual=Instant::now()-Duration::from_secs(1);
     loop {
         let desktop=window.state::<Desktop>();
         if desktop.toss_epoch.load(Ordering::SeqCst)!=token{
@@ -125,12 +178,12 @@ fn run(window:WebviewWindow,runtime:Runtime,token:u64,trajectory:Trajectory,poin
             let valid=desktop.inner.lock().is_ok_and(|s|s.toss.as_ref().is_some_and(|t|current.as_ref().is_ok_and(|v|matches_view(t,v))));
             if !valid{clear(&window,token);return}last_check=Instant::now();
         }
-        let seconds=started.elapsed().as_secs_f64();let(y,phase)=trajectory.sample(seconds);
-        let position=(point.0,y.round() as i32);
+        let seconds=started.elapsed().as_secs_f64();trajectory.advance(seconds);let y=trajectory.y;let phase=trajectory.phase();
+        let position=(trajectory.x.round() as i32,y.round() as i32);
         if last_position!=Some(position){if window.set_position(PhysicalPosition::new(position.0,position.1)).is_err(){clear(&window,token);return}last_position=Some(position);}
         if let Ok(mut s)=desktop.inner.lock(){
-            let changed=if let Some(t)=s.toss.as_mut(){let below=controls_below(y+t.body.y*scale,area.y,scale);let changed=t.phase!=phase||t.controls_below!=below;t.phase=phase;t.controls_below=below;changed}else{false};
-            if changed{s.revision+=1;let snapshot=s.snapshot();drop(s);publish(window.app_handle(),&snapshot);}
+            let changed=if let Some(t)=s.toss.as_mut(){let below=controls_below(y+t.body.y*scale,area.y,scale);let changed=t.phase!=phase||t.controls_below!=below||(phase!=Phase::Landed&&last_visual.elapsed()>=Duration::from_millis(32));t.phase=phase;t.controls_below=below;t.velocity=Velocity{x:trajectory.velocity.x/scale,y:trajectory.velocity.y/scale};changed}else{false};
+            if changed{last_visual=Instant::now();s.revision+=1;let snapshot=s.snapshot();drop(s);publish(window.app_handle(),&snapshot);}
         }
         if trajectory.settled(seconds){break}
         std::thread::sleep(Duration::from_millis(16));
@@ -173,39 +226,47 @@ pub async fn get_pet_toss_expression(window:WebviewWindow,runtime:tauri::State<'
 mod tests {
     use super::*;
     #[test]
-    fn upward_release_requires_recent_fast_predominantly_upward_motion() {
+    fn missing_release_waits_for_confirmed_mouse_up_and_resets_when_pressed() {
+        let now=Instant::now();let mut release=ReleaseWatch::default();
+        assert!(!release.overdue(now,Some(false)));assert!(!release.overdue(now+Duration::from_millis(95),Some(false)));assert!(release.overdue(now+Duration::from_millis(96),Some(false)));
+        assert!(!release.overdue(now+Duration::from_millis(100),Some(true)));assert!(!release.overdue(now+Duration::from_millis(130),Some(false)));assert!(!release.overdue(now+Duration::from_millis(250),None));
+    }
+    #[test]
+    fn upward_release_uses_vector_and_rejects_downward_slow_and_stale_motion() {
         let now=Instant::now();
-        for(scale,dy,dx,expected)in[(1.0,-120,10,true),(1.5,-180,15,true),(2.0,-240,20,true),(1.0,-25,0,false),(1.0,120,0,false),(1.0,-120,180,false)] {
+        for(scale,dy,dx,expected)in[(1.0,-120,10,true),(1.5,-180,15,true),(2.0,-240,20,true),(1.0,-25,0,false),(1.0,120,0,false),(1.0,-120,180,true),(1.0,-15,-160,true),(1.0,0,180,false)] {
             let mut trace=DragTrace::default();
             for i in 0..=5 {trace.record(now+Duration::from_millis(i*20),(500+dx*i as i32/5,500+dy*i as i32/5));}
-            assert_eq!(trace.upward_speed(now+Duration::from_millis(100),scale).is_some(),expected);
-            assert!(trace.upward_speed(now+Duration::from_millis(200),scale).is_none());
+            let velocity=trace.upward_velocity(now+Duration::from_millis(100),scale);
+            assert_eq!(velocity.is_some(),expected);if let Some(v)=velocity{assert!(v.y<0.0&&v.x.hypot(v.y)<=1800.001);}
+            assert!(trace.upward_velocity(now+Duration::from_millis(200),scale).is_none());
         }
         let mut stopped=DragTrace::default();
         for i in 0..=10 {stopped.record(now+Duration::from_millis(i*20),(500,if i<3{500-i as i32*30}else{410}));}
-        assert!(stopped.upward_speed(now+Duration::from_millis(200),1.0).is_none());
+        assert!(stopped.upward_velocity(now+Duration::from_millis(200),1.0).is_none());
     }
     #[test]
-    fn ballistic_path_decelerates_rising_accelerates_falling_and_preserves_three_second_landing() {
-        let t=Trajectory::new(200.0,-100.0,600.0,1100.0,1.0);
-        let apex=t.speed/t.gravity;
-        assert_eq!(t.sample(0.0).1,Phase::Up);
-        assert_eq!(t.sample(apex+0.01).1,Phase::Down);
-        assert!(t.sample(apex).0>=-100.001);
-        assert!(t.sample(0.1).0-t.sample(0.2).0<t.sample(0.0).0-t.sample(0.1).0);
-        assert!(t.sample(apex+0.3).0-t.sample(apex+0.2).0>t.sample(apex+0.2).0-t.sample(apex+0.1).0);
-        assert_eq!(t.sample(t.impact),(600.0,Phase::Landed));
-        assert_eq!(t.sample(t.impact+2.999),(600.0,Phase::Landed));
-        assert!(!t.settled(t.impact+2.999));assert!(t.settled(t.impact+3.0));
-        for scale in [1.0,1.5,2.0]{
-            let t=Trajectory::new(-80.0*scale,-100.0*scale,600.0*scale,1800.0,scale);
-            for i in 0..=100{let(y,_)=t.sample(t.impact*i as f64/100.0);assert!(y>=-100.0*scale-0.001&&y<=600.0*scale+0.001);}
+    fn vector_path_has_gravity_wall_and_ceiling_restitution_and_three_second_landing() {
+        for scale in [1.0,1.5,2.0] {
+            let mut t=Trajectory::new((-80.0*scale,-80.0*scale),(-100.0*scale,300.0*scale,-100.0*scale,600.0*scale),Velocity{x:-1000.0,y:-1200.0},scale);
+            let mut bounced_x=false;let mut bounced_top=false;
+            for i in 1..=600 {
+                let old=t.velocity;t.advance(i as f64/120.0);
+                assert!(t.x>=t.left&&t.x<=t.right&&t.y>=t.ceiling&&t.y<=t.floor);
+                if old.x<0.0&&t.velocity.x>0.0 {bounced_x=true;assert!((t.velocity.x+old.x*RESTITUTION).abs()<0.001);}
+                if old.y<0.0&&t.velocity.y>0.0&&t.y< -50.0*scale {bounced_top=true;assert!(t.velocity.y<1200.0*scale);}
+            }
+            assert!(bounced_x&&bounced_top);assert_eq!(t.phase(),Phase::Landed);
+            let at=t.landed_at.unwrap();assert!(!t.settled(at+2.999));assert!(t.settled(at+3.0));
         }
+        let mut t=Trajectory::new((100.0,300.0),(0.0,2000.0,0.0,2000.0),Velocity{x:500.0,y:-1100.0},1.0);
+        t.advance(0.1);assert!((t.x-150.0).abs()<0.01);assert!((t.y-204.0).abs()<0.01);
+        t.advance(0.2);assert!((t.y-136.0).abs()<0.01);assert_eq!(t.phase(),Phase::Up);
     }
     #[test]
     fn away_error_and_changed_context_cannot_continue_toss() {
         let mut view=View{persona_id:"1".into(),session_id:Some("2".into()),context_revision:3,revision:1,activity:crate::pet::controller::Activity::Normal,expression:"x".into(),intimacy:Some(0),sleep_until:None,error:None,can_interact:true,can_wander:true};
-        let toss=Toss{phase:Phase::Down,persona_id:"1".into(),session_id:"2".into(),context_revision:3,body:Rect{x:0.0,y:0.0,width:172.0,height:172.0},controls_below:false};
+        let toss=Toss{velocity:Velocity::default(),phase:Phase::Down,persona_id:"1".into(),session_id:"2".into(),context_revision:3,body:Rect{x:0.0,y:0.0,width:172.0,height:172.0},controls_below:false};
         assert!(matches_view(&toss,&view));view.activity=crate::pet::controller::Activity::Away;assert!(!matches_view(&toss,&view));
         view.activity=crate::pet::controller::Activity::Normal;view.context_revision+=1;assert!(!matches_view(&toss,&view));
         view.context_revision=3;view.error=Some("连接错误".into());assert!(!matches_view(&toss,&view));

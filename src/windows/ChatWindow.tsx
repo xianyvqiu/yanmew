@@ -21,7 +21,7 @@ export default function ChatWindow() {
     loading={(loading && !snapshot) || !appearance.ready} error={snapshot ? "" : error || appearance.error} onRetry={refresh}>
     {snapshot && (error || appearance.error) && <div role="alert" className="ym-page-error">{error || appearance.error}<button className="ym-button" onClick={refresh}>重新加载</button></div>}
     {navigationError && <p role="alert" className="ym-page-error">详情打开失败：{navigationError}</p>}
-    {snapshot && <div className="ym-chat-background-host ym-chat-bubbles" {...chatAppearanceAttributes(snapshot.persona.chatAppearance)}>
+    {snapshot && <div className="ym-chat-background-host ym-chat-bubbles" {...chatAppearanceAttributes(snapshot.persona.chatAppearance, snapshot.persona.color)}>
       <ChatBackground persona={snapshot.persona} contextRevision={snapshot.context.contextRevision} />
       <ChatPage key={snapshot.context.contextRevision} snapshot={snapshot} onRefresh={refresh} sidebarCollapsed={sidebarCollapsed} onSidebarCollapsed={setSidebarCollapsed} />
     </div>}

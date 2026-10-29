@@ -204,7 +204,7 @@ fn install_from(c: &mut Connection, paths: &AppPaths, resources: &Path) -> AppRe
         if installed(&tx)? { return Ok(false); }
         let now = chrono::Utc::now().to_rfc3339();
         for (preset, images) in prepared {
-            tx.execute("INSERT INTO personas(name,prompt,initial_prompt,color,is_builtin,is_active,pet_image_enabled,pet_image_revision,created_at,updated_at,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?2,?3,0,0,1,1,?4,?4,?3,?3)", params![preset.name,preset.food_prompt(),preset.color,now])?;
+            tx.execute("INSERT INTO personas(name,prompt,initial_prompt,color,is_builtin,is_active,pet_image_enabled,pet_image_revision,created_at,updated_at,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?2,?3,0,0,1,1,?4,?4,NULL,NULL)", params![preset.name,preset.food_prompt(),preset.color,now])?;
             let persona = tx.last_insert_rowid();
             crate::sessions::create_default_in_transaction(&tx,persona)?;
             let favorite=match preset.key {"gpt"=>"cloud_cake","claude"=>"black_tea","gemini"=>"cat_cookie",_=>"rice"};

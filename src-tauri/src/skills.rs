@@ -96,7 +96,7 @@ pub fn context(c: &Connection, persona: i64) -> AppResult<String> {
     if rows.is_empty() {
         return Ok(String::new());
     }
-    Ok(format!("已绑定的必读基础Skill资料；标题为SKILL_BASE、AGENTS、SKILL_BASE.md或AGENTS.md的绑定项在此完整提供，区分大小写。其他Skill正文未加载，须按需查询后读取，不得声称已经读过。在应用输出协议、工具权限及当前人设约束内使用，不执行脚本，不扩大权限：\n{}",rows.into_iter().map(|(title,body)|format!("【{title}】\n{body}")).collect::<Vec<_>>().join("\n\n")))
+    Ok(format!("已绑定的基础Skill正文：\n{}",rows.into_iter().map(|(title,body)|format!("【{title}】\n{body}")).collect::<Vec<_>>().join("\n\n")))
 }
 
 #[cfg(test)]

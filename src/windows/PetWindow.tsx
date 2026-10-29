@@ -21,6 +21,7 @@ import { usePetChat } from "./usePetChat";
 import { PetChatBubble, PetChatInput } from "../components/PetChat";
 import { usePetMemoryErrors } from "./usePetMemoryErrors";
 import { usePetWander } from "./usePetWander";
+import {usePetPhysics} from "./usePetPhysics";
 import { usePetDesktop } from "./usePetDesktop";
 import { navigation, type ApplicationPage } from "../platform/navigation";
 import PetArtworkDisplay from "../components/PetArtworkDisplay";
@@ -43,6 +44,7 @@ export default function PetWindow() {
   const { state, error, pending, toggleHidden, setChatOpen, setImageMode, retry, fail } = usePetWindow(root);
   const pointerStart = useRef<PointerStart | null>(null);
   const draggingStarted = useRef(false);
+  const dragReleased = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [lifted,setLifted]=useState<{personaId:string;expression:string}|null>(null);
@@ -69,6 +71,7 @@ export default function PetWindow() {
   const feeding=useFoodFeeding(accessoryContext,!!activity.view?.canInteract,state.hidden,activity.refresh);
   const desktop = usePetDesktop(accessoryContext.personaId, accessoryContext.contextRevision);
   const toss=activity.view?.activity!=="away"&&desktop.toss?.personaId===accessoryContext.personaId&&desktop.toss?.sessionId===accessoryContext.sessionId&&desktop.toss?.contextRevision===accessoryContext.contextRevision?desktop.toss:null;
+  usePetPhysics(root,dragging,desktop.dragVelocity,toss,!!activity.view?.canInteract&&!activity.view?.error&&!state.hidden);
   const chase=activity.view?.canWander && desktop.chase?.personaId===accessoryContext.personaId && desktop.chase?.sessionId===accessoryContext.sessionId && desktop.chase?.contextRevision===accessoryContext.contextRevision?desktop.chase:null;
   const tossStyle=toss?{"--pet-toss-x":`${toss.body.x}px`,"--pet-toss-y":`${toss.body.y}px`,"--pet-toss-width":`${toss.body.width}px`,"--pet-toss-height":`${toss.body.height}px`} as CSSProperties:{};
   const layoutDock = useRef("");
@@ -187,9 +190,18 @@ export default function PetWindow() {
     startNativeDrag();
   };
   const startNativeDrag = () => {
-    draggingStarted.current = true; setDragging(true);
-    // 请求返回时拖动仍可能进行，正常结束由 Windows 通知；失败才在此恢复。
-    void petApi.dragging(true).then(() => getCurrentWindow().startDragging()).catch(async cause => {
+    const pointer=pointerStart.current;
+    draggingStarted.current = true; dragReleased.current=false; setDragging(true);
+    // 松手可能早于两次IPC交接；不能在鼠标已松开后再启动系统拖动。
+    void petApi.dragging(true).then(async() => {
+      if(pointerStart.current!==pointer)return;
+      if(dragReleased.current){
+        await petApi.dragging(false);
+        if(pointerStart.current===pointer){pointerStart.current=null;draggingStarted.current=false;setDragging(false);setPressed(false);}
+        return;
+      }
+      await getCurrentWindow().startDragging();
+    }).catch(async cause => {
       fail(cause); await petApi.dragging(false).catch(fail);
       pointerStart.current = null; draggingStarted.current = false; setDragging(false); setPressed(false);
     });
@@ -202,6 +214,7 @@ export default function PetWindow() {
     }
   };
   const releasePointer = (event: PointerEvent<HTMLDivElement>) => {
+    if(pointerStart.current?.pointerId===event.pointerId&&draggingStarted.current){dragReleased.current=true;return;}
     const click = pointerStart.current?.pointerId === event.pointerId && !draggingStarted.current;
     resetPointer(event);
     if(click&&activity.view?.activity==="away"){setMenuOpen(false);setOptionsOpen(false);setElapsedOpen(value=>!value);return;}

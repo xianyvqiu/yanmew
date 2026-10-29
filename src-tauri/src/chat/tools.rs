@@ -34,6 +34,7 @@ struct Session {
     base_image_results:HashMap<String,AppResult<(Value,Option<Message>)>>,
     selected_expression:bool,
     image_mode:bool,
+    sent_sticker:bool,
 }
 impl Session {
     fn check_call(&mut self, call: &ToolCall) -> AppResult<()> {
@@ -66,6 +67,7 @@ impl Session {
                         "rangeStart":value["rangeStart"], "rangeEnd":value["rangeEnd"]}))
                 })
             }
+            "list_chat_sticker_tags"|"search_chat_stickers"=>{if self.skills.is_none(){return Err(AppError::new("PERMISSION_DENIED","仅普通聊天开放表情包查询"));}super::sticker_tools::read(&self.runtime,self.persona_id,self.session_id,self.revision,call)},
             "list_accessories"|"list_pet_expressions"|"set_pet_expression"=>{let value=super::visual_tools::local(&self.runtime,self.persona_id,self.session_id,self.revision,call)?;if call.name=="set_pet_expression"{self.selected_expression=true;}Ok(value)},
             "list_real_money_assets"|"list_real_money_categories"|"save_real_money_category"|"delete_real_money_category"|"record_real_money"|"query_real_money_entries"=>{
                 let value=self.real_money.as_mut().ok_or_else(||AppError::new("PERMISSION_DENIED","只有普通聊天开放现实记账"))?.execute(call)?;
@@ -136,7 +138,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
             skills_read_only,
             real_money: allow_skills.then(||crate::real_money::tools::Tools::new(&runtime,&lease,persona_id,session_id,revision)),
             web: allow_web.then(||crate::web_search::SearchSession::new(&runtime, &user_input).with_native(native_config)),
-            events, runtime, lease, persona_id, session_id, revision, evolution, calls: HashMap::new(),visual_results:HashMap::new(),base_image_results:HashMap::new(),selected_expression:false,image_mode,
+            events, runtime, lease, persona_id, session_id, revision, evolution, calls: HashMap::new(),visual_results:HashMap::new(),base_image_results:HashMap::new(),selected_expression:false,image_mode,sent_sticker:false,
         }, rounds))
     }).await.map_err(|_| AppError::storage())??;
     let mut context=prepared.context.clone();
@@ -157,7 +159,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
                 "ascending":{"type":"boolean"},"page":{"type":"integer","minimum":1}},
                 "required":["start","end","direction","reason","pluginId","search","ascending","page"]}}}));
     }
-    if allow_skills {definitions.extend(super::visual_tools::definitions(session.image_mode));history.push(Message::new("system",super::visual_tools::RULES));history.push(Message::new("system",if session.image_mode {"当前为图片桌宠模式。需要了解自己实际的默认外观时可调用view_pet_base_image查看正式初始图，不凭人设文字臆测图片细节。聊天时先通过list_pet_expressions查询已有表情，再调用set_pet_expression按本次语境和情绪选择；也可在本轮随情绪继续切换。候选来自当前人设整个已启用且有正式图的表情库，包含用户新增表情，不受固定情绪或动作类别限制；按需分页查询。不要默认选自然交谈。自然交谈仅在没有其他更合适表情时兜底。不要用进食图虚构真实投喂。"}else{"当前为颜文字桌宠。聊天表情须结合当前语境临时生成，不查询或抽取固定颜文字表情库；可通过set_pet_expression在本轮改变临时表情，不写回人设库。"}));}
+    if allow_skills {definitions.extend(super::sticker_tools::definitions());history.push(Message::new("system",super::sticker_tools::RULES));definitions.extend(super::visual_tools::definitions(session.image_mode));history.push(Message::new("system",super::visual_tools::RULES));history.push(Message::new("system",if session.image_mode {"当前为图片桌宠模式。根据本轮语境和情绪，先list_pet_expressions检索，再set_pet_expression切换；可随情绪继续切换。用简短关键词查找，找到合适候选即可，不穷举全库。“自然交谈”仅在没有更合适表情时兜底。不要用进食图虚构真实投喂。"}else{"当前为颜文字桌宠模式。"}));}
     if session.real_money.is_some(){definitions.extend(crate::real_money::tools::definitions());history.push(Message::new("system",crate::real_money::tools::RULES));}
     definitions.extend(crate::travel_journal_tools::definitions());
     definitions.extend(crate::festivals::tools::definitions());
@@ -173,7 +175,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         history.push(Message::new("system",crate::web_search::RULES));
     }
     if prepared.evolution.is_some() { definitions.push(evolution::definition()); }
-    if prepared.regenerating { definitions.retain(|tool| {let name=tool["function"]["name"].as_str().unwrap_or("");!crate::skills::tools::is_write(name)&&!crate::real_money::tools::is_write(name)&&!matches!(name,"update_notebook"|"create_reminder"|"request_accessory_craft"|"generate_chat_image"|"remove_image_background"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival")}); }
+    if prepared.regenerating { definitions.retain(|tool| {let name=tool["function"]["name"].as_str().unwrap_or("");!crate::skills::tools::is_write(name)&&!crate::real_money::tools::is_write(name)&&!matches!(name,"update_notebook"|"create_reminder"|"request_accessory_craft"|"send_chat_sticker"|"generate_chat_image"|"remove_image_background"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival")}); }
     if prepared.continuation {definitions.clear();}
     context.add_stable_rules(std::mem::take(&mut history));
     let mut usage = crate::ai::usage::UsageTotals::default();
@@ -215,7 +217,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         emit(ReplyEventKind::ContextNotice {message:if budget.reduced {context::NOTICE.into()} else {String::new()},budget})?;
         content.push_str(&choice.content);
         if choice.finish != Finish::ToolCalls {
-            if choice.finish == Finish::Stop && choice.content.trim().is_empty() { return Err(protocol()); }
+            if choice.finish == Finish::Stop && choice.content.trim().is_empty() && content.trim().is_empty() && !session.sent_sticker { return Err(protocol()); }
             prepared.lease.cancel.check()?;
             if choice.finish == Finish::Stop {
                 if session.image_mode && !session.selected_expression && !prepared.proactive {if let Some(expression)=super::visual_tools::fallback(&session.runtime,session.persona_id,session.session_id,session.revision)?{emit(ReplyEventKind::Expression{expression})?;}}
@@ -231,7 +233,7 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
         let mut reference_images=Vec::new();
         let mut observations = Vec::new();
         for call in choice.tools {
-                if prepared.regenerating && (crate::real_money::tools::is_write(&call.name)||crate::skills::tools::is_write(&call.name)||matches!(call.name.as_str(),"update_notebook"|"create_reminder"|"request_accessory_craft"|"generate_chat_image"|"remove_image_background"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival")) {return Err(AppError::new("PERMISSION_DENIED","重说不执行Skill修改、记事本写入、提醒创建、饰品制作或日期记录修改，旧操作保持不变"));}
+                if prepared.regenerating && (crate::real_money::tools::is_write(&call.name)||crate::skills::tools::is_write(&call.name)||matches!(call.name.as_str(),"update_notebook"|"create_reminder"|"request_accessory_craft"|"send_chat_sticker"|"generate_chat_image"|"remove_image_background"|"create_custom_festival"|"update_custom_festival"|"delete_custom_festival")) {return Err(AppError::new("PERMISSION_DENIED","重说不执行Skill修改、记事本写入、提醒创建、饰品制作或日期记录修改，旧操作保持不变"));}
                 let result=if call.name=="view_pet_base_image" {
                     if !allow_skills||!session.image_mode{Err(AppError::new("PERMISSION_DENIED","只有图片模式的普通聊天开放默认形象查看"))}else{
                         session.check_call(&call)?;
@@ -244,6 +246,8 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
                         let value=if let Some(saved)=session.base_image_results.get(&call.id){saved.clone()}else{let value=super::image_tools::execute(client,&session.runtime,&session.lease,session.persona_id,session.session_id,session.revision,&prepared.config,&call).await;session.base_image_results.insert(call.id.clone(),value.clone());value};
                         value.map(|(value,image)|{if let Some(image)=image{reference_images.push(image);}value})
                     }
+                } else if call.name=="send_chat_sticker" {
+                    if !allow_skills {Err(AppError::new("PERMISSION_DENIED","仅普通聊天开放表情包发送"))}else{session.check_call(&call)?;if let Some(saved)=session.visual_results.get(&call.id){saved.clone()}else{let rt=session.runtime.clone();let lease=session.lease.clone();let request=call.clone();let value=tauri::async_runtime::spawn_blocking(move||super::sticker_tools::send(&rt,&lease,persona_id,session_id,revision,&request)).await.map_err(|_|AppError::storage())?;session.visual_results.insert(call.id.clone(),value.clone());if value.is_ok(){session.sent_sticker=true;}value}}
                 } else if call.name=="generate_chat_image" {
                     if !allow_skills {Err(AppError::new("PERMISSION_DENIED","仅普通聊天允许按用户要求生图"))}else{session.check_call(&call)?;if let Some(value)=session.visual_results.get(&call.id){value.clone()}else{let result=super::visual_tools::generate(client,&session.runtime,&session.lease,session.persona_id,session.session_id,session.revision,&call).await;session.visual_results.insert(call.id.clone(),result.clone());result}}
                 } else if matches!(call.name.as_str(),"search_web"|"open_web_page") {

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import EmbeddingProvidersPanel from "./EmbeddingProvidersPanel";
 import type { EmbeddingProvider } from "../../types";
@@ -15,6 +15,17 @@ beforeEach(() => {
   api.test.mockResolvedValue(512);
 });
 afterEach(cleanup);
+it("Embedding测试中的状态及失败就地显示，重试后维度留在同一卡片",async()=>{
+  let reject!:(error:unknown)=>void;
+  api.test.mockImplementationOnce(()=>new Promise<number>((_done,fail)=>{reject=fail;}));
+  render(<EmbeddingProvidersPanel/>);const element=(await screen.findByRole("heading",{name:"本地模型"})).closest("li")!;const local=within(element);
+  const button=local.getByRole("button",{name:"测试 Embedding 本地模型"});fireEvent.click(button);fireEvent.click(button);
+  expect(local.getByRole("status").textContent).toContain("正在测试连接");expect(api.test).toHaveBeenCalledTimes(1);
+  await act(async()=>reject({message:"模型暂时不可用"}));await local.findByText("模型暂时不可用");
+  expect(screen.getByRole("alert").closest("li")).toBe(element);
+  fireEvent.click(local.getByRole("button",{name:"测试 Embedding 本地模型"}));await local.findByText("本地模型：测试成功，返回 512 维向量。");
+  expect(local.queryByRole("alert")).toBeNull();
+});
 it("内置模型不可编辑删除，测试后显示真实维度和补建状态", async () => {
   render(<EmbeddingProvidersPanel />);
   await screen.findByText("长期记忆向量：2/5 已就绪，3 条待补建。");

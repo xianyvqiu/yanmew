@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import WebSearchProvidersPanel from "./WebSearchProvidersPanel";
 const api = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn(), select: vi.fn(), delete: vi.fn(), enable: vi.fn(), test: vi.fn(), listen: vi.fn() }));
@@ -10,6 +10,18 @@ beforeEach(() => {
   api.save.mockResolvedValue(undefined); api.select.mockResolvedValue(undefined); api.enable.mockResolvedValue(undefined); api.test.mockResolvedValue(3);
 });
 afterEach(cleanup);
+it("搜索测试中、失败和重试成功都显示在所点的服务卡片",async()=>{
+  const second={...current,id:"2",name:"备用搜索",isActive:false};api.get.mockResolvedValue({enabled:true,providers:[current,second]});
+  let reject!:(error:unknown)=>void;api.test.mockImplementationOnce(()=>new Promise<number>((_done,fail)=>{reject=fail;}));
+  render(<WebSearchProvidersPanel/>);const element=(await screen.findByRole("heading",{name:current.name})).closest("li")!;const local=within(element);
+  fireEvent.click(local.getByRole("button",{name:`测试搜索 ${current.name}`}));
+  expect(local.getByRole("status").textContent).toContain("正在测试连接");
+  await act(async()=>reject({message:"搜索连接超时"}));await local.findByText("搜索连接超时");
+  expect(screen.getByRole("alert").closest("li")).toBe(element);
+  const other=within(screen.getByRole("heading",{name:second.name}).closest("li")!);expect(other.queryByRole("alert")).toBeNull();
+  fireEvent.click(local.getByRole("button",{name:`测试搜索 ${current.name}`}));await local.findByText("自己的搜索：测试成功，返回 3 条结果（测试可能消耗服务额度）。");
+  expect(local.queryByRole("alert")).toBeNull();expect(other.queryByRole("status")).toBeNull();
+});
 it("显示关闭空态，并可新增实际博查配置", async () => {
   render(<WebSearchProvidersPanel />);
   await screen.findByText("暂无搜索服务，请先新增");

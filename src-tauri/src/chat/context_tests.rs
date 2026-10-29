@@ -434,7 +434,7 @@ fn stable_settings_and_rules_precede_live_environment_without_losing_context(){
   assert!(contents.iter().position(|m|*m=="完整人设").unwrap()<environment);
   assert!(contents.iter().position(|m|*m=="固定工具规则").unwrap()<environment);
   assert_eq!(contents.last(),Some(&"现在下雨吗"));
-  assert!(contents[environment].contains("环境："));assert!(contents[environment].contains("当前记忆参数："));
+  assert!(contents[environment].contains("环境："));
   Ok(())
  }).unwrap();
 }

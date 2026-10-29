@@ -3,7 +3,7 @@
   "name": "2048",
   "description": "合并相同数字，免费游玩或每日5局赚钱；每局20喵币，按最高数字一次奖励10/25/50/200。",
   "author": "颜喵",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "api_version": "1.0.0",
   "entry": "ui/index.html",
   "storage_version": 1,

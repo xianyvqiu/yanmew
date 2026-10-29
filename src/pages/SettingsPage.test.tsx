@@ -151,6 +151,6 @@ it("上下文加载失败时仍能打开手册，窄窗选择器保留入口", a
   fireEvent.click(screen.getByRole("button", {name:"帮助与使用手册"}));
   expect(screen.getByRole("heading", {name:"帮助与使用手册"})).toBeTruthy();
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("帮助与使用手册");
-  fireEvent.click(screen.getByText("第一次使用：连接模型，再选择伙伴"));
-  expect(screen.getByText(/聊天与生图是不同用途/)).toBeTruthy();
+  fireEvent.click(screen.getByText(/^第一次使用：/));
+  expect(screen.getByText(/先配好聊天即可/)).toBeTruthy();
 });

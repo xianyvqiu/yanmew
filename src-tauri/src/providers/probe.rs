@@ -1,6 +1,7 @@
 //! 没有聊天模型的连接只读探测模型目录，不发送生图请求。
 use crate::{ai::client::AiClient,error::{AppError,AppResult},providers::ConnectionTest,state::Cancellation};
 pub fn endpoint(base:&str)->AppResult<String>{
+  if let Some(result)=crate::image_generation::openai_compatible::native::catalog(base){return result.map(|(url,_)|url);}
   let mut url=url::Url::parse(base).map_err(|_|AppError::validation("baseUrl","连接地址无效"))?;
   let path=url.path().trim_end_matches('/');
   let root=["/images/generations","/images/edits","/chat/completions"].into_iter().find_map(|suffix|path.strip_suffix(suffix)).unwrap_or(path);
@@ -11,7 +12,7 @@ pub async fn test(client:&AiClient,config:&ConnectionTest)->AppResult<()>{
   let cancel=Cancellation::default();
   cancel.wait(std::time::Duration::from_secs(30),async{
     let mut request=client.search_http().get(endpoint(&config.base_url)?);
-    if let Some(key)=&config.api_key{request=request.bearer_auth(key);}
+    if let Some(key)=&config.api_key{request=if crate::image_generation::openai_compatible::native::detect(&config.base_url)==Some(crate::image_generation::openai_compatible::native::Kind::Gemini){request.header("x-goog-api-key",key)}else{request.bearer_auth(key)};}
     let mut response=request.send().await.map_err(|_|AppError::new("CONNECTION_TEST_FAILED","连接失败，请检查地址和网络；没有发送生图请求"))?;
     if !response.status().is_success(){return Err(AppError::new("CONNECTION_TEST_FAILED",format!("模型目录返回HTTP {}；请检查地址、Key及模型列表接口支持。未发送生图请求",response.status().as_u16())));}
     let mut bytes=Vec::new();

@@ -44,7 +44,7 @@ impl Evolution {
         }
         self.candidate = Some(input.new_prompt);
         Ok(json!({"staged":true,"already_staged":false,"saved":false,
-            "message":"仅已暂存候选。完整回复成功保存且人设仍未改变时才提交；现在不要声称已经修改。"}))
+            "message":"调整已提出，尚未生效。"}))
     }
 
     pub(super) fn commit(
@@ -94,7 +94,7 @@ impl Evolution {
 pub(super) fn definition() -> Value {
     json!({"type":"function","function":{
         "name":"update_persona_prompt",
-        "description":"默认保持当前人设；只有持续交流揭示重要且明确的设定问题、确实有必要修正时，才提出调整候选。拿不准必要性时不要调用。不必每轮调用；日常聊天、暂时情绪、玩笑、零碎偏好及不重要的小问题都不修改。用户一句语气反馈不等于持久修改人设的依据，可以先在当次回复中适度缓和表达。确有必要调整时，只针对明确问题作最小幅度、渐进的具体修正，幅度与必要程度相称，保留原身份、核心性格、价值观、背景和其他性格侧面；不得突然反转性格，也不得连续放大某种特质至极端。例如原人设冷淡、慢热，用户说‘不要这么冷漠’，不能立刻改成热情开朗；即使后续确需调整，也只逐步减少生硬措辞、增加少量回应，仍保持克制、慢热的底色。不迎合临时要求、不把用户资料或聊天记忆写进人设、不虚构经历。new_prompt 是保留其余内容的新完整设定，不是补丁。每轮最多一个候选，初始设定不改变。工具只暂存，完整回复成功后才保存；中断/失败就丢弃，勿在回复中声称已保存。",
-        "parameters":{"type":"object","properties":{"new_prompt":{"type":"string","description":"确有必要时按程度渐进小幅修正、保留核心性格及其余内容的完整人设设定；不得性格反转或极端化"}},"required":["new_prompt"],"additionalProperties":false}
+        "description":"默认保持人设。仅当持续交流揭示重要、明确且确需修正的设定问题时，才作最小幅度的渐进调整；不确定就不调用。保留身份、核心性格、价值观、背景和其他性格侧面，不突然反转，也不持续放大某种特质至极端。一次语气反馈可先影响当次表达：冷淡慢热的角色被说“别太冷漠”时，可逐步缓和生硬措辞，仍保持克制慢热。日常情绪、玩笑、零碎偏好、用户资料和聊天记忆不写入人设。每轮最多提出一份调整，初始设定不变。结果为待提交，完整回复成功后才生效。",
+        "parameters":{"type":"object","properties":{"new_prompt":{"type":"string","description":"调整后的完整人设，须包含未改动的其余内容，而非局部补丁"}},"required":["new_prompt"],"additionalProperties":false}
     }})
 }

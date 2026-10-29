@@ -132,7 +132,7 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
         <label className="ym-field">选择背景图片<input ref={fileInput} type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={event => choose(event.target.files?.[0])} /></label>
         {reading && <p role="status">正在读取图片…</p>}
         <p className="ym-page-note">按聊天背景区域 {Math.round(viewport.width)} × {Math.round(viewport.height)} 的比例预览。调整聊天窗口比例后，铺满背景时会重新裁边。</p>
-        <div ref={previewFrame} className="ym-background-preview ym-chat-bubbles" aria-label="聊天背景预览" {...chatAppearanceAttributes(appearance)} style={{...chatAppearanceAttributes(appearance).style,aspectRatio:`${viewport.width} / ${viewport.height}`}}>
+        <div ref={previewFrame} className="ym-background-preview ym-chat-bubbles" aria-label="聊天背景预览" {...chatAppearanceAttributes(appearance, persona.color)} style={{...chatAppearanceAttributes(appearance, persona.color).style,aspectRatio:`${viewport.width} / ${viewport.height}`}}>
           {preview && <BackgroundImage source={preview} opacity={opacity} blur={blur*(previewWidth>0?previewWidth/viewport.width:1)} />}
           <ol className="ym-message-list ym-background-preview-messages" aria-label="聊天气泡预览">
             <li data-role="user"><p>今天过得怎么样？</p></li>
@@ -150,10 +150,10 @@ export default function ChatBackgroundSettings({ persona, contextRevision, disab
         <div className="ym-chat-color-fields">
           {([ ["userTextColor", "用户"], ["assistantTextColor", "AI"] ] as const).map(([key, name]) => <div className="ym-chat-color-field" key={key}>
             <label className="ym-field" htmlFor={`${id}-${key}`}>{name}文字颜色
-              <input id={`${id}-${key}`} type="color" value={appearance[key] ?? "#c77694"} onChange={event => changeAppearance({ ...appearance, [key]: event.target.value })} />
+              <input id={`${id}-${key}`} type="color" value={appearance[key] ?? persona.color} onChange={event => changeAppearance({ ...appearance, [key]: event.target.value })} />
             </label>
-            <span className="ym-page-note">{appearance[key] ?? "跟随主题"}</span>
-            <button type="button" className="ym-button" aria-label={`${name}文字颜色跟随主题`} disabled={appearance[key] === null} onClick={() => changeAppearance({ ...appearance, [key]: null })}>跟随主题</button>
+            <span className="ym-page-note">{appearance[key] ?? "跟随人设颜色"}</span>
+            <button type="button" className="ym-button" aria-label={`${name}文字颜色跟随人设颜色`} disabled={appearance[key] === null} onClick={() => changeAppearance({ ...appearance, [key]: null })}>跟随人设颜色</button>
           </div>)}
         </div>
         <p className="ym-page-note">恢复默认样式只重置气泡和文字颜色，保存后生效。</p>

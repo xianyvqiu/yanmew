@@ -18,12 +18,12 @@ pub fn definitions() -> Vec<Value> {
     vec![
         json!({"type":"function","function":{
             "name":READ_TOOL,
-            "description":"读取当前会话整份记事本及从1开始的段落编号。修改前必须读取。limit_chars是整份记事本的建议上限，超限内容仍完整保留；接近或超过上限时先合并重复内容和精简旧段落。",
+            "description":"读取当前会话完整记事本、从1开始的段落编号和字数信息。",
             "parameters":{"type":"object","properties":{},"additionalProperties":false}
         }}),
         json!({"type":"function","function":{
             "name":UPDATE_TOOL,
-            "description":"修改当前会话记事本。先read_notebook，段落以空行分隔；append追加，replace替换指定段，delete删除指定段。每次成功后使用返回的新段落编号；冲突时重新读取再决定。字数上限是整份记事本的软限制，不是每次新增额度；超限时优先整理。仅返回成功才表示已保存。",
+            "description":"记事本供你自己使用；认为必要时可自行记录、整理和修改，无需等待用户明确要求。修改前先read_notebook，段落以空行分隔；append追加，replace替换，delete删除。后续操作使用返回的新编号，冲突时重新读取。limit_chars是整份记事本的建议上限；接近或超出时优先合并重复内容、精简旧段落，超限内容仍完整保存。",
             "parameters":{"type":"object","properties":{
                 "operation":{"type":"string","enum":["append","replace","delete"]},
                 "section_index":{"type":["integer","null"],"minimum":1,"description":"replace/delete使用从1开始的段落号；append必须为null"},

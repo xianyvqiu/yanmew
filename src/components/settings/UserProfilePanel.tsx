@@ -1,5 +1,5 @@
 import {useRevealForm} from "../../hooks/useRevealForm";
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import {useCardBrowser} from "../../hooks/useCardBrowser";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { configurationApi, errorMessage, userProfileApi } from "../../api";
@@ -167,6 +167,7 @@ export default function UserProfilePanel({ detailRequest }: { detailRequest?: Se
         <div className="ym-inline-form"><button className="ym-button" aria-label={`编辑 ${profile.name}`} disabled={disabled || draft !== null || confirmation !== null} onClick={() => { setDraft({ id: profile.id, name: profile.name, content: profile.content }); setError(""); setNotice(""); }}>编辑</button><button className="ym-button" data-variant="danger" aria-label={`删除 ${profile.name}`} disabled={disabled || draft !== null || confirmation !== null} onClick={() => { setConfirmation(profile); setError(""); setNotice(""); }}>删除</button></div>
         </>}
       </article>)}</div>
+      {!selected&&<CardBrowserPagination browser={browser} label="用户设定" disabled={busy}/>}
     </section>
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="user-profile-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else cancelDelete(); }}>
       {confirmation && <><h2 id="user-profile-confirm-title">删除 {confirmation.name}</h2>

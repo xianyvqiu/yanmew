@@ -25,3 +25,19 @@ button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 button:disabled{opacity:.5;cursor:not-allowed;transform:none}
 :is(h1,h2,h3){line-height:1.4}p{overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* 小窗口仍可访问全部操作；不压扁游戏区、不让绝对定位弹窗越过窗口。 */
+.window .view { min-width:0;min-height:0; }
+.window :is(.card-list,.shop-list,.farm-list,.animal-list,.recipe-list) { min-width:0; }
+.window :is(.row,.shop-row) { min-width:0;flex-wrap:wrap; }
+.window :is(.row,.shop-row) .info { min-width:100px;overflow-wrap:anywhere; }
+.window .modal { padding:12px; }
+.window .modal-card { max-height:calc(100% - 12px);min-height:0;overflow-y:auto; }
+.window .modal-card :is(input,select) { min-width:0;max-width:100%; }
+.window .modal-actions { flex-wrap:wrap; }
+.window :is(.coin-tag,.skill-tag) { position:relative;cursor:help; }
+.window :is(.coin-tag,.skill-tag)::after { content:attr(data-label);position:absolute;right:0;top:calc(100% + 6px);padding:5px 10px;border-radius:8px;background:#30281f;color:#fff;font-size:12px;white-space:nowrap;box-shadow:0 4px 12px #0003;opacity:0;visibility:hidden;pointer-events:none;z-index:30;transform:translateY(-3px);transition:opacity .15s ease,transform .15s ease; }
+.window :is(.coin-tag,.skill-tag):is(:hover,:focus-visible)::after { opacity:1;visibility:visible;transform:none; }
+.window .head { position:relative;z-index:2; }
+@media(max-height:620px) { .window .view { display:block; } .window .view>* { margin-bottom:10px; } .window .home-hero { height:100px; } .window .home-grid { min-height:320px; } .window .card-list { min-height:150px;max-height:none;overflow:visible; } }
+@media(max-width:380px) { .window :is(.head,.sub-head,.home-foot,.foot) { flex-wrap:wrap;gap:7px; } .window .head-spacer { min-width:0; } .window .modal-card { width:100%;padding:14px; } .window .home-grid { gap:8px; } .game .choices { gap:6px; } }

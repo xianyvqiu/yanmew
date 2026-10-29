@@ -14,10 +14,10 @@ type Draft = Record<MemoryKey, string>;
 type FieldErrors = Partial<Record<MemoryKey, string>>;
 
 const definitions: Record<MemoryKey, { label: string; unit: string; group: "memory" | "context" | "tools"; help: string }> = {
-  short_memory_min_chars: { label: "短期记忆最少字数", unit: "字", group: "memory", help: "每轮完整对话生成一条短期记忆。" },
-  short_memory_max_chars: { label: "短期记忆最多字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
-  long_memory_min_chars: { label: "长期记忆最少字数", unit: "字", group: "memory", help: "只统计正文，不包含标题。" },
-  long_memory_max_chars: { label: "长期记忆最多字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
+  short_memory_min_chars: { label: "短期记忆建议最少字数", unit: "字", group: "memory", help: "每轮完整对话生成一条短期记忆；字数是软目标，超出也保存。" },
+  short_memory_max_chars: { label: "短期记忆建议最多字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
+  long_memory_min_chars: { label: "长期记忆建议最少字数", unit: "字", group: "memory", help: "只统计正文，不包含标题；字数是软目标，超出也保存。" },
+  long_memory_max_chars: { label: "长期记忆建议最多字数", unit: "字", group: "memory", help: "按中文汉字个数计算。" },
   memory_merge_count: { label: "每条长期记忆使用短期记忆数 k", unit: "条", group: "memory", help: "出现第 k+1 条尚未整合的短期记忆时，整合前 k 条。修改 k 不会重算已有长期记忆。" },
   recent_message_count: { label: "进入上下文的最近消息原文数", unit: "条", group: "context", help: "按当前会话最近消息计算。" },
   recent_long_memory_count: { label: "直接进入上下文的最近长期记忆数 m", unit: "条", group: "context", help: "m 与最近消息原文条数独立设置。" },
@@ -47,8 +47,8 @@ function validate(draft: Draft): FieldErrors {
     parsed[key] = number;
   }
   const pairs: [MemoryKey, MemoryKey, string][] = [
-    ["short_memory_min_chars", "short_memory_max_chars", "短期记忆最多字数须大于或等于最少字数。"],
-    ["long_memory_min_chars", "long_memory_max_chars", "长期记忆最多字数须大于或等于最少字数。"],
+    ["short_memory_min_chars", "short_memory_max_chars", "短期记忆建议最多字数须大于或等于最少字数。"],
+    ["long_memory_min_chars", "long_memory_max_chars", "长期记忆建议最多字数须大于或等于最少字数。"],
     ["travel_journal_min_chars", "travel_journal_max_chars", "旅行游记最多字数须大于或等于最少字数。"],
   ];
   for (const [minimum, maximum, message] of pairs) {

@@ -127,7 +127,7 @@ impl AiClient {
     pub async fn discover_capacity(&self, config: &ConnectionTest) {
         let cancel = Cancellation::default();
         let result: AppResult<serde_json::Value> = cancel.wait(Duration::from_secs(3), async {
-            let mut request = self.http.get(format!("{}/models",config.base_url.trim_end_matches('/')));
+            let mut request = self.http.get(format!("{}/models",config.base_url.trim_end_matches('/').trim_end_matches("/chat/completions")));
             if let Some(key)=&config.api_key { request=request.bearer_auth(key); }
             let mut response=request.send().await.map_err(transport)?;
             if !response.status().is_success() {return Err(network());}

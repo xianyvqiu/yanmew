@@ -1,3 +1,4 @@
+import ProviderTestStatus, {type ConnectionTestFeedback} from "./ProviderTestStatus";
 import {useRevealForm} from "../../hooks/useRevealForm";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, webSearchApi } from "../../api";
@@ -38,6 +39,7 @@ export default function WebSearchProvidersPanel() {
   const [deleting, setDeleting] = useState<WebSearchProvider | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [notice, setNotice] = useState("");
+  const [tests, setTests] = useState<Partial<Record<string, ConnectionTestFeedback>>>({});
   const mounted = useRef(false), locked = useRef(false), generation = useRef(0);
   const dialog = useRef<HTMLDialogElement>(null);
   const showError = useCallback((cause: unknown) => {
@@ -57,15 +59,29 @@ export default function WebSearchProvidersPanel() {
     return () => { disposed = true; mounted.current = false; generation.current++; stop?.(); window.removeEventListener("focus", reload); };
   }, [refresh, showError]);
   useEffect(() => { if (deleting) dialog.current?.showModal(); else dialog.current?.close(); }, [deleting]);
-  const run = async (action: () => Promise<unknown>, message: string) => {
+  const run = async (action: () => Promise<unknown>, message: string | (() => string), testId?: string) => {
     if (locked.current) return false;
     locked.current = true; setBusy(true); setError(null); setNotice("");
-    try { await action(); if (mounted.current) { setNotice(message); await refresh().catch(showError); } return true; }
-    catch (cause) { showError(cause); return false; }
+    if (testId) setTests(current=>({...current,[testId]:{phase:"testing",message:"请稍候，正在检查连接。"}}));
+    try {
+      await action();
+      if (mounted.current) {
+        const text=typeof message === "function"?message():message;
+        if (testId) setTests(current=>({...current,[testId]:{phase:"success",message:text}}));
+        else setNotice(text);
+        await refresh().catch(showError);
+      }
+      return true;
+    }
+    catch (cause) {
+      if (testId) { if (mounted.current) setTests(current=>({...current,[testId]:{phase:"error",message:errorMessage(cause)}})); }
+      else showError(cause);
+      return false;
+    }
     finally { locked.current = false; if (mounted.current) setBusy(false); }
   };
   const save = async (input: WebSearchProviderInput) => {
-    if (await run(() => webSearchApi.save(editing?.id ?? null, input), "搜索配置已保存")) { if (mounted.current) setEditing(undefined); }
+    if (await run(() => webSearchApi.save(editing?.id ?? null, input), "搜索配置已保存")) { if (mounted.current) { if (editing) setTests(current=>({...current,[editing.id]:undefined})); setEditing(undefined); } }
   };
   const disabled = !data || busy || deleting !== null;
   return <section className="ym-page-card" aria-label="联网搜索">
@@ -86,10 +102,11 @@ export default function WebSearchProvidersPanel() {
         <div className="ym-page-heading"><h3>{p.name}</h3><span>{p.isActive ? "当前项" : ""}</span></div>
         <dl><dt>服务</dt><dd>{serviceNames[p.kind]}</dd><dt>接口地址</dt><dd>{p.baseUrl}</dd><dt>API Key</dt><dd>{p.hasApiKey ? "已保存" : "未保存"}</dd></dl>
         <div className="ym-inline-form">
-          <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(p); setError(null); }} aria-label={`编辑搜索 ${p.name}`}>编辑</button>
-          <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { let count = 0; void run(async () => { count = await webSearchApi.test(p.id); }, "搜索测试成功").then(ok => { if (ok && mounted.current) setNotice(`${p.name}：测试成功，返回 ${count} 条结果（测试可能消耗服务额度）。`); }); }} aria-label={`测试搜索 ${p.name}`}>测试连接</button>
+          <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(p); setTests(current=>({...current,[p.id]:undefined})); setError(null); }} aria-label={`编辑搜索 ${p.name}`}>编辑</button>
+          <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { let count = 0; void run(async () => { count = await webSearchApi.test(p.id); }, () => `${p.name}：测试成功，返回 ${count} 条结果（测试可能消耗服务额度）。`, p.id); }} aria-label={`测试搜索 ${p.name}`}>{tests[p.id]?.phase === "testing" ? "正在测试…" : "测试连接"}</button>
           <button className="ym-button ym-provider-delete" disabled={disabled || editing !== undefined} onClick={() => { setDeleting(p); setError(null); }} aria-label={`删除搜索 ${p.name}`}>删除</button>
         </div>
+        <ProviderTestStatus feedback={tests[p.id]}/>
       </li>)}</ul>
     </>}
 

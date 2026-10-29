@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { companionApi, foodImage, type Food, type FoodReceipt } from "../../companionApi";
 import { errorMessage, walletApi } from "../../api";
 import { useCardBrowser } from "../../hooks/useCardBrowser";
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import "./CompanionPanels.css";
 export default function FoodPanel() {
     const [items, setItems] = useState<Food[]>([]), [tab, setTab] = useState<"inventory" | "shop">("inventory"), [error, setError] = useState(""), [selected, setSelected] = useState<Food | null>(null), [quantity, setQuantity] = useState(1), [busy, setBusy] = useState(false);
@@ -91,6 +91,7 @@ export default function FoodPanel() {
  {error && !selected&&<p role="alert" className="ym-page-error">{error}</p>}{reward && <p role="status" className="ym-reward-flash" key={reward.id} onAnimationEnd={() => setReward(null)}>{reward.text}</p>}
  <CardBrowserControls browser={browser} label="食物" timeLabel={tab === "shop" ? "上架时间" : "库存变化时间"}/>
  <div className="ym-companion-grid">{browser.items.map(f => <button className="ym-food-card ym-object-card" key={f.id} onClick={() => { setSelected(f); setQuantity(1); setError(""); }} disabled={busy || !!operation.current || !!success}><img src={foodImage(f.id)} alt=""/><strong>{f.name}</strong><span>{f.unlimited ? "免费 · 无限" : tab === "shop" ? `${f.price} 喵币／份 · 拥有 ${f.quantity}` : `拥有 ${f.quantity} 份`}</span></button>)}</div>
+      <CardBrowserPagination browser={browser} label="食物"/>
  {selected && <dialog ref={dialog} className="ym-session-dialog ym-food-dialog" aria-label={tab==="shop"&&!selected.unlimited?`购买${selected.name}`:`${selected.name}详情`} onCancel={event=>{event.preventDefault();dismiss();}}><div className="ym-food-dialog-heading"><img src={foodImage(selected.id)} alt=""/><div><p className="ym-page-note">{tab==="shop"?"食物商城":"食物仓库"}</p><h3>{selected.name}</h3><p>{selected.unlimited ? "这是免费无限的基础食物，直接在宠窗投喂即可。" : `库存 ${items.find(f => f.id === selected.id)?.quantity ?? 0} 份 · 单价 ${selected.price} 喵币`}</p></div></div>{error&&<p role="alert" className="ym-page-error">{error}</p>}
  {success?<div className="ym-food-purchase-success" role="status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/></svg><strong>购买成功</strong><p>{success.name} × {success.quantity} 已加入仓库</p><small>本次消费 {Math.abs(success.coinDelta)} 喵币</small></div>:<>
  {!selected.unlimited && tab === "shop" && <div className="ym-food-order"><label className="ym-field">购买数量<input type="number" min="1" step="1" value={quantity} disabled={busy || !!operation.current} onChange={e => setQuantity(Number(e.target.value))}/></label><p className="ym-food-order-total">共 {selected.price * quantity} 喵币</p></div>}

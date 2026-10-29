@@ -35,7 +35,7 @@ impl Appearance {
         }
         for color in [&self.user_text_color, &self.assistant_text_color].into_iter().flatten() {
             if color.len() != 7 || !color.starts_with('#') || !color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit) {
-                return Err(AppError::validation("textColor", "文字颜色须为 #RRGGBB，或留空跟随主题"));
+                return Err(AppError::validation("textColor", "文字颜色须为 #RRGGBB，或留空跟随人设颜色"));
             }
         }
         Ok(())

@@ -13,8 +13,8 @@ fn fresh_database_creates_one_real_guide_without_provider_or_rewards() {
     assert!(initialize(&mut connection).unwrap());
     let context = crate::persona::context(&connection, 0).unwrap();
     let persona_id = crate::error::parse_id(&context.persona_id).unwrap();
-    let colors: (String, String, String) = connection.query_row("SELECT color,chat_user_text_color,chat_assistant_text_color FROM personas WHERE id=?1", [persona_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
-    assert_eq!(colors, ("#ffb6c1".into(), "#ffb6c1".into(), "#ffb6c1".into()));
+    let colors: (String, Option<String>, Option<String>) = connection.query_row("SELECT color,chat_user_text_color,chat_assistant_text_color FROM personas WHERE id=?1", [persona_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!(colors, ("#ffb6c1".into(), None, None));
     let session_id = crate::error::parse_id(context.session_id.as_ref().unwrap()).unwrap();
     let session = sessions::get(&connection, persona_id, session_id).unwrap();
     assert_eq!(session.title, "初次见面");

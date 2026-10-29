@@ -47,10 +47,11 @@ unsafe extern "system" fn pet_frame_proc(
     if reference != 0 && message == WM_EXITSIZEMOVE {
         let app = unsafe { &*(reference as *const tauri::AppHandle) }.clone();
         if let Some(window) = app.get_webview_window("main") {
-            // startDragging 只提交消息；只有这条原生通知才表示用户已经松手。
+            // 系统正常结束时按本次拖动收尾；旧通知不能重置后续拖动。
+            let serial=app.state::<crate::pet_desktop::Desktop>().drag_serial();
             tauri::async_runtime::spawn(async move {
-                if let Err(error) = crate::commands::finish_pet_drag(&window).await { crate::pet_position::report(&app, &error); }
-                let _ = app.emit_to("main", "pet-drag-finished", ());
+                if let Err(error) = crate::commands::finish_pet_drag_for(&window,serial).await { crate::pet_position::report(&app, &error); }
+                if app.state::<crate::pet_desktop::Desktop>().drag_finished_for(serial){let _ = app.emit_to("main", "pet-drag-finished", ());}
             });
         }
     }

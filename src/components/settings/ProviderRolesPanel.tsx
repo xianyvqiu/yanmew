@@ -48,6 +48,13 @@ export default function ProviderRolesPanel({providers}:{providers:Provider[]}) {
       return <article className="ym-object-card" key={purpose}><div className="ym-page-heading"><h3>{names[purpose]}</h3><button className="ym-button" disabled={!config||busy||editing!==null} onClick={()=>edit(purpose)}>配置{names[purpose]}</button></div>
         <p>{provider?.name??(purpose==="memory"||purpose==="vision"?"跟随聊天":"尚未配置")}</p><p className="ym-page-note">{role?.model??provider?.model??""}</p>
         {purpose==="image"&&<p className="ym-page-note">{role?.enabled?"已开启":"已关闭"} · 饰品失败保留图标、Emoji、颜文字或符号组合；创作失败保留旧图</p>}
+        {purpose==="image"&&<details><summary>支持的生图服务与地址</summary><p className="ym-page-note">官方地址自动匹配接口；模型要支持图片输出，使用参考形象时还要支持图片输入。中转服务仍需兼容图片编辑接口，不会仅凭模型名猜测协议。</p><ul className="ym-page-note">
+          <li>Gemini：generativelanguage.googleapis.com/v1beta（Google原生生图）</li>
+          <li>百炼：dashscope.aliyuncs.com，或你的地域／业务空间官方地址（Qwen同步图像模型）</li>
+          <li>火山方舟：ark.cn-beijing.volces.com/api/v3；BytePlus：ark.ap-southeast.bytepluses.com/api/v3（Seedream）</li>
+          <li>OpenRouter：openrouter.ai/api/v1（图片接口支持的模型）</li>
+          <li>硅基流动及其他兼容服务：继续使用原有地址与对应生图模型</li>
+        </ul><p className="ym-page-note">原生生图的适配不代表聊天／识图也使用原生接口。只读测试连接不生成图片，也不保证所选模型能处理参考图；生成失败不会自动更换模型或付费重试。</p></details>}
         {purpose==="vision"&&<p className="ym-page-note">独立模型先理解图片，再交聊天模型回答。</p>}
         {editing===purpose&&<form ref={form} onSubmit={event=>{event.preventDefault();void save();}}><fieldset disabled={busy} className="ym-role-fields"><label className="ym-field">提供商<select value={id} onChange={event=>{const next=event.target.value;setId(next);const p=providers.find(p=>p.id===next);const stored=config?.models?.find(m=>m.purpose===purpose&&m.providerId===next);setModel(stored?.model??(p?.model==="未配置"?"":p?.model??""));setOutput(String(stored?.maxOutputTokens??p?.maxOutputTokens??32768));const savedCapacity=stored?stored.contextWindowOverride:p?.contextWindowOverride;setCapacity(savedCapacity==null?"":String(savedCapacity));}}><option value="">{purpose==="memory"||purpose==="vision"?"跟随聊天":purpose==="image"?"不配置":"请选择"}</option>{providers.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           {id&&<label className="ym-field">{names[purpose]}模型<input required value={model} onChange={event=>setModel(event.target.value)}/></label>}

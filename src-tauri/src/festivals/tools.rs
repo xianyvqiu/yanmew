@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 
-pub const RULES:&str="内置母表是只读的系统节日。全局自定义日期由所有人设和会话共用，记录固定公历或农历月日，例如生日、纪念日、自定义日子，不复制内置节日。只有确有需要且月日、历法和闰月信息已明确时才新增，不知道就询问用户，不能猜日期。新增/修改必须写非空祝福词；纪念、悼念等场合按实际语境用语，不强行说快乐。编辑/删除之前先读取该记录。工具成功才表示已持久化；这些年度日期不等于定时提醒，需要提醒时仍使用提醒工具。";
+pub const RULES:&str="自定义日期是全局共用的年度固定公历/农历月日，不复制内置节日。它与定时提醒不同；需要到点提醒时使用提醒工具。月日、历法或闰月信息不明确时询问用户，不猜测。新增/修改须填写祝福词；纪念、悼念及isMemorial=true的日期用纪念向文案，不说快乐。编辑/删除前先读取目标记录。";
 pub fn is_write(name: &str) -> bool {
     matches!(
         name,
@@ -26,12 +26,12 @@ pub fn definitions() -> Vec<Value> {
         "blessing":{"type":"string","minLength":1},"note":{"type":["string","null"]}
     },"required":["kind","name","calendarType","month","day","isLeapMonth","blessing","note"],"additionalProperties":false});
     [
-        ("list_festival_catalog","查询本年只读内置节日母表；不复制系统节日。",json!({"type":"object","properties":{},"additionalProperties":false})),
+        ("list_festival_catalog","查询本年的内置节日。",json!({"type":"object","properties":{},"additionalProperties":false})),
         ("list_custom_festivals","分页读取全局共享的固定日期，返回ID、完整定义及当年全部匹配日期。",json!({"type":"object","properties":{"before_id":{"type":["string","null"]},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false})),
-        ("get_custom_festival","读取全局共享的一条日期，编辑或删除之前先读取。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
-        ("create_custom_festival","保存全局共享的年度固定日期；不填出生年份，不复制系统节日。",json!({"type":"object","properties":{"input":input.clone()},"required":["input"],"additionalProperties":false})),
-        ("update_custom_festival","修改已读取的全局自定义日期；冲突时重新读取，不强行覆盖。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"},"input":input},"required":["festival_id","input"],"additionalProperties":false})),
-        ("delete_custom_festival","删除已读取且确实不再需要的全局自定义日期；不能删除母表。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
+        ("get_custom_festival","读取一条全局自定义日期的完整内容。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
+        ("create_custom_festival","新增年度固定日期，不填写出生年份。",json!({"type":"object","properties":{"input":input.clone()},"required":["input"],"additionalProperties":false})),
+        ("update_custom_festival","修改自定义日期；冲突时重新读取，不强行覆盖。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"},"input":input},"required":["festival_id","input"],"additionalProperties":false})),
+        ("delete_custom_festival","删除不再需要的自定义日期。",json!({"type":"object","properties":{"festival_id":{"type":"string","pattern":"^[1-9][0-9]*$"}},"required":["festival_id"],"additionalProperties":false})),
     ].into_iter().map(|(name,description,parameters)|json!({"type":"function","function":{"name":name,"description":description,"parameters":parameters}})).collect()
 }
 #[derive(Deserialize)]

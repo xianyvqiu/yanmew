@@ -36,7 +36,7 @@
 .ym-ledger-status { font-size:12px; min-height:18px; color:var(--ym-text-muted); }
 .ym-ledger-results { display:grid; gap:18px; transition:opacity var(--ym-duration-normal); }
 .ym-ledger-results[aria-busy="true"] { opacity:.65; pointer-events:none; }
-.ym-ledger-pagination { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+.ym-ledger-pagination { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:16px; }
 .ym-ledger-pagination>span { margin-right:auto; color:var(--ym-text-secondary); font-size:12px; }
 .ym-ledger-list,.ym-ledger-dashboard { display:grid; gap:12px; }
 .ym-ledger-entry { padding:0; overflow:hidden; }

@@ -1,0 +1,40 @@
+.fishing-dialog { width:min(440px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;box-sizing:border-box;padding:20px;margin:auto;border:1px solid #718c7555;border-radius:22px;background:#faf6ec;color:#2a332d;font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif;box-shadow:0 24px 80px #061b294d;animation:fish-arrive .25s cubic-bezier(.22,1,.36,1); }
+.fishing-dialog::backdrop { background:#0b1e2f80;backdrop-filter:blur(5px); }
+.fishing-heading { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.fishing-heading h2 { margin:3px 0 0;font-size:22px;line-height:1.35; }
+.fishing-eyebrow { color:#527b65;font-size:12px;letter-spacing:.08em; }
+.fishing-illustration { font-size:36px;filter:drop-shadow(0 4px 7px #2b705128); }
+.fishing-help { margin:12px 0;color:#59685c;font-size:12px; }
+.fishing-stage { display:grid;grid-template-columns:minmax(0,1fr) 48px;gap:14px;height:clamp(180px,38dvh,320px);margin:14px 0; }
+.fishing-water { position:relative;overflow:hidden;border:1px solid #75b0ac;border-radius:18px;background:radial-gradient(ellipse at 25% 0%,#c7f2cd88,transparent 65%),linear-gradient(#90d5c4,#397f8b 55%,#20536c);box-shadow:inset 0 1px 12px #0b556b25; }
+.fishing-water::before { content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 31px,#dcf6e415 32px 33px);pointer-events:none; }
+.fishing-depth { position:absolute;left:14px;top:8px;color:#123d4d;font-size:11px;letter-spacing:.2em;opacity:.75; }
+.fishing-depth--bottom { top:auto;bottom:8px;color:#d5f4ef; }
+.fishing-lane { position:absolute;inset:25px 15%; }
+.fishing-target { position:absolute;top:0;left:12%;right:12%;border:1px solid #d5ffe0;border-radius:14px;background:linear-gradient(90deg,#b6f3c94d,#bfffd980,#b6f3c94d);box-shadow:0 0 16px #c2f5cd22,inset 0 1px 0 #ffffffb3;display:grid;place-items:center;will-change:transform; }
+.fishing-target span { font-size:26px;filter:drop-shadow(0 3px 3px #063c4b33); }
+.fishing-hook { position:absolute;top:0;left:0;right:0;height:0;border-top:3px solid #ffe6a4;filter:drop-shadow(0 1px 3px #163a5a66);will-change:transform; }
+.fishing-hook::before,.fishing-hook::after { content:"";position:absolute;top:-6px;width:9px;height:9px;border:2px solid #fff4ce;background:#c09c45;border-radius:50%; }
+.fishing-hook::before { left:-4px; }.fishing-hook::after { right:-4px; }
+.fishing-hook span { position:absolute;left:50%;top:0;transform:translate(-50%,-50%);font-size:22px; }
+.fishing-stage[data-inside="true"] .fishing-target { background:linear-gradient(90deg,#a9f2bd88,#c3ffcbcc,#a9f2bd88);box-shadow:0 0 20px #b7ffbf55,inset 0 1px 0 #fff9; }
+.fishing-meter-wrap { display:flex;flex-direction:column;align-items:center;gap:8px;font-size:11px;color:#64816b;font-variant-numeric:tabular-nums; }
+.fishing-meter { position:relative;flex:1;width:15px;overflow:hidden;border-radius:20px;border:1px solid #a3b49d;background:#e4e9da;box-shadow:inset 0 1px 4px #41634515; }
+.fishing-meter i { position:absolute;inset:0;background:linear-gradient(#afdf91,#5caa80);transform-origin:bottom;will-change:transform; }
+.fishing-feedback { min-height:23px;text-align:center;font-size:12px;color:#4f7960; }
+.fishing-lift { display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:9px;width:100%;min-height:48px;margin-top:10px;padding:12px;border:1px solid #71967b;border-radius:14px;background:linear-gradient(#e4f3dd,#d7e9cb);color:#31573d;font:inherit;font-size:14px;font-weight:600;line-height:1.5;cursor:pointer;touch-action:none;user-select:none;box-shadow:0 3px 0 #658a6c33;transition:background .15s,box-shadow .15s,transform .15s; }
+.fishing-lift[data-held="true"] { transform:translateY(2px);background:#c3ddb8;box-shadow:0 1px 0 #658a6c33; }
+.fishing-lift kbd { padding:2px 6px;border:1px solid #85a57b66;border-radius:5px;font:10px/1.4 ui-monospace,monospace;font-weight:400; }
+.fishing-footer { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:9px;margin-top:14px;font-size:10px;color:#7b8273; }
+.fishing-exit { min-height:36px;padding:6px 12px;border:1px solid #9aa58b66;border-radius:10px;background:#fffcf5;color:#59634c;font:inherit;font-size:12px;cursor:pointer; }
+.fishing-dialog button:focus-visible { outline:2px solid #557c57;outline-offset:3px; }
+.fishing-dialog button:disabled { opacity:.55;cursor:wait; }
+.fishing-result { position:absolute;z-index:3;left:12px;right:12px;top:50%;transform:translateY(-50%);text-align:center;padding:16px 12px;border:1px solid #c2d7b7;border-radius:14px;background:#f3f8e8f2;backdrop-filter:blur(8px);box-shadow:0 8px 28px #123b4b22;animation:fish-result-arrive .3s ease; }
+.fishing-result[hidden] { display:none; }.fishing-result span { display:block;font-size:32px; }.fishing-result strong { display:block;font-size:18px; }.fishing-result p { margin:4px 0;font-size:12px; }
+.fishing-dialog[data-result] :is(.fishing-target,.fishing-hook) { opacity:.35;transition:opacity .3s ease; }
+.fishing-dialog[data-result="escaped"] .fishing-result { background:#f3ebdc;border-color:#dfcfad;color:#82664a; }
+@keyframes fish-arrive { from { opacity:0;transform:translateY(10px) scale(.98); } to { opacity:1;transform:none; } }
+@keyframes fish-result-arrive { from { opacity:0;transform:translateY(calc(-50% + 8px)) scale(.97); } to { opacity:1;transform:translateY(-50%); } }
+@media(max-height:540px) { .fishing-dialog { padding:14px; }.fishing-stage { height:180px;margin:10px 0; }.fishing-heading h2 { font-size:19px; }.fishing-help { margin:8px 0; } }
+@media(max-width:360px) { .fishing-dialog { width:calc(100vw - 12px);padding:14px; }.fishing-stage { gap:8px;grid-template-columns:minmax(0,1fr) 40px; }.fishing-footer { justify-content:center; } }
+@media(prefers-reduced-motion:reduce) { .fishing-dialog,.fishing-result { animation:none; }.fishing-dialog * { transition:none!important; } }

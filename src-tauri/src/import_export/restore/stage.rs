@@ -314,6 +314,7 @@ impl<'de> Visitor<'de> for Rows<'_> {
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<u64, A::Error> {
         let mut count = 0;
         while let Some(mut row) = seq.next_element_seed(RecordSeed)? {
+            if self.table=="message_images" && self.schema_version<26 {row.entry("source_kind").or_insert(Value::String("image".into()));}
             if self.legacy_dates {
                 let session = row.remove("session_id").ok_or_else(|| A::Error::custom("旧日期缺少会话归属"))?;
                 crate::error::parse_id(session.as_str().ok_or_else(|| A::Error::custom("旧日期会话ID无效"))?).map_err(A::Error::custom)?;
@@ -435,7 +436,7 @@ fn valid_file(entry: &FileEntry) -> bool {
     {
         return false;
     }
-    ["png", "jpg", "webp"]
+    ["png", "jpg", "webp", "gif"]
         .iter()
         .any(|ext| entry.path == format!("files/{}.{}", entry.sha256, ext))
 }
@@ -458,7 +459,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         serde_json::from_reader(zip.by_name("manifest.json").map_err(|_| fail())?)
             .map_err(|_| fail())?;
     if manifest.format_version != FORMAT_VERSION
-        || ![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, SCHEMA_VERSION].contains(&manifest.schema_version)
+        || ![6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, SCHEMA_VERSION].contains(&manifest.schema_version)
     {
         return Err(AppError::new(
             "BACKUP_VERSION_UNSUPPORTED",
@@ -526,6 +527,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
     let expected = super::super::protocol::COLUMNS
         .iter()
         .filter(|(n, _)| {
+            if manifest.schema_version<26 && ["sticker_libraries","chat_stickers","sticker_tags","sticker_tag_links","persona_sticker_libraries"].contains(n){return false;}
             if n.starts_with("real_")&&manifest.schema_version<18{return false;}
             (manifest.schema_version>=15 || !["food_inventory","persona_food_settings","food_actions","skills","persona_skills"].contains(n)) && (scope.includes(n) || (manifest.schema_version<13 && *n=="custom_festivals" && scope.includes("sessions")))
                 && (manifest.schema_version >= 7
@@ -584,6 +586,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
         ("pet_artworks", "image_file"),
         ("pet_artworks", "preview_file"),
         ("message_images", "image_file"),
+        ("chat_stickers", "image_file"),
     ] {
         let mut stmt = c.prepare(&format!(
             "SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL"
@@ -611,7 +614,7 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
             |r| r.get(0),
         )?;
         let chat: bool = c.query_row(
-            "SELECT EXISTS(SELECT 1 FROM message_images WHERE image_file=?1)",
+            "SELECT EXISTS(SELECT 1 FROM message_images WHERE image_file=?1 UNION ALL SELECT 1 FROM chat_stickers WHERE image_file=?1)",
             [&entry.path],
             |r| r.get(0),
         )?;
@@ -644,12 +647,13 @@ pub fn read(runtime: &Runtime, path: &Path) -> AppResult<Staged> {
                 image::ImageFormat::Png,
                 image::ImageFormat::Jpeg,
                 image::ImageFormat::WebP,
+                image::ImageFormat::Gif,
             ]
             .contains(&format)
             {
                 return Err(fail());
             }
-            image::load_from_memory_with_format(&bytes, format).map_err(|_| fail())?;
+            crate::chat_images::validate_bytes(&bytes).map_err(|_|fail())?;
         }
         if accessory {
             crate::accessories::images::validate_png(&bytes)?;

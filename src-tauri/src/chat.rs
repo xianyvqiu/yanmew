@@ -18,6 +18,7 @@ mod media;
 mod tools;
 mod weather_tools;
 mod visual_tools;
+mod sticker_tools;
 mod self_image;
 mod image_tools;
 #[cfg(test)]

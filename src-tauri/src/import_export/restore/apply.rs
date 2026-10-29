@@ -209,6 +209,7 @@ fn assets(
         ("pet_artworks", "image_file", "accessory"),
         ("pet_artworks", "preview_file", "accessory"),
         ("message_images", "image_file", "chat"),
+        ("chat_stickers", "image_file", "chat"),
     ] {
         rows(&source.connection, table, |r| {
             if table == "personas" && personas.get(&id(&r, "id")?).is_some_and(Option::is_some) {
@@ -269,6 +270,9 @@ fn resource(source: &Connection, r: &mut Record, key: &str, role: &str) -> AppRe
 fn foreign(source: &Connection, r: &mut Record) -> AppResult<()> {
     for (key, table) in [
         ("skill_id", "skills"),
+        ("library_id", "sticker_libraries"),
+        ("sticker_id", "chat_stickers"),
+        ("tag_id", "sticker_tags"),
         ("ledger_id", "currency_ledger"),
         ("provider_id", "providers"),
         ("message_id", "messages"),
@@ -562,6 +566,7 @@ pub(super) fn commit(
         crate::travel::cancel_current(&tx, &date)?;
         // 保留本机程序登记供兼容存档关联；不沿用其旧使用数据。
         for table in [
+            "persona_sticker_libraries", "sticker_tag_links", "chat_stickers", "sticker_libraries", "sticker_tags",
             "food_actions",
             "food_inventory",
             "persona_food_settings",
@@ -607,6 +612,15 @@ pub(super) fn commit(
         put(&tx, "personas", &r, false)
     })?;
 
+    rows(source,"sticker_tags",|mut r|{
+        let old=id(&r,"id")?;
+        let same:Option<i64>=tx.query_row("SELECT id FROM sticker_tags WHERE name=?1",[value(&r,"name")?],|r|r.get(0)).optional()?;
+        if let Some(target)=same{source.execute("UPDATE import_id_map SET target_id=?1 WHERE table_name='sticker_tags' AND source_id=?2",params![target,old])?;}
+        else{map_field(source,&mut r,"id","sticker_tags")?;put(&tx,"sticker_tags",&r,false)?;}Ok(())
+    })?;
+    for table in ["sticker_libraries","chat_stickers","sticker_tag_links","persona_sticker_libraries"] {
+        rows(source,table,|mut r|{if table=="persona_sticker_libraries"&&persona.get(&id(&r,"persona_id")?).is_some_and(Option::is_some){return Ok(())}map_field(source,&mut r,"id",table)?;foreign(source,&mut r)?;if table=="chat_stickers"{resource(source,&mut r,"image_file","chat")?;}put(&tx,table,&r,false)})?;
+    }
     rows(source,"skills",|mut r|{
         let old=id(&r,"id")?;
         let same:Option<i64>=tx.query_row("SELECT id FROM skills WHERE title=?1 AND summary=?2 AND body=?3 ORDER BY id LIMIT 1",params![value(&r,"title")?,value(&r,"summary")?,value(&r,"body")?],|r|r.get(0)).optional()?;

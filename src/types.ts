@@ -373,7 +373,7 @@ export type ProviderModelConfig=Pick<ProviderRole,"purpose"|"providerId"|"model"
 export type ProviderRoles={revision:number;roles:ProviderRole[];models?:ProviderModelConfig[]};
 
 export type ChatImageInput={filename:string;dataUrl:string};
-export type ChatImageRecord={id:RecordId;filename:string;imageFile:string;mediaType:string;caption:string|null};
+export type ChatImageRecord={id:RecordId;filename:string;imageFile:string;mediaType:string;caption:string|null;sourceKind?:"image"|"sticker"};
 
 /** SMTP连接与模型提供商独立，授权码不从后端回传。 */
 export interface ReminderEmailConnection { email: string; host: string; port: number; encryption: "tls" | "starttls"; username: string; from: string; to: string }

@@ -92,3 +92,5 @@
 .chat-composer--compact .chat-composer__input { min-height:52px; max-height:52px; resize:none; padding:7px 8px; font-size:13px; user-select:text; }
 .chat-composer--compact .chat-composer__actions { margin:0; align-self:stretch; align-items:center; }
 .chat-composer--compact .chat-composer__submit { min-height:32px; padding:5px 8px; font-size:12px; white-space:nowrap; }
+
+.ym-chat-image[data-kind="sticker"] img:not([data-expanded="true"]) { max-width:min(100%,160px);max-height:160px; }

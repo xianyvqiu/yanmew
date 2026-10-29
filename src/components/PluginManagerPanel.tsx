@@ -1,6 +1,6 @@
 import MotionDetails from "./MotionDetails";
 import GameSaveSummary from "./GameSaveSummary";
-import CardBrowserControls from "./CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import {useCardBrowser} from "../hooks/useCardBrowser";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, gamePluginsApi, webSearchApi } from "../api";
@@ -206,7 +206,8 @@ export default function PluginManagerPanel() {
           <button className="ym-button" role="switch" aria-label={`启用 ${plugin.name}`} aria-checked={plugin.isEnabled} disabled={busy||plugin.packageStatus!=="available"} onClick={()=>void run(async()=>{await gamePluginsApi.enable(plugin.pluginId,plugin.installedVersion,!plugin.isEnabled);await refresh();},"插件状态已保存。")}>启用小游戏</button>
           <button className="ym-button" disabled={busy} onClick={()=>{pendingCardAction.current={id:plugin.pluginId,kind:"clear"};setSelected(plugin.pluginId);}}>清除数据并重载</button></div>
         {plugin.isBundled&&<p className="ym-page-note">自带小游戏不可卸载，可停用或恢复初始数据。</p>}
-      </article>)}</div>{!loading&&!browser.total&&<p className="ym-page-empty">{plugins.length?"没有匹配的小游戏。":"暂无小游戏，可使用上方按钮安装本地小游戏插件包。"}</p>}</>}
+      </article>)}</div>{!loading&&!browser.total&&<p className="ym-page-empty">{plugins.length?"没有匹配的小游戏。":"暂无小游戏，可使用上方按钮安装本地小游戏插件包。"}</p>}
+      <CardBrowserPagination browser={browser} label="小游戏插件" disabled={busy}/></>}
       {selected&&<button className="ym-button" disabled={busy} onClick={()=>{pendingCardAction.current=null;setSelected("");}}>返回小游戏列表</button>}
     </section>
     {selected && !detail && <p className="ym-page-note">正在读取插件详情…</p>}

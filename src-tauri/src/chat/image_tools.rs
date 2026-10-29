@@ -6,10 +6,10 @@ use rusqlite::params;
 use serde_json::{json, Value};
 
 pub fn definitions() -> Vec<Value> {
-    [("list_generated_images","列出当前会话AI生成的最近20张图片ID，不包含用户上传图片。"),
-     ("view_generated_image","查看当前会话AI生成图片的实际内容，使用已配置的识图服务。不接受用户上传图片。"),
-     ("inspect_image_transparency","本地检测当前会话AI生成图片的真实透明像素和透明边缘。白底和棋盘格不等于透明。"),
-     ("remove_image_background","仅当用户要求透明底或抠图时，对当前会话AI生成图片执行本地抠图，并保存新PNG到本轮回复，保留原图。不处理用户上传图片，不再次调用生图服务。")]
+    [("list_generated_images","列出最近20张生成图片的ID。"),
+     ("view_generated_image","查看生成图片的实际内容。"),
+     ("inspect_image_transparency","检测图片的真实透明像素和透明边缘；白底、棋盘格不等于透明。"),
+     ("remove_image_background","用户要求透明底或抠图时使用。去除背景并把新PNG展示到本轮回复，保留原图，不发起新的生图请求。")]
     .into_iter().map(|(name,description)|json!({"type":"function","function":{"name":name,"description":description,"parameters":{"type":"object","properties":if name=="list_generated_images"{json!({})}else{json!({"imageId":{"type":"string"}})},"required":if name=="list_generated_images"{vec![]}else{vec!["imageId"]},"additionalProperties":false}}})).collect()
 }
 #[derive(Deserialize)]
@@ -27,7 +27,7 @@ fn capture(
 ) -> AppResult<crate::chat_images::Image> {
     runtime.read(|s,_|{
         lease.require_conversation_scope(&runtime.requests,session,persona)?;coordinator::require_context(s,persona,session,revision)?;
-        let message:i64=s.connection.query_row("SELECT i.message_id FROM message_images i JOIN messages m ON m.id=i.message_id WHERE i.id=?1 AND m.session_id=?2 AND m.role='assistant'",params![id,session],|r|r.get(0)).optional()?.ok_or_else(AppError::not_found)?;
+        let message:i64=s.connection.query_row("SELECT i.message_id FROM message_images i JOIN messages m ON m.id=i.message_id WHERE i.id=?1 AND m.session_id=?2 AND m.role='assistant' AND i.source_kind='image'",params![id,session],|r|r.get(0)).optional()?.ok_or_else(AppError::not_found)?;
         crate::chat_images::list(&s.connection,message)?.into_iter().find(|i|i.id==id.to_string()).ok_or_else(AppError::not_found)
     })
 }
@@ -46,7 +46,7 @@ pub async fn execute(
             return Err(AppError::validation("arguments", "列表不接受额外参数"));
         }
         return runtime.read(|s,_|{lease.require_conversation_scope(&runtime.requests,session,persona)?;coordinator::require_context(s,persona,session,revision)?;
-            let mut q=s.connection.prepare("SELECT i.id,i.filename,m.id FROM message_images i JOIN messages m ON m.id=i.message_id WHERE m.session_id=?1 AND m.role='assistant' ORDER BY i.id DESC LIMIT 20")?;
+            let mut q=s.connection.prepare("SELECT i.id,i.filename,m.id FROM message_images i JOIN messages m ON m.id=i.message_id WHERE m.session_id=?1 AND m.role='assistant' AND i.source_kind='image' ORDER BY i.id DESC LIMIT 20")?;
             let rows=q.query_map([session],|r|Ok(json!({"imageId":r.get::<_,i64>(0)?.to_string(),"filename":r.get::<_,String>(1)?,"messageId":r.get::<_,i64>(2)?.to_string()})))?.collect::<Result<Vec<_>,_>>()?;Ok((json!({"items":rows}),None))});
     }
     let input: Input = serde_json::from_value(call.arguments.clone())
@@ -200,7 +200,7 @@ pub async fn execute(
                 lease.cancel.check()?;lease.require_conversation_scope(&runtime.requests,session,persona)?;coordinator::require_context(s,persona,session,revision)?;
                 let active=s.chat_requests.get(&session).filter(|a|a.request_id==lease.id.to_string()).ok_or_else(||AppError::new("CONTEXT_CHANGED","本次聊天已结束"))?;let round=crate::error::parse_id(&active.round_id)?;
                 let tx=s.connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM message_images i JOIN messages m ON m.id=i.message_id WHERE i.id=?1 AND m.session_id=?2 AND m.role='assistant')",params![id,session],|r|r.get(0))?;if !exists{return Err(AppError::not_found());}
+                let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM message_images i JOIN messages m ON m.id=i.message_id WHERE i.id=?1 AND m.session_id=?2 AND m.role='assistant' AND i.source_kind='image')",params![id,session],|r|r.get(0))?;if !exists{return Err(AppError::not_found());}
                 crate::chat_images::publish_staged(&staged.images)?;let now=chrono::Utc::now().to_rfc3339();
                 tx.execute("INSERT INTO messages(session_id,round_id,role,content,created_at) VALUES(?1,?2,'assistant','已生成透明图片。',?3) ON CONFLICT(round_id,role) DO NOTHING",params![session,round,now])?;
                 let message=tx.query_row("SELECT id FROM messages WHERE round_id=?1 AND role='assistant'",[round],|r|r.get::<_,i64>(0))?;

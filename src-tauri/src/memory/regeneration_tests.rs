@@ -306,8 +306,8 @@ async fn regeneration_length_cancel_and_invalid_short_never_replace() {
     let truncated = Response { status:200, mime:"application/json", chunks:vec![(0,serde_json::to_vec(&json!({"choices":[{"message":{"content":json!({"content":SHORT}).to_string()},"finish_reason":"length"}]})).unwrap())] };
     for (response,code) in [
         (truncated,"AI_TRUNCATED"),
-        (Response::json(json!({"content":"a"})),"MEMORY_INVALID_OUTPUT"),
-        (Response::json(json!({"content":"汉".repeat(101)})),"MEMORY_INVALID_OUTPUT"),
+        (Response::json(json!({"content":"a","extra":true})),"MEMORY_INVALID_OUTPUT"),
+        (Response::json(json!({"content":"  "})),"MEMORY_INVALID_OUTPUT"),
     ] {
         let server = Server::new(vec![response]);
         let (runtime, round) = fixture(&server.url, true);

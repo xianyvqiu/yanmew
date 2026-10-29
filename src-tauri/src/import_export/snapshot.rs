@@ -27,7 +27,7 @@ impl Scope {
                 "game_plugin_data",
             ]
             .contains(&table),
-            PackageKind::PersonaProfile => ["personas","pet_artworks","persona_food_settings","skills","persona_skills"].contains(&table),
+            PackageKind::PersonaProfile => ["personas","pet_artworks","persona_food_settings","skills","persona_skills","sticker_libraries","chat_stickers","sticker_tags","sticker_tag_links","persona_sticker_libraries"].contains(&table),
             PackageKind::UserProfile if !self.request.include_sessions => table == "user_profiles",
             _ => ![
                 "food_inventory",
@@ -88,6 +88,11 @@ impl Scope {
             "user_profiles" => {
                 format!("id IN (SELECT user_profile_id FROM sessions WHERE id IN ({sessions}))")
             }
+            "persona_sticker_libraries" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
+            "sticker_libraries" => format!("id IN (SELECT library_id FROM persona_sticker_libraries WHERE {})",self.predicate("persona_sticker_libraries")),
+            "chat_stickers" => format!("library_id IN (SELECT id FROM sticker_libraries WHERE {})",self.predicate("sticker_libraries")),
+            "sticker_tag_links" => format!("sticker_id IN (SELECT id FROM chat_stickers WHERE {})",self.predicate("chat_stickers")),
+            "sticker_tags" => format!("id IN (SELECT tag_id FROM sticker_tag_links WHERE {})",self.predicate("sticker_tag_links")),
             "skills" => format!("id IN (SELECT skill_id FROM persona_skills WHERE persona_id IN (SELECT id FROM personas WHERE {}))",self.predicate("personas")),
             "persona_skills" | "persona_food_settings" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
             "pet_artworks" => format!("persona_id IN (SELECT id FROM personas WHERE {})",self.predicate("personas")),
@@ -210,6 +215,7 @@ pub(super) fn pin(runtime: &Runtime, c: &Connection, scope: &Scope) -> AppResult
         ("pet_artworks", "image_file", false),
         ("pet_artworks", "preview_file", false),
         ("message_images", "image_file", false),
+        ("chat_stickers", "image_file", false),
     ] {
         if !scope.includes(table) {
             continue;
@@ -429,13 +435,14 @@ pub(super) fn project(
     if let Some((column, background)) = match table {
         "personas" => Some(("chat_bg_file", true)),
         "accessories" | "souvenirs" => Some(("image_file", false)),
-        "message_images" => Some(("image_file", false)),
+        "message_images" | "chat_stickers" => Some(("image_file", false)),
         _ => None,
     } {
         if let Some(name) = row.get(column).and_then(Value::as_str) {
             let reference = assets
                 .get(&(background, name.to_owned()))
                 .ok_or_else(invalid)?;
+            if reference.is_none() && table=="chat_stickers" {return Err(AppError::new("BACKUP_MISSING_IMAGE","聊天表情包图片缺失，请修复或删除失效条目后再备份"));}
             if reference.is_none() && table=="message_images" {
                 warn(warnings,"MISSING_IMAGE",table,value(&row,"id")?,"聊天图片缺失，导出副本跳过该附件，原消息和数据库保留。");
                 return Ok(None);

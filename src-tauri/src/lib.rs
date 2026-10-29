@@ -7,6 +7,7 @@ mod chat_capacity;
 mod autostart;
 mod commands;
 mod desktop_windows;
+mod onboarding;
 mod config;
 mod crypto;
 pub mod currency;
@@ -56,6 +57,8 @@ mod platform;
 mod providers;
 mod provider_roles;
 mod chat_images;
+mod stickers;
+mod sticker_commands;
 mod card_browser;
 pub mod reminders;
 mod reminder_email;
@@ -119,6 +122,7 @@ pub fn run() {
         .manage(game_host::Host::default())
         .manage(pet_position::WindowPosition::default())
         .manage(pet_desktop::Desktop::default())
+        .manage(onboarding::Guide::default())
         .manage(desktop_windows::SettingsNavigation::default())
         .manage(desktop_windows::TravelNavigation::default())
         .manage(desktop_windows::LetterNavigation::default())
@@ -130,6 +134,11 @@ pub fn run() {
             tauri::http::Response::builder().status(status).header("Content-Type",mime).header("Content-Security-Policy",game_host::csp(label)).header("X-Content-Type-Options","nosniff").header("Cache-Control","no-store").body(body).unwrap_or_default()
         })
         .invoke_handler(game_host::command_gate(tauri::generate_handler![
+            onboarding::get_onboarding_state,
+            onboarding::get_onboarding_view,
+            onboarding::set_onboarding_state,
+            onboarding::show_onboarding_overlay,
+            onboarding::onboarding_action,
             commands::get_onboarding_pending,
             commands::finish_onboarding,
             food_cursor::set_food_cursor,
@@ -258,6 +267,7 @@ pub fn run() {
             commands::take_settings_navigation,
             commands::submit_chat,
             commands::get_chat_image,
+            sticker_commands::query_chat_stickers,sticker_commands::mutate_chat_stickers,sticker_commands::import_chat_sticker,sticker_commands::get_chat_sticker_image,
             commands::get_last_chat_round,
             commands::chat_continue_reply,
             commands::get_chat_request,
@@ -449,8 +459,10 @@ pub fn run() {
                     }
                 }
             }
+            if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "onboarding") { onboarding::stop(app); }
             // 原生销毁窗口不保证执行前端卸载回调，主动取消设置页的天气请求。
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "settings") {
+                onboarding::stop(app);
                 app.state::<runtime::Runtime>().requests.cancel_key("weather");
             }
             if matches!(&event, tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { .. }, .. } if label == "memory") {

@@ -76,12 +76,13 @@ export default function LedgerPanel() {
         {error&&<p className="ym-page-error" role="alert">{error}<button className="ym-button" onClick={()=>setRefresh(v=>v+1)}>重试</button></p>}
         {report&&view!=="home"&&<div ref={element=>{element?.toggleAttribute("inert",loading||!!error);}} className="ym-ledger-results" aria-busy={loading}><MotionRegion motionKey={`${view}:${report.page}:${report.rangeStart}:${report.rangeEnd}:${report.summary.count}:${report.summary.net}`}>
             {dashboard?<div className="ym-ledger-dashboard"><LedgerOverview report={report}/><LedgerCharts report={report} onSelect={(reason,direction)=>drill({reason,direction})} onGame={pluginId=>drill({pluginId,reason:"plugin_game"})}/></div>:<>
-            <nav className="ym-ledger-pagination" aria-label="账单分页"><span>每页12条 · 第 {report.page} / {report.totalPages} 页</span><button className="ym-button" disabled={loading||query.page<=1} onClick={()=>setQuery(q=>({...q,page:q.page-1}))}>上一页</button><button className="ym-button" disabled={loading||query.page>=report.totalPages} onClick={()=>setQuery(q=>({...q,page:q.page+1}))}>下一页</button></nav>
+
             <div className="ym-ledger-list">{report.entries.length===0?<p className="ym-page-empty">没有符合条件的账单，请调整筛选。</p>:report.entries.map(entry=>{
                 const delta=BigInt(entry.delta),kind=delta>0n?"income":delta<0n?"expense":"zero";
                 return <article className="ym-page-card ym-ledger-entry" data-kind={kind} key={entry.id}><button className="ym-ledger-entry-main" aria-expanded={expanded===entry.id} onClick={()=>setExpanded(expanded===entry.id?undefined:entry.id)}><span className="ym-ledger-entry-icon" aria-hidden="true">{kind==="income"?"↗":kind==="expense"?"↘":"—"}</span><span className="ym-ledger-entry-label"><strong>{entry.pluginName??ledgerReasons[entry.reason]??"其他"}</strong><span>{entry.description??ledgerReasons[entry.reason]} · {new Date(entry.createdAt).toLocaleString("zh-CN")}</span></span><span className="ym-ledger-entry-amount"><strong>{delta>0n?"+":""}{coinText(entry.delta)}</strong><small>{kind==="income"?"收入":kind==="expense"?"支出":"无金额变动"}</small></span></button>
                 {expanded===entry.id&&<div className="ym-ledger-entry-detail"><span>账单编号：{entry.id}</span><span>分类：{ledgerReasons[entry.reason]}</span>{entry.pluginId&&<span>游戏：{entry.pluginId} · {entry.pluginVersion}</span>}{entry.refId&&<span>历史饰品编号：{entry.refId}（原饰品可能已出售或删除）</span>}<span>时间：{new Date(entry.createdAt).toLocaleString("zh-CN")}</span></div>}</article>;
-            })}</div></>}
+            })}</div>
+            <nav className="ym-ledger-pagination" aria-label="账单分页"><span>每页12条 · 第 {report.page} / {report.totalPages} 页</span><button className="ym-button" disabled={loading||query.page<=1} onClick={()=>setQuery(q=>({...q,page:q.page-1}))}>上一页</button><button className="ym-button" disabled={loading||query.page>=report.totalPages} onClick={()=>setQuery(q=>({...q,page:q.page+1}))}>下一页</button></nav></>}
         </MotionRegion></div>}
     </div>;
 }

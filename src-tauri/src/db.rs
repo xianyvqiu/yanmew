@@ -6,7 +6,8 @@ use crate::{
 use rusqlite::{params, Connection, OptionalExtension};
 
 const SCHEMA: &str = include_str!("../../db/schema.sql");
-const VERSION: i64 = 25;
+const VERSION: i64 = 26;
+const CHAT_STICKERS_MIGRATION: &str = include_str!("../../db/migrations/026_chat_stickers.sql");
 #[cfg(test)]
 mod reminder_presentation_migration_tests {
     use super::*;
@@ -154,7 +155,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
             tx.execute_batch(CHAT_BUDGET_MIGRATION)?;
             tx.pragma_update(None, "user_version", VERSION)?;
         }
-        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 => {}
+        4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 | 25 => {}
         VERSION => {}
         _ => {
             return Err(AppError::new(
@@ -235,6 +236,7 @@ pub fn initialize(conn: &mut Connection) -> AppResult<bool> {
         if !exists {tx.execute_batch(REMINDER_PRESENTATIONS_MIGRATION)?;}
         tx.pragma_update(None,"user_version",VERSION)?;
     }
+    if (1..26).contains(&version) && !tx.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='sticker_libraries')", [], |r| r.get::<_,bool>(0))? { tx.execute_batch(CHAT_STICKERS_MIGRATION)?; tx.pragma_update(None,"user_version",VERSION)?; }
     crate::real_money::seed(&tx)?;
     crate::foods::seed(&tx)?;
     config::normalize_legacy_idle_settings(&tx)?;
@@ -307,7 +309,7 @@ fn seed_default_persona(tx: &rusqlite::Transaction<'_>) -> AppResult<()> {
     }
     if count == 0 {
         let prompt=format!("{PROMPT}你最喜欢的食物是小鱼干。用户之后可在食物设置修改喜好，以当前保存的配置为准。");
-        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin,created_at,updated_at,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?2,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'),'#ffb6c1','#ffb6c1')", params![NAME, prompt])?;
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,is_builtin,created_at,updated_at,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?2,1,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'),NULL,NULL)", params![NAME, prompt])?;
     } else {
         // 只替换上一版种子的原值；三项独立判断，不覆盖手动编辑或人设自调。
         tx.execute("UPDATE personas SET name=CASE WHEN name='喵喵桌宠' THEN ?1 ELSE name END,

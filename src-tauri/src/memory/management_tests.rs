@@ -508,10 +508,8 @@ fn long_preview_keeps_original_two_sources_despite_current_k_twenty_and_confirms
         let sent = server.requests.lock().unwrap()[0].clone();
         assert_eq!(sent["model"],"memory-preview-model");
         assert_eq!(sent["messages"].as_array().unwrap().len(), 2);
-        assert!(sent["messages"][0]["content"]
-            .as_str()
-            .unwrap()
-            .contains(FACT_RULE));
+        let settings=f.runtime.read(|s,_|configuration(&s.connection)).unwrap();
+        assert_eq!(sent["messages"][0]["content"].as_str().unwrap(),long_prompt(settings.long_minimum,settings.long_maximum));
         let payload: serde_json::Value =
             serde_json::from_str(sent["messages"][1]["content"].as_str().unwrap()).unwrap();
         assert_eq!(
@@ -645,8 +643,8 @@ fn cancellation_and_invalid_model_outputs_leave_original_memory_and_no_confirmab
             chunks: vec![(0, serde_json::to_vec(&json!({"choices":[{"message":{"content":json!({"content":GENERATED_SHORT}).to_string()},"finish_reason":"length"}]})).unwrap())],
         };
         let server = Server::new(vec![
-            Response::json(json!({"content":"太短"})),
-            Response::json(json!({"content":"汉".repeat(101)})),
+            Response::json(json!({"content":"  "})),
+            Response::json(json!({"content":"无效\u{0000}"})),
             Response::json(json!({"content":GENERATED_SHORT,"extra":"不允许的字段"})),
             truncated,
         ]);

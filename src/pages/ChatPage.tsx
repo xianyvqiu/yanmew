@@ -283,7 +283,7 @@ export default function ChatPage({ snapshot, onRefresh, sidebarCollapsed: contro
     </section>}
     {travel.error && <p role="alert" className="ym-page-error">出行状态读取失败：{travel.error}<button className="ym-button" onClick={() => { void travel.refresh(); }}>重试出行状态</button></p>}
     <ChatComposer images={images} onImagesChange={setImages} attachmentOwnerKey={`${context.personaId}:${context.sessionId}:${context.contextRevision}`} value={draft} onChange={setDraft} onSend={() => { void send(); }}
-      onCancel={() => { if (!locked.current && !dialogOpen) void chat.cancel(); }} disabled={!context.sessionId || !chat.ready || busy || dialogOpen || Boolean(editing) || away || travel.loading || Boolean(travel.error)}
+      onCancel={() => { if (!locked.current && !dialogOpen) void chat.cancel(); }} sendDisabled={travel.loading} disabled={!context.sessionId || !chat.ready || busy || dialogOpen || Boolean(editing) || away || Boolean(travel.error)}
       busy={chat.busy} cancelling={chat.cancelling || busy || dialogOpen} />
     {profilePickerOpen && <UserProfilePicker defaultProfileId={newProfile} onDefaultChange={setNewProfile} profiles={userProfiles} selectedId={currentSession?.userProfileId ?? null} busy={busy} error={profilePickerError}
       onSelect={id => { void bindProfile(id); }} onClose={() => setProfilePickerOpen(false)} onDetails={id => {

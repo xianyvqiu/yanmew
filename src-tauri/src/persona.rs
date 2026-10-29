@@ -135,7 +135,7 @@ pub fn save(c: &mut Connection, id: Option<i64>, input: PersonaInput) -> AppResu
         }
         id
     } else {
-        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,self_evolve_enabled,color,chat_bg_opacity,chat_bg_blur,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?7,?3,?4,?5,?6,?4,?4)",params![input.name.trim(),input.prompt,input.self_evolve_enabled,input.color,input.chat_bg_opacity,input.chat_bg_blur,input.initial_prompt.unwrap_or_else(||input.prompt.clone())])?;
+        tx.execute("INSERT INTO personas(name,prompt,initial_prompt,self_evolve_enabled,color,chat_bg_opacity,chat_bg_blur,chat_user_text_color,chat_assistant_text_color) VALUES(?1,?2,?7,?3,?4,?5,?6,NULL,NULL)",params![input.name.trim(),input.prompt,input.self_evolve_enabled,input.color,input.chat_bg_opacity,input.chat_bg_blur,input.initial_prompt.unwrap_or_else(||input.prompt.clone())])?;
         tx.last_insert_rowid()
     };
     tx.execute("UPDATE personas SET created_at=CASE WHEN ?2 THEN ?3 ELSE created_at END,updated_at=?3 WHERE id=?1",params![id,creating,chrono::Utc::now().to_rfc3339()])?;
@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(c.query_row("SELECT status FROM travels",[],|r|r.get::<_,String>(0)).unwrap(),"away");
     }
     #[test]
-    fn chat_colors_copy_on_creation_and_preserve_independent_edits() {
+    fn chat_colors_follow_on_creation_and_preserve_independent_edits() {
         let mut c = crate::db::test_database();
         let input = |color: &str| PersonaInput {
             name: "新朋友".into(), prompt: "温柔".into(), self_evolve_enabled: false,
@@ -289,8 +289,8 @@ mod tests {
         };
         let p = save(&mut c, None, input("#aabbcc")).unwrap();
         let id = p.id.parse().unwrap();
-        assert_eq!(p.chat_appearance.user_text_color.as_deref(), Some("#aabbcc"));
-        assert_eq!(p.chat_appearance.assistant_text_color.as_deref(), Some("#aabbcc"));
+        assert_eq!(p.chat_appearance.user_text_color, None);
+        assert_eq!(p.chat_appearance.assistant_text_color, None);
         let updated = save(&mut c, Some(id), input("#112233")).unwrap();
         assert_eq!(updated.chat_appearance, p.chat_appearance);
         c.execute("UPDATE personas SET chat_user_text_color='#abcdef',chat_assistant_text_color=NULL WHERE id=?1", [id]).unwrap();

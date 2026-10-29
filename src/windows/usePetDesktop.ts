@@ -4,9 +4,10 @@ import { listen } from "@tauri-apps/api/event";
 import { configurationApi, petCreationApi, errorMessage } from "../api";
 export type Dock = "none" | "peek_left" | "peek_right" | "rest_sit" | "rest_lie" | "top";
 type Walking = { direction: "left" | "right"; personaId: string; sessionId: string; contextRevision: number };
-export type Toss = {phase:"up"|"down"|"landed"|"caught";personaId:string;sessionId:string;contextRevision:number;body:{x:number;y:number;width:number;height:number};controlsBelow:boolean};
+export type PetVelocity = {x:number;y:number};
+export type Toss = {velocity?:PetVelocity;phase:"up"|"down"|"landed"|"caught";personaId:string;sessionId:string;contextRevision:number;body:{x:number;y:number;width:number;height:number};controlsBelow:boolean};
 export type Chase = {phase:"running"|"waiting"|"sad";personaId:string;sessionId:string;contextRevision:number};
-type Snapshot = { floorInset?:number; upperLayout?:boolean; chase?:Chase|null; fullscreenWander: boolean; dock: Dock; revision: number; toss?: Toss | null; walking?: Walking | null };
+type Snapshot = { dragVelocity?:PetVelocity|null; floorInset?:number; upperLayout?:boolean; chase?:Chase|null; fullscreenWander: boolean; dock: Dock; revision: number; toss?: Toss | null; walking?: Walking | null };
 export function usePetDesktop(personaId: string, contextRevision: number) {
   const [state, setState] = useState<Snapshot>({ fullscreenWander: false, dock: "none", revision: -1 });
   const [expression, setExpression] = useState<string>(), [error, setError] = useState(""), [busy, setBusy] = useState(false);

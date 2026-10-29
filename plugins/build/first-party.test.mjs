@@ -34,6 +34,7 @@ async function load(name, h) {
     setInterval: () => 1, clearInterval: () => {}, requestAnimationFrame: () => 1, cancelAnimationFrame: () => {}, performance});
   vm.runInContext(source('shared/runtime.js'), context);
   context.FirstPartyRuntime = win.FirstPartyRuntime;
+  if (name === 'my-home') vm.runInContext(source('my-home/ui/fishing.js'), context);
   vm.runInContext(source(`${name}/ui/game.js`), context);
   await flush();
   return {context, win, run: code => vm.runInContext(code, context), close: () => dom.window.close()};
@@ -109,4 +110,32 @@ test('宰杀弹窗取消后再确认，不累积旧回调或重复奖励',async(
   const h=host();const game=await load('my-home',h);game.run("state.inventory['鸡_养殖量'] = 2; killAnimal('鸡'); closeModal(document.querySelector('#confirm-modal')); killAnimal('鸡')");
   game.win.document.querySelector('[data-confirm-yes]').click();await flush();
   const p=h.saved.get('state.main').progress;assert.equal(p.inventory['鸡_养殖量'],1);assert.equal(p.inventory['鸡肉'],2);game.close();
+});
+
+test('互动钓鱼先落盘消耗，再收鱼；重复完成不重复奖励，重开保留鱼获',async()=>{
+  const h=host();const game=await load('my-home',h);let challenge;
+  game.win.HomeFishing={...game.win.HomeFishing,open:options=>{challenge=options;}};
+  game.run('state.affinity=30');await game.run("doFish('low')");
+  assert.ok(challenge);assert.equal(h.balance(),99n);assert.equal(h.ledger.size,1);
+  let p=h.saved.get('state.main').progress;
+  assert.equal(p.fishing.dailyCount,1);assert.equal(p.fishing.rodDurability,79);assert.equal(p.fishing.fishGrams,0);
+  await game.run("doFish('high')");assert.equal(h.balance(),99n);
+  assert.equal(await challenge.onResult(true),true);assert.equal(await challenge.onResult(true),true);
+  p=h.saved.get('state.main').progress;assert.equal(p.fishing.fishGrams,challenge.grams);assert.equal(h.ledger.size,1);
+  challenge.onClose();game.close();h.reopen();const reopened=await load('my-home',h);
+  assert.equal(reopened.run('state.fishing.fishGrams'),challenge.grams);assert.equal(reopened.run('state.fishing.dailyCount'),1);reopened.close();
+});
+
+test('互动钓鱼放弃或关闭后消耗保留，保存鱼获失败可重试且不再扣费',async()=>{
+  const h=host();const game=await load('my-home',h);let challenge;
+  game.win.HomeFishing={...game.win.HomeFishing,open:options=>{challenge=options;}};game.run('state.affinity=30');
+  await game.run("doFish('high')");await challenge.onResult(false);challenge.onClose();
+  assert.equal(h.balance(),98n);assert.equal(h.saved.get('state.main').progress.fishing.fishGrams,0);
+  game.close();h.reopen();const reopened=await load('my-home',h);
+  assert.equal(reopened.run('state.fishing.dailyCount'),1);assert.equal(reopened.run('state.fishing.rodDurability'),79);
+  reopened.win.HomeFishing={...reopened.win.HomeFishing,open:options=>{challenge=options;}};await reopened.run("doFish('low')");
+  const write=h.sdk.storage.set;let reject=true;h.sdk.storage.set=async(key,data)=>{if(reject&&data.progress?.fishing?.fishGrams>0){reject=false;throw new Error('保存中断');}return write(key,data);};
+  assert.equal(await challenge.onResult(true),false);assert.equal(h.balance(),97n);
+  assert.equal(await challenge.onResult(true),true);assert.equal(h.balance(),97n);
+  assert.equal(h.saved.get('state.main').progress.fishing.fishGrams,challenge.grams);assert.equal(h.ledger.size,2);reopened.close();
 });

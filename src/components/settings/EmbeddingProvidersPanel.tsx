@@ -1,3 +1,4 @@
+import ProviderTestStatus, {type ConnectionTestFeedback} from "./ProviderTestStatus";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { embeddingApi, errorMessage } from "../../api";
 import type { AppError, EmbeddingProvider, EmbeddingStatus, ProviderInput } from "../../types";
@@ -12,6 +13,7 @@ export default function EmbeddingProvidersPanel() {
   const [deleting, setDeleting] = useState<EmbeddingProvider | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [notice, setNotice] = useState("");
+  const [tests, setTests] = useState<Partial<Record<string, ConnectionTestFeedback>>>({});
   const mounted = useRef(false);
   const locked = useRef(false);
   const generation = useRef(0);
@@ -38,22 +40,35 @@ export default function EmbeddingProvidersPanel() {
     return () => { disposed = true; mounted.current = false; generation.current++; stop?.(); window.removeEventListener("focus", reload); };
   }, [refresh, showError]);
   useEffect(() => { if (deleting) dialog.current?.showModal(); else dialog.current?.close(); }, [deleting]);
-  const run = async (action: () => Promise<unknown>, message: string) => {
+  const run = async (action: () => Promise<unknown>, message: string | (() => string), testId?: string) => {
     if (locked.current) return false;
     locked.current = true; setBusy(true); setError(null); setNotice("");
-    try { await action(); if (mounted.current) { setNotice(message); await refresh().catch(showError); } return true; }
-    catch (cause) { showError(cause); return false; }
+    if (testId) setTests(current=>({...current,[testId]:{phase:"testing",message:"请稍候，正在检查连接。"}}));
+    try {
+      await action();
+      if (mounted.current) {
+        const text=typeof message === "function"?message():message;
+        if (testId) setTests(current=>({...current,[testId]:{phase:"success",message:text}}));
+        else setNotice(text);
+        await refresh().catch(showError);
+      }
+      return true;
+    }
+    catch (cause) {
+      if (testId) { if (mounted.current) setTests(current=>({...current,[testId]:{phase:"error",message:errorMessage(cause)}})); }
+      else showError(cause);
+      return false;
+    }
     finally { locked.current = false; if (mounted.current) setBusy(false); }
   };
   const save = async (input: ProviderInput) => {
     if (await run(() => embeddingApi.save(editing?.id ?? null,{...input,model:input.model??""}), "Embedding 提供商已保存")) {
-      if (mounted.current) setEditing(undefined);
+      if (mounted.current) { if (editing) setTests(current=>({...current,[editing.id]:undefined})); setEditing(undefined); }
     }
   };
   const test = async (provider: EmbeddingProvider) => {
     let dimensions = 0;
-    const success = await run(async () => { dimensions = await embeddingApi.test(provider.id); }, "模型测试成功");
-    if (success && mounted.current) setNotice(`${provider.name}：测试成功，返回 ${dimensions} 维向量。`);
+    await run(async () => { dimensions = await embeddingApi.test(provider.id); }, () => `${provider.name}：测试成功，返回 ${dimensions} 维向量。`, provider.id);
   };
   const protectedItem = deleting && (deleting.isBuiltin || deleting.isActive);
   const disabled = loading || busy;
@@ -77,10 +92,11 @@ export default function EmbeddingProvidersPanel() {
       <div className="ym-page-heading"><h3>{provider.name}</h3><span>{provider.isBuiltin ? "内置 · " : ""}{provider.isActive ? "当前项" : ""}</span></div>
       <dl><dt>模型</dt><dd>{provider.model}</dd><dt>运行方式</dt><dd>{provider.kind === "local" ? "本地 CPU，无需联网" : provider.baseUrl}</dd>{provider.kind === "online" && <><dt>API Key</dt><dd>{provider.hasApiKey ? "已保存" : "未保存"}</dd></>}</dl>
       <div className="ym-inline-form">
-        {!provider.isBuiltin && <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(provider); setError(null); }} aria-label={`编辑 Embedding ${provider.name}`}>编辑</button>}
-        <button className="ym-button" disabled={disabled} onClick={() => { void test(provider); }} aria-label={`测试 Embedding ${provider.name}`}>{busy ? "处理中…" : "测试连接"}</button>
+        {!provider.isBuiltin && <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(provider); setTests(current=>({...current,[provider.id]:undefined})); setError(null); }} aria-label={`编辑 Embedding ${provider.name}`}>编辑</button>}
+        <button className="ym-button" disabled={disabled} onClick={() => { void test(provider); }} aria-label={`测试 Embedding ${provider.name}`}>{tests[provider.id]?.phase === "testing" ? "正在测试…" : "测试连接"}</button>
         {!provider.isBuiltin && <button className="ym-button ym-provider-delete" disabled={disabled} onClick={() => { setDeleting(provider); setError(null); }} aria-label={`删除 Embedding ${provider.name}`}>删除</button>}
       </div>
+      <ProviderTestStatus feedback={tests[provider.id]}/>
     </li>)}</ul>
     <dialog ref={dialog} className="ym-provider-dialog" aria-labelledby="embedding-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>
       <h2 id="embedding-delete-title">{protectedItem ? "此模型正在使用" : "删除 Embedding 配置"}</h2>

@@ -3,7 +3,7 @@ import { errorMessage, reminderApi } from "../../api";
 import useReminders from "../../hooks/useReminders";
 import type { AppError, Reminder, ReminderInput, ReminderStatus } from "../../types";
 import ReminderForm from "./ReminderForm";
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import { useCardBrowser } from "../../hooks/useCardBrowser";
 import "./ReminderPanel.css";
 
@@ -108,6 +108,7 @@ export default function ReminderPanel() {
         <button className="ym-button ym-reminder-danger" disabled={disabled || editing !== undefined} aria-label={`删除 ${rule.name}`} onClick={() => { setDeleting(rule); setError(null); }}>删除</button>
       </div>
     </article>)}</div>
+      <CardBrowserPagination browser={{...ruleBrowser, loading:data.loading, error:data.error}} label="提醒规则" disabled={disabled}/>
     </section>
     <section className="ym-reminder-section" aria-label="提醒触发记录列表"><div className="ym-page-heading"><h3>触发记录</h3>{data.selectedId && <button className="ym-button" disabled={disabled} onClick={() => data.select("")}>查看全部触发记录</button>}</div>
     {data.selectedId && <p className="ym-page-note">当前筛选：{data.rules.find(rule => rule.id === data.selectedId)?.name ?? "所选提醒"}</p>}
@@ -131,6 +132,7 @@ export default function ReminderPanel() {
       {item.deliveryState === "queued" && <button className="ym-button" disabled={disabled} onClick={() => { void run(() => reminderApi.acknowledge([item.id], "queued"), "已确认看到本次提醒，完成状态未改变"); }}>确认已看到</button>}
       </div>
     </article>)}</div>
+      <CardBrowserPagination browser={{...recordBrowser, loading:data.loading, error:data.error}} label="触发记录" disabled={disabled}/>
     </section>
     <dialog ref={dialog} className="ym-reminder-dialog" aria-labelledby="reminder-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>
       {deleting && <><h2 id="reminder-delete-title">删除 {deleting.name}</h2><p>这会永久停止此提醒，并删除它的全部触发记录。其他提醒不受影响。</p>

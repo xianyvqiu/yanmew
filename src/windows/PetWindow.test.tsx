@@ -344,6 +344,15 @@ describe("PetWindow", () => {
     expect(screen.queryByText("(｡>﹏<｡)")).toBeNull();
   });
 
+  it("交接请求未返回前松手会收尾，不再迟到启动系统拖动",async()=>{
+    let resolveBegin:()=>void=()=>{};const fallback=invoke.getMockImplementation()!;
+    invoke.mockImplementation((command,args)=>command==="set_pet_dragging"&&args.dragging?new Promise<void>(resolve=>{resolveBegin=resolve;}):fallback(command,args));
+    await act(async()=>{render(<PetWindow/>);});const pet=screen.getByText("(・ω・)");
+    fireEvent.pointerDown(pet,{button:0,clientX:10,clientY:10,pointerId:8});fireEvent.pointerMove(pet,{clientX:50,clientY:5,pointerId:8});fireEvent.pointerUp(pet,{button:0,clientX:50,clientY:5,pointerId:8});
+    await act(async()=>{resolveBegin();});
+    expect(startDragging).not.toHaveBeenCalled();expect(invoke).toHaveBeenCalledWith("set_pet_dragging",{dragging:false});expect(screen.getByTestId("pet-window").getAttribute("data-dragging")).toBe("false");expect(invoke.mock.calls.some(([name])=>name==="interact_pet")).toBe(false);
+  });
+
   it("移动超过阈值后只开始拖动一次", async () => {
     await act(async () => { render(<PetWindow />); });
     const pet = screen.getByText("(・ω・)");

@@ -25,7 +25,7 @@ tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "load-dynamic"] }
 tokenizers = { version = "=0.21.4", default-features = false, features = ["fancy-regex"] }
 sha2 = "0.10"
-image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 scraper = { version = "=0.27.0", default-features = false }
 zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 semver = "=1.0.28"
@@ -33,4 +33,4 @@ lettre = { version = "=0.11.23", default-features = false, features = ["builder"
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-autostart = "=2.5.1"
-windows = { version = "0.61", features = ["Devices_Geolocation", "Devices_Enumeration", "Foundation", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Com", "Win32_UI_Shell_Common", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Devices_Geolocation", "Devices_Enumeration", "Foundation", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_System_Com", "Win32_UI_Shell_Common", "Win32_Storage_FileSystem"] }

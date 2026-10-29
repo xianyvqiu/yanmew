@@ -353,7 +353,8 @@ fn one_ai_call_generates_title_and_body_without_trigger_summary() {
         let requests = server.requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         let messages = requests[0]["messages"].as_array().unwrap();
-        assert!(messages[0]["content"].as_str().unwrap().contains(FACT_RULE));
+        let settings=runtime.read(|s,_|configuration(&s.connection)).unwrap();
+        assert_eq!(messages[0]["content"].as_str().unwrap(),long_prompt(settings.long_minimum,settings.long_maximum));
         let input: serde_json::Value =
             serde_json::from_str(messages[1]["content"].as_str().unwrap()).unwrap();
         assert_eq!(input["source_memories"].as_array().unwrap().len(), 2);
@@ -366,10 +367,14 @@ fn one_ai_call_generates_title_and_body_without_trigger_summary() {
         for text in [
             "{}",
             "{\"title\":\"\",\"content\":\"正文\"}",
-            "{\"title\":\"标题\",\"content\":\"太短\"}",
+            "{\"title\":\"标题\",\"content\":\" \"}",
             "{\"title\":\"标题\",\"content\":\"正文\",\"extra\":true}",
         ] {
             assert!(parse_output(text, &config).is_err());
+        }
+        for content in ["短正文".to_owned(), "事实".repeat(200)] {
+            let text = serde_json::json!({"title":"标题","content":content}).to_string();
+            assert_eq!(parse_output(&text, &config).unwrap().content, content);
         }
         assert_eq!(memories(&runtime, 1)[0].title, "猫的生活习惯讨论");
         server.finish();
@@ -431,4 +436,14 @@ fn worker_recovers_ready_groups_and_long_failure_does_not_block_other_session() 
             .is_none());
         server.finish();
     });
+}
+
+#[test]
+fn long_length_is_only_a_prompt_target_and_invalid_output_still_fails() {
+ let config=configuration(&crate::db::test_database()).unwrap();
+ for content in ["事实".to_owned(),"完整事实".repeat(100)] {
+  let value=serde_json::json!({"title":"标题","content":content});
+  assert_eq!(parse_output(&value.to_string(),&config).unwrap().content,content);
+ }
+ for value in [serde_json::json!({"title":"标题","content":""}),serde_json::json!({"title":"标题","content":"x\u{0000}"}),serde_json::json!({"title":"","content":"正文"})] {assert!(parse_output(&value.to_string(),&config).is_err());}
 }

@@ -72,7 +72,7 @@ pub(super) fn write<W: Write + Seek>(
             .read_to_end(&mut bytes)
             .map_err(io_error)?;
         let extension = if chat {
-            match image::guess_format(&bytes).map_err(|_|AppError::storage())? {image::ImageFormat::Png=>"png",image::ImageFormat::Jpeg=>"jpg",image::ImageFormat::WebP=>"webp",_=>return Err(AppError::storage())}
+            match image::guess_format(&bytes).map_err(|_|AppError::storage())? {image::ImageFormat::Png=>"png",image::ImageFormat::Jpeg=>"jpg",image::ImageFormat::WebP=>"webp",image::ImageFormat::Gif=>"gif",_=>return Err(AppError::storage())}
         } else if background {
             crate::persona::background::validate(&name, &bytes)?
         } else {

@@ -19,3 +19,33 @@
 .ym-pet-art-card .ym-page-heading { flex-wrap:wrap;gap:8px; }
 .ym-pet-art-card label.ym-button { position:relative; }
 .ym-pet-art-card label.ym-button input[type=file] { position:absolute;width:1px;height:1px;opacity:0;overflow:hidden; }
+
+.ym-art-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.ym-art-fields__wide { grid-column:1/-1; }
+.ym-art-create form { display:grid; gap:16px; }
+.ym-art-library-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
+.ym-art-library-heading h3 { margin:0; }
+.ym-art-progress { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; margin:12px 0; border:1px solid var(--ym-border); border-radius:12px; background:var(--ym-surface-muted); }
+.ym-art-progress__message { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 180px; overflow-wrap:anywhere; }
+.ym-art-progress[data-state=error] { color:var(--ym-danger); background:var(--ym-danger-soft); }
+.ym-art-progress[data-state=success] { color:var(--ym-success); background:var(--ym-success-soft); }
+.ym-art-spinner { width:18px; height:18px; flex:0 0 18px; border:2px solid var(--ym-border-strong); border-top-color:var(--ym-accent-strong); border-radius:50%; animation:ym-art-spin .8s linear infinite; }
+@keyframes ym-art-spin { to { transform:rotate(360deg); } }
+@media(max-width:600px) { .ym-art-fields { grid-template-columns:minmax(0,1fr); } .ym-art-selection { flex-shrink:1; } }
+@media(prefers-reduced-motion:reduce) { .ym-art-spinner { animation:none; } }
+
+
+.ym-window-shell .ym-pet-creation .ym-object-grid.ym-art-library-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:16px; }
+.ym-pet-art-card { display:flex;flex-direction:column;gap:8px;padding:16px; }
+.ym-pet-art-card h3,.ym-pet-art-card p { margin:0; }
+.ym-pet-art-card .ym-pet-art-image { align-self:center; }
+.ym-art-card-footer { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:auto;padding-top:8px; }
+.ym-art-dialog { width:min(680px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:hidden;padding:24px;animation:ym-art-dialog-in .22s cubic-bezier(.22,1,.36,1); }
+.ym-art-dialog::backdrop { background:rgba(16,12,23,.42);backdrop-filter:blur(5px); }
+.ym-art-dialog-actions { padding-top:14px;border-top:1px solid var(--ym-border); }
+.ym-art-dialog .ym-art-previews { margin-block:14px; }
+.ym-art-dialog label.ym-button { position:relative; }
+.ym-art-dialog label.ym-button input[type=file] { position:absolute;width:1px;height:1px;opacity:0;overflow:hidden; }
+@keyframes ym-art-dialog-in { from { opacity:0;transform:translateY(12px) scale(.98); } to { opacity:1;transform:none; } }
+@media(max-width:600px) { .ym-window-shell .ym-pet-creation .ym-object-grid.ym-art-library-grid { gap:10px; } .ym-pet-art-card { padding:12px; } .ym-art-card-footer .ym-button { width:100%; } }
+@media(prefers-reduced-motion:reduce) { .ym-art-dialog { animation:none; } }

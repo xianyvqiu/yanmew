@@ -327,8 +327,8 @@ function MemoryKindPanel({ context, kind, active, target, previewOwner, onPrevie
       <p>{kind === "short" ? "每轮完整对话的中性事实记录。" : "保留原有来源的中性事实记录。"}</p></div>
       <button type="button" className="ym-button" disabled={listLoading || !!busy} onClick={() => refreshRef.current?.()}>刷新列表</button>
     </div>
-    {minChars && maxChars && <p className="ym-page-note">AI {actionLabel}生成的正文须为 {minChars}–{maxChars} 个汉字。
-      手动编辑与预览修改不受该字数范围限制。</p>}
+    {minChars && maxChars && <p className="ym-page-note">AI {actionLabel}生成的正文建议为 {minChars}–{maxChars} 个汉字。
+      这是提示词中的软目标；超出范围仍完整保存，手动编辑也不受此范围限制。</p>}
     {settingsError && <p role="alert" className="ym-notebook-error">读取建议字数失败：{settingsError}</p>}
     <div className="ym-memory-grid" aria-label={`${label}列表`}>
       {(detail && !items.some(item => item.id === detail.record.id) ? [detail.record, ...items] : items).map(record =>

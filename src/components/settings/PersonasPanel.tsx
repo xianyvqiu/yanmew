@@ -2,15 +2,16 @@ import MotionDetails from "../MotionDetails";
 import PetCreationPanel from "./PetCreationPanel";
 import PetImageSetup from "./PetImageSetup";
 import PersonaExpressionsEditor from "./PersonaExpressionsEditor";
+import StickerBindings from "./StickerBindings";
 import PersonaCompanionSettings from "./PersonaCompanionSettings";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { configurationApi, errorMessage } from "../../api";
 import type { AppError, Persona, PersonaInput } from "../../types";
 import PersonaForm from "./PersonaForm";
 import PersonaPromptDiff from "../PersonaPromptDiff";
 import ChatBackgroundSettings from "../ChatBackgroundSettings";
 import "./PersonasPanel.css";
-import CardBrowserControls from "../CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "../CardBrowserControls";
 import {useCardBrowser} from "../../hooks/useCardBrowser";
 import type { SettingsDetailRequest } from "../../platform/navigation";
 
@@ -142,7 +143,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
       {editing !== undefined && <PersonaForm key={editing?.id ?? "new"} persona={editing ? personas.find(persona => persona.id === editing.id) ?? editing : editing} busy={busy} error={error} onSave={save} onCancel={() => { setEditing(undefined); setError(null); }} />}
       {!selected&&<CardBrowserControls browser={browser} label="人设" timeLabel="更新时间" disabled={busy}/>}
       {selected&&<div className="ym-detail-header"><button className="ym-button" disabled={busy||editing!==undefined} onClick={()=>setSelected(null)}>返回人设列表</button><span>人设详情</span></div>}
-      <div className="ym-persona-grid">{(selected?personas.filter(p=>p.id===selected):browser.items).map(persona => <article className="ym-persona-card ym-object-card" data-current={persona.isActive} key={persona.id} aria-label={persona.name} onClick={event=>{if(!selected&&editing===undefined&&!disabled&&!(event.target as HTMLElement).closest("button"))setSelected(persona.id);}}>
+      <div className="ym-persona-grid">{(selected?personas.filter(p=>p.id===selected):browser.items).map(persona => <article className="ym-persona-card ym-object-card" style={{"--ym-persona-mark":/^#[\da-f]{6}$/i.test(persona.color)?persona.color:"#ffb6c1"} as CSSProperties} data-current={persona.isActive} key={persona.id} aria-label={persona.name} onClick={event=>{if(!selected&&editing===undefined&&!disabled&&!(event.target as HTMLElement).closest("button"))setSelected(persona.id);}}>
         <div className="ym-page-heading"><h3><button className="ym-card-open" disabled={disabled||editing!==undefined} onClick={()=>setSelected(persona.id)}>{persona.name}</button></h3><button className={`ym-button ${persona.isActive?"ym-current-button":""}`} disabled={disabled||persona.isActive||editing!==undefined} onClick={()=>void run(()=>configurationApi.setPersona(persona.id),"当前人设已切换")}>{persona.isActive?"使用中":"切换"}</button></div>
         <p className="ym-page-note">{persona.isBuiltin?"系统默认人设":"自建人设"}{persona.isActive&&" · 当前使用"}</p>
         {!selected&&<p className="ym-card-summary">{persona.prompt.length > 140 ? persona.prompt.slice(0,140) + "…" : persona.prompt}</p>}
@@ -156,6 +157,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
         <PersonaPromptDiff initialPrompt={persona.initialPrompt} currentPrompt={persona.prompt} />
         <ChatBackgroundSettings persona={persona} disabled={disabled || editing !== undefined || Boolean(confirmation)} onSaved={() => { void refresh().catch(showError); }} />
         <PersonaCompanionSettings key={persona.id} personaId={persona.id}/>
+        <StickerBindings key={`stickers:${persona.id}`} personaId={persona.id}/>
         <MotionDetails className="ym-feature-module"><summary><span>表情库</span><small>颜文字与图片互动动作</small></summary><PersonaExpressionsEditor key={persona.id} persona={persona} disabled={disabled || editing !== undefined || Boolean(generating)} onSaved={() => { void refresh().catch(showError); }} /><PetCreationPanel personaId={persona.id} personaName={persona.name} onStartSetup={()=>setImageSetup(persona)}/><div className="ym-module-actions">          <button className="ym-button" aria-label={`重新生成 ${persona.name} 表情库`} disabled={disabled || editing !== undefined} onClick={() => { void generate(persona); }}>{generating === persona.id ? "正在生成表情库…" : "重新生成表情库"}</button>
           {generating === persona.id && <button className="ym-button" disabled={cancelling} onClick={() => { void cancelGeneration(); }}>{cancelling ? "正在取消…" : "取消生成"}</button>}</div></MotionDetails>
         {failures[persona.id] && <p role="alert" className="ym-page-error">表情库生成未完成：{failures[persona.id]}。已有表情库保留。</p>}
@@ -170,6 +172,7 @@ export default function PersonasPanel({ detailRequest }: { detailRequest?: Setti
         {persona.isBuiltin && <p className="ym-page-note">系统默认人设不能删除。</p>}
         </>}
       </article>)}</div>
+      {!selected&&<CardBrowserPagination browser={browser} label="人设" disabled={busy}/>}
     </section>
     <dialog ref={dialog} className="ym-persona-dialog" aria-labelledby="persona-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setConfirmation(null); }}>
       {confirmation && <><h2 id="persona-confirm-title">{confirmation.action === "delete" ? `删除 ${confirmation.persona.name}` : confirmation.action === "baseline" ? "更新初始设定" : "恢复初始设定"}</h2>

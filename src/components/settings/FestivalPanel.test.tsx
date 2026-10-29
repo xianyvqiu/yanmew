@@ -103,6 +103,6 @@ it("日期按后端完整集合搜索、排序及分页，聚焦不重置条件"
   expect(await screen.findByRole("button",{name:"生日编号12"})).toBeTruthy();
   fireEvent.change(screen.getByRole("searchbox"),{target:{value:"生日编号24"}});
   await screen.findByRole("button",{name:"生日编号24"});
-  expect(api.browse).toHaveBeenLastCalledWith("dates",context,"生日编号24","newest",1);
+  expect(api.browse).toHaveBeenLastCalledWith("dates",context,"生日编号24","newest",1,[]);
   expect(api.catalog).not.toHaveBeenCalled();
 });

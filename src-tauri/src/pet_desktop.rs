@@ -63,6 +63,7 @@ pub struct Snapshot {
     pub revision: u64,
     pub walking: Option<Walking>,
     pub toss: Option<toss::Toss>,
+    pub drag_velocity: Option<toss::Velocity>,
     pub chase: Option<chase::Chase>,
 }
 #[derive(Default)]
@@ -78,6 +79,7 @@ struct Inner {
     target: Option<(i32, i32)>,
     toss: Option<toss::Toss>,
     chase: Option<chase::Chase>,
+    drag_velocity: Option<toss::Velocity>,
     drag_trace: toss::DragTrace,
     drag_serial: u64,
     pending_anchor: Option<Rect>,
@@ -114,6 +116,7 @@ impl Inner {
             revision: self.revision,
             walking: self.walking.clone(),
             toss: self.toss.clone(),
+            drag_velocity: self.drag_velocity,
             chase: self.chase.clone(),
         }
     }
@@ -189,7 +192,7 @@ impl Desktop {
         s.dragging = true;
         s.finishing_drag=false;
         s.drag_serial+=1;
-        s.drag_trace=toss::DragTrace::default();
+        s.drag_trace=toss::DragTrace::default();s.drag_velocity=None;
         s.stop_motion();
         s.target = None;
         Ok(())
@@ -211,21 +214,23 @@ impl Desktop {
         if next!=point {window.set_position(PhysicalPosition::new(next.0,next.1)).map_err(|_|AppError::storage())?;}Ok(true)
     }
     pub fn end_drag(&self) -> AppResult<()> {
-        self.inner.lock().map_err(|_| AppError::storage())?.dragging = false;
+        let mut s=self.inner.lock().map_err(|_| AppError::storage())?;s.dragging=false;s.drag_velocity=None;
         Ok(())
     }
     pub fn is_dragging(&self) -> AppResult<bool> {
         Ok(self.inner.lock().map_err(|_| AppError::storage())?.dragging)
     }
-    pub fn claim_drag_finish(&self) -> AppResult<bool> {
+    pub fn drag_serial(&self)->Option<u64>{self.inner.lock().ok().map(|s|s.drag_serial)}
+    pub fn drag_finished_for(&self,serial:Option<u64>)->bool {self.inner.lock().is_ok_and(|s|serial==Some(s.drag_serial)&&!s.dragging)}
+    pub fn claim_drag_finish_for(&self,serial:Option<u64>) -> AppResult<bool> {
         let mut s=self.inner.lock().map_err(|_|AppError::storage())?;
-        if !s.dragging||s.finishing_drag{return Ok(false)}
+        if !s.dragging||s.finishing_drag||serial.is_some_and(|value|value!=s.drag_serial){return Ok(false)}
         s.finishing_drag=true;Ok(true)
     }
-    pub fn release_velocity(&self, scale:f64)->AppResult<Option<f64>> {
+    pub fn release_velocity(&self, scale:f64)->AppResult<Option<toss::Velocity>> {
         let mut s=self.inner.lock().map_err(|_|AppError::storage())?;
         if let Some(point)=toss::cursor(){s.drag_trace.record(std::time::Instant::now(),point);}
-        Ok(s.drag_trace.upward_speed(std::time::Instant::now(),scale))
+        Ok(s.drag_trace.upward_velocity(std::time::Instant::now(),scale))
     }
     pub fn has_toss(&self)->bool {self.inner.lock().is_ok_and(|s|s.toss.is_some())}
     /// 尺寸/DPI变化后保持既有停靠，不重新识别边缘或抽取动作；原生调用在锁外。
@@ -871,10 +876,19 @@ mod tests {
         assert!(state.snapshot().walking.is_none());
     }
     #[test]
+    fn stale_release_cannot_finish_or_reset_a_new_drag() {
+        let desktop=Desktop::default();desktop.begin_drag().unwrap();let first=desktop.drag_serial();
+        assert!(desktop.claim_drag_finish_for(first).unwrap());desktop.end_drag().unwrap();assert!(desktop.drag_finished_for(first));
+        desktop.begin_drag().unwrap();let second=desktop.drag_serial();assert_ne!(first,second);
+        assert!(!desktop.claim_drag_finish_for(first).unwrap());assert!(!desktop.drag_finished_for(first));
+        assert!(desktop.claim_drag_finish_for(second).unwrap());assert!(!desktop.drag_finished_for(second));
+        desktop.end_drag().unwrap();assert!(desktop.drag_finished_for(second));
+    }
+    #[test]
     fn catching_cancels_toss_and_preserves_body_anchor_until_drag_release() {
         let desktop=Desktop::default();let token=desktop.toss_epoch.load(Ordering::SeqCst);
         let body=Rect{x:62.0,y:102.0,width:196.0,height:196.0};
-        desktop.inner.lock().unwrap().toss=Some(toss::Toss{phase:toss::Phase::Down,persona_id:"1".into(),session_id:"1".into(),context_revision:0,body,controls_below:true});
+        desktop.inner.lock().unwrap().toss=Some(toss::Toss{velocity:toss::Velocity::default(),phase:toss::Phase::Down,persona_id:"1".into(),session_id:"1".into(),context_revision:0,body,controls_below:true});
         desktop.begin_drag().unwrap();let snapshot=desktop.snapshot().unwrap();let pose=snapshot.toss.unwrap();
         assert_eq!(pose.phase,toss::Phase::Caught);assert_eq!(pose.body.x,body.x);assert_eq!(pose.body.y,body.y);assert_eq!(pose.body.height,body.height);
         assert_ne!(desktop.toss_epoch.load(Ordering::SeqCst),token);assert!(desktop.is_dragging().unwrap());
@@ -885,7 +899,7 @@ mod tests {
         assert!(matches!(detect((-900,-260),body(),a,1.0,&mut Draw(vec![])).unwrap(),Dock::Top));
         assert_eq!(snap(Dock::Top,(-900,-500),size,a),(-900,-100));
         assert!(matches!(detect((-900,100),body(),a,1.0,&mut Draw(vec![])).unwrap(),Dock::None));
-        let desktop=Desktop::default();desktop.begin_drag().unwrap();assert!(desktop.claim_drag_finish().unwrap());assert!(!desktop.claim_drag_finish().unwrap());
+        let desktop=Desktop::default();desktop.begin_drag().unwrap();assert!(desktop.claim_drag_finish_for(None).unwrap());assert!(!desktop.claim_drag_finish_for(None).unwrap());
     }
     #[test]
     fn walking_geometry_does_not_cancel_motion_but_pause_does() {

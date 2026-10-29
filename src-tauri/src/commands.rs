@@ -792,9 +792,10 @@ pub async fn set_pet_dragging(
     tauri::async_runtime::spawn_blocking(move || worker.pet_visibility(None, Some(true))).await.map_err(|_|AppError::storage())?
 }
 
-pub(crate) async fn finish_pet_drag(window: &WebviewWindow) -> AppResult<()> {
+pub(crate) async fn finish_pet_drag(window: &WebviewWindow) -> AppResult<()> {finish_pet_drag_for(window,None).await}
+pub(crate) async fn finish_pet_drag_for(window: &WebviewWindow,serial:Option<u64>) -> AppResult<()> {
     let desktop=window.state::<crate::pet_desktop::Desktop>();
-    if !desktop.claim_drag_finish()? { return Ok(()); }
+    if !desktop.claim_drag_finish_for(serial)? { return Ok(()); }
     let velocity=desktop.release_velocity(window.scale_factor().map_err(|_|AppError::storage())?)?;
     let runtime = window.state::<Runtime>().inner().clone();
     let worker = runtime.clone();
@@ -1488,10 +1489,23 @@ pub async fn list_providers(
     runtime: State<'_, Runtime>,
 ) -> AppResult<Vec<crate::providers::Provider>> {
     authorize(&window)?;
-    storage(runtime.inner().clone(), |s, _| {
-        crate::providers::list(&s.connection)
-    })
-    .await
+    let worker=runtime.inner().clone();
+    let (providers,configs)=storage(worker.clone(), |s, secrets| {
+        let providers=crate::providers::list(&s.connection)?;
+        let mut configs=Vec::new();
+        for provider in &providers {
+            if provider.model!="未配置" && crate::native_tools::claim_discovery(provider.base_url.as_deref().unwrap_or("https://api.openai.com/v1"), &provider.model) {
+                if let Ok(config)=crate::providers::connection_test_config(&s.connection,crate::error::parse_id(&provider.id)?,secrets){configs.push(config);}
+            }
+        }
+        Ok((providers,configs))
+    }).await?;
+    // 先返回列表；后台只读目录完成后刷新能力，不阻塞页面、不发送付费测试消息。
+    for config in configs {
+        let worker=worker.clone();let app=window.app_handle().clone();
+        tauri::async_runtime::spawn(async move{if let Ok(client)=worker.ai.clone(){client.discover_capacity(&config).await;let _=app.emit("configuration_changed",());}});
+    }
+    Ok(providers)
 }
 #[tauri::command]
 pub async fn get_provider_roles(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<crate::provider_roles::Config> {

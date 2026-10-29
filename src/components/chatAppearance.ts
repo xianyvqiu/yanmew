@@ -6,13 +6,14 @@ export const DEFAULT_CHAT_APPEARANCE: ChatAppearance = {
 };
 
 /** 预览、已保存消息和流式消息共用；只允许颜色值，不接收任意CSS。 */
-export function chatAppearanceAttributes(appearance = DEFAULT_CHAT_APPEARANCE) {
+export function chatAppearanceAttributes(appearance = DEFAULT_CHAT_APPEARANCE, personaColor?: string) {
   const color = (value: string | null) => value && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
+  const inherited = color(personaColor ?? null) ?? "var(--ym-text)";
   return {
     "data-bubble-style": appearance.bubbleStyle,
     style: {
-      "--ym-chat-user-text": color(appearance.userTextColor) ?? "var(--ym-text)",
-      "--ym-chat-assistant-text": color(appearance.assistantTextColor) ?? "var(--ym-text)",
+      "--ym-chat-user-text": color(appearance.userTextColor) ?? inherited,
+      "--ym-chat-assistant-text": color(appearance.assistantTextColor) ?? inherited,
     } as CSSProperties,
   };
 }

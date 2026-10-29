@@ -12,6 +12,7 @@ OUT = ROOT / 'docs'
 GROUPS = [
     ('人设与全局配置', '#6366f1', ['personas', 'pet_artworks', 'sessions', 'session_pet_states', 'user_profiles', 'providers', 'provider_models', 'provider_roles', 'embedding_providers', 'settings']),
     ('聊天、记忆与检索', '#0284c7', ['chat_rounds', 'messages', 'message_images', 'short_memories', 'long_memories', 'long_memory_sources', 'long_memory_embeddings', 'long_memories_fts', 'notebooks']),
+    ('聊天表情包', '#be6d8d', ['sticker_libraries', 'chat_stickers', 'sticker_tags', 'sticker_tag_links', 'persona_sticker_libraries']),
     ('出行与旅行内容', '#0d9488', ['travels', 'travel_journals', 'letters', 'accessories', 'souvenirs']),
     ('小游戏插件与钱包', '#d97706', ['game_plugins', 'game_permissions', 'game_plugin_settings', 'game_plugin_data', 'game_runs', 'currency_ledger', 'user_state']),
     ('提醒与节日', '#db2777', ['reminders', 'reminder_occurrences', 'reminder_email_deliveries', 'reminder_email_items', 'festival_catalog', 'custom_festivals']),
@@ -21,6 +22,8 @@ GROUPS = [
 NAMES = dict(zip(
     'personas sessions user_profiles providers embedding_providers settings chat_rounds messages short_memories long_memories long_memory_sources long_memory_embeddings long_memories_fts notebooks travels travel_journals letters accessories souvenirs game_plugins game_permissions game_plugin_settings game_plugin_data game_runs currency_ledger user_state reminders reminder_occurrences festival_catalog custom_festivals'.split(),
     '人设 会话 用户设定 聊天及记忆提供商 向量模型提供商 全局设置 聊天回合 消息原文 短期记忆 长期记忆 长期记忆来源 向量缓存 全文检索索引 会话记事本 出行记录 旅行游记 信件 饰品 文字伴手礼 插件登记 插件授权 插件设置 插件存档 历史游戏局 喵币账单 全局钱包 提醒规则 提醒触发记录 内置节日 全局自定义日期'.split()))
+NAMES.update(sticker_libraries='全局聊天表情包库', chat_stickers='聊天表情包', sticker_tags='全局表情包标签', sticker_tag_links='表情包标签关联', persona_sticker_libraries='人设表情包库绑定')
+NAMES['souvenirs'] = '旅行伴手礼'
 NAMES['pet_artworks'] = '桌宠创作条目'
 NAMES['session_pet_states'] = '会话桌宠状态'
 NAMES['providers'] = '通用提供商连接'
@@ -38,13 +41,13 @@ def extract():
     con = sqlite3.connect(':memory:')
     con.execute('PRAGMA foreign_keys=ON')
     con.executescript(source)
-    names = re.findall(r'CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS (\w+)', source)
+    names = re.findall(r'CREATE (?:VIRTUAL )?TABLE(?: IF NOT EXISTS)? (\w+)', source)
     assert set(names) == {t for _, _, ts in GROUPS for t in ts}
     tables, edges = {}, []
     for name in names:
         ddl = con.execute('SELECT sql FROM sqlite_master WHERE name=?', (name,)).fetchone()[0]
         source_ddl_match = re.search(
-            r'CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS\s+' + re.escape(name) + r'\b.*?\n\);',
+            r'CREATE (?:VIRTUAL )?TABLE(?: IF NOT EXISTS)?\s+' + re.escape(name) + r'\b.*?\n\);',
             source,
             re.S,
         )

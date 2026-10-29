@@ -334,3 +334,8 @@
 .pet-window :is(.pet-visibility,.pet-more,.pet-health,.pet-chat-toggle){border-width:2px;}
 .pet-window :is(.pet-visibility,.pet-chat-toggle,.pet-more) svg{width:18px;height:18px;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 .6px 0 var(--ym-pet-text-outline)) drop-shadow(0 -.6px 0 var(--ym-pet-text-outline));}
 .pet-chat-toggle{padding:5px;}
+
+/* 物理动效只旋转角色；顶端留出旋转空间，落地以脚底为挤压原点。 */
+.pet-window[data-dragging="true"] .pet-expression,
+.pet-window[data-toss]:not([data-toss="landed"]) .pet-expression {transform-origin:50% 58%;}
+.pet-window[data-toss="landed"] .pet-expression {transform-origin:50% 100%;}

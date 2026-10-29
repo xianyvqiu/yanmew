@@ -1,5 +1,10 @@
 .ym-persona-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px; margin-top: 18px; }
 .ym-persona-card { padding: 18px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); min-width: 0; }
+.ym-persona-card { position:relative;isolation:isolate; }
+.ym-persona-card::before { content:"";position:absolute;inset:0;z-index:0;border-radius:inherit;pointer-events:none;background:radial-gradient(ellipse at 100% 0%,color-mix(in srgb,var(--ym-persona-mark) 28%,transparent),transparent 68%);opacity:.75;transition:opacity .25s ease; }
+.ym-persona-card>* { position:relative;z-index:1; }
+.ym-persona-card:is(:hover,:focus-within)::before { opacity:1; }
+@media(prefers-reduced-motion:reduce){.ym-persona-card::before{transition:none;}}
 .ym-persona-card h3 { margin: 0; overflow-wrap: anywhere; }
 .ym-persona-card .ym-page-heading > span { color: var(--ym-accent-strong); font-size: var(--ym-font-caption); }
 .ym-persona-card details { padding: 10px 0; border-bottom: 1px solid var(--ym-border); }

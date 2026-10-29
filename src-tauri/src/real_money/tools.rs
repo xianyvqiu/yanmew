@@ -1,7 +1,7 @@
 use super::*;
 use crate::{ai::provider::ToolCall, runtime::Runtime, state::RequestLease};
 use std::sync::Arc;
-pub const RULES:&str="现实记账是独立的人民币账本，与喵币、游戏钱包完全无关。只有用户明确要求记账时才写入；提到价格、咨询、举例、假设不等于记账。用户明确说现实的钱、人民币、RMB/CNY等可直接记；如果只说花了多少、记一笔而金额性质不清，必须先明确询问是不是现实的钱，未得到确认不得调用record_real_money。确认现实记账后confirmedRealMoney才可为true。金额使用元的十进制字符串，不能输入分或喵币，不能捏造金额、资产或周期。先按需查分类和资产；未指定资产可用唯一默认资产，完成时说明。分类不合适时可按用户意图新增；修改/删除分类先读取id与revision。记账时间不明确时默认当前本地时间，用户提及昨天等应使用真实日期；含糊的日期或周期要询问。周期用每N天/周/月/年，首次日期是anchor，短月取月末；关闭期间漏期必须由用户在现实记账界面确认，不能替用户批量补记。工具成功后才说记好，报告标题、金额、收入/支出、分类、资产、日期及是否创建周期。查询只读取解决当前问题所需的范围，不把全量财务资料当作默认聊天上下文。";
+pub const RULES:&str="现实记账使用人民币，与喵币及游戏钱包独立。只有用户明确要求记账且金额性质清楚时才写入；谈价格、咨询、举例或假设不等于记账。只说“花了多少”“记一笔”而性质不明时，先问是否现实资金。按需查询分类和资产；未指定资产可用唯一默认项，回复时说明。不合适的分类可按用户意图新建，修改/删除分类前先查询其ID和revision。时间未指定时用当前本地时间，昨天等相对日期换成真实日期；日期或周期含糊时先问。周期支持每N天/周/月/年，首次日期为anchor，短月取月末；漏期由用户在现实记账界面确认，不代为批量补记。完成后报告标题、金额、收支、分类、资产、日期及是否周期。仅查询当前问题需要的范围。";
 pub fn is_write(name: &str) -> bool {
     matches!(
         name,
@@ -15,9 +15,9 @@ pub fn definitions() -> Vec<Value> {
     [
         ("list_real_money_assets","查询现实资金池及默认资产，只读，不读取银行。",json!({}),vec![]),
         ("list_real_money_categories","查询现实记账分类及修改版本。",json!({"query":{"type":"string"}}),vec![]),
-        ("save_real_money_category","新增或修改现实分类。新建id/revision为null，修改前先读。",json!({"id":{"type":["string","null"]},"revision":{"type":["integer","null"]},"name":{"type":"string"},"icon":{"type":"string"},"direction":{"type":"string","enum":["income","expense","both"]}}),vec!["id","revision","name","icon","direction"]),
-        ("delete_real_money_category","删除现实分类，历史引用保留；先读取版本。",json!({"id":id,"revision":{"type":"integer"}}),vec!["id","revision"]),
-        ("record_real_money","仅明确现实金额且用户要求记账后，创建一次性账单或周期计划。",json!({"entry":entry,"recurrence":rule,"confirmedRealMoney":{"type":"boolean","description":"只在用户明确现实金额或询问得到确认后为true"}}),vec!["entry","confirmedRealMoney"]),
+        ("save_real_money_category","新增或修改现实分类；新建时id/revision为null。",json!({"id":{"type":["string","null"]},"revision":{"type":["integer","null"]},"name":{"type":"string"},"icon":{"type":"string"},"direction":{"type":"string","enum":["income","expense","both"]}}),vec!["id","revision","name","icon","direction"]),
+        ("delete_real_money_category","删除现实分类，保留历史引用。",json!({"id":id,"revision":{"type":"integer"}}),vec!["id","revision"]),
+        ("record_real_money","创建一次性现实账单或周期计划。",json!({"entry":entry,"recurrence":rule,"confirmedRealMoney":{"type":"boolean","description":"用户已明确金额为现实人民币时设true"}}),vec!["entry","confirmedRealMoney"]),
         ("query_real_money_entries","按需查询现实账单及统计，每页12条，金额统计字段为分。",json!({"start":{"type":["string","null"]},"end":{"type":["string","null"]},"direction":{"type":"string","enum":["all","income","expense","adjustment"]},"categoryId":{"type":"string"},"assetId":{"type":"string"},"search":{"type":"string"},"ascending":{"type":"boolean"},"page":{"type":"integer","minimum":1}}),vec![]),
     ].into_iter().map(|(name,description,properties,required)|json!({"type":"function","function":{"name":name,"description":description,"parameters":{"type":"object","properties":properties,"required":required,"additionalProperties":false}}})).collect()
 }

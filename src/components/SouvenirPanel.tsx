@@ -2,7 +2,7 @@ import SouvenirImage from "./SouvenirImage";
 import SouvenirImageSettings from "./SouvenirImageSettings";
 import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
 import InlineDetailCard from "./InlineDetailCard";
-import CardBrowserControls from "./CardBrowserControls";
+import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, souvenirsApi, travelApi } from "../api";
@@ -85,6 +85,7 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
         <div className="ym-inline-form"><button className="ym-button" disabled={busy || loading || browser.loading} onClick={() => { void act(() => souvenirsApi.favorite(context, detail.id, !detail.isFavorite)); }}>{detail.isFavorite ? "取消收藏" : "收藏"}</button>
           <button className="ym-button" data-variant="danger" disabled={busy || loading || browser.loading} onClick={() => { setError(""); setDeleting(detail); }}>删除伴手礼</button></div>
       </> : <p className="ym-page-note">{selected ? error ? "礼物详情暂不可用，请刷新后重试。" : "正在读取礼物详情…" : "选择一件伴手礼，看看它写的备注。"}</p>}</InlineDetailCard></li>)}</ul>
+      <CardBrowserPagination browser={browser} label="伴手礼" disabled={busy}/>
 
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="souvenir-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>
       <h2 id="souvenir-delete-title">删除这件伴手礼？</h2><div className="ym-session-dialog-body"><p>删除后不可恢复，不会再次发放。本次出行事实、信件、饰品和游记仍保留，不改变喵币。</p>{error && <p role="alert" className="ym-page-error">{error}</p>}</div>
