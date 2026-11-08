@@ -56,7 +56,7 @@ let rows: Persona[];
 it("详情导航直接展开指定人设，不要求先从卡片列表选择", async () => {
   render(<PersonasPanel detailRequest={{ page:"persona",id:currentPersona.id }} />);
   expect(await screen.findByRole("button",{name:"返回人设列表"})).toBeTruthy();
-  expect(screen.getByRole("button",{name:`编辑 ${currentPersona.name}`})).toBeTruthy();
+  expect((screen.getByLabelText("人设名称") as HTMLInputElement).value).toBe(currentPersona.name);
   expect(screen.queryByRole("article",{name:otherPersona.name})).toBeNull();
 });
 let expressionFailure: ((event: { personaId: string; error: { message: string } }) => void) | undefined;
@@ -113,7 +113,6 @@ describe("PersonasPanel", () => {
     await loadPanel();
     const card = within(screen.getByRole("article", { name: currentPersona.name }));
     fireEvent.click(card.getByRole("button", { name: "查看与初始设定的差异" }));
-    fireEvent.click(card.getByRole("button", { name: `编辑 ${currentPersona.name}` }));
     const draft = screen.getByRole("textbox", { name: "当前设定" }) as HTMLTextAreaElement;
     fireEvent.change(draft, { target: { value: "未保存的草稿" } });
     rows = rows.map(persona => persona.id === currentPersona.id ? { ...persona, prompt: "新的已保存设定" } : persona);
@@ -222,6 +221,7 @@ describe("PersonasPanel", () => {
     await loadPanel();
 
     fireEvent.click(screen.getByText("表情库",{selector:"summary span"}));
+    fireEvent.click(screen.getByText("颜文字表情库",{selector:"summary"}));
     fireEvent.click(screen.getByRole("button", { name: `重新生成 ${currentPersona.name} 表情库` }));
     await screen.findByRole("button", { name: "取消生成" });
     fireEvent.click(screen.getByRole("button", { name: "取消生成" }));
@@ -235,6 +235,7 @@ describe("PersonasPanel", () => {
     await screen.findByRole("article", { name: currentPersona.name });
     fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
     fireEvent.click(screen.getByText("表情库",{selector:"summary span"}));
+    fireEvent.click(screen.getByText("颜文字表情库",{selector:"summary"}));
     fireEvent.click(screen.getByRole("button", { name: `重新生成 ${currentPersona.name} 表情库` }));
     await screen.findByRole("button", { name: "取消生成" });
 
@@ -244,20 +245,22 @@ describe("PersonasPanel", () => {
   });
 });
 
-it("底部编辑入口立即聚焦表单，取消不保存人设",async()=>{
+it("详情直接编辑，重置恢复已保存内容且不保存人设",async()=>{
   await loadPanel();
   fireEvent.click(screen.getByRole("button",{name:currentPersona.name}));
-  fireEvent.click(screen.getByRole("button",{name:`编辑 ${currentPersona.name}`}));
-  expect(document.activeElement).toBe(screen.getByLabelText("人设名称"));
+  expect(screen.queryByRole("button",{name:`编辑 ${currentPersona.name}`})).toBeNull();
+  fireEvent.change(screen.getByLabelText("人设名称"),{target:{value:"未保存名称"}});
   expect(api.updatePersona).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button",{name:"取消"}));
-  expect(screen.queryByLabelText("人设名称")).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"重置修改"}));
+  expect((screen.getByLabelText("人设名称") as HTMLInputElement).value).toBe(currentPersona.name);
 });
 
 it("人设详情展示该人设的图片库和有效基础颜文字",async()=>{
   rows=[{...systemPersona,effectiveExpressions:{normal:["(・ω・)"],standby:["(｡-ω-｡)"]}}];
   render(<PersonasPanel detailRequest={{page:"persona",id:systemPersona.id}}/>);
   expect((await screen.findByTestId("picture-library")).textContent).toBe(systemPersona.id);
+  fireEvent.click(screen.getByText("表情库",{selector:"summary span"}));
+  fireEvent.click(screen.getByText("颜文字表情库",{selector:"summary"}));
   expect(screen.getByText("(・ω・)")).toBeTruthy();
   expect(screen.getByText("(｡-ω-｡)")).toBeTruthy();
 });

@@ -276,7 +276,15 @@ pub(super) async fn run(client: &AiClient, prepared: &PreparedReply,
                     session=next;result
                 };
                 let value = match result {
-                    Ok(value) => {if call.name=="set_pet_expression"{if let Some(expression)=value["expression"].as_str(){emit(ReplyEventKind::Expression{expression:expression.into()})?;}}json!({"ok":true,"result":value})},
+                    Ok(mut value) => {
+                        if call.name=="set_pet_expression" {
+                            if let Some(expression)=value["expression"].as_str(){emit(ReplyEventKind::Expression{expression:expression.into()})?;}
+                            if value["expression"].as_str().is_some_and(|text|text.starts_with("@pet-image:")) {
+                                if let Some(fields)=value.as_object_mut(){fields.remove("expression");fields.insert("applied".into(),json!(true));}
+                            }
+                        }
+                        json!({"ok":true,"result":value})
+                    },
                     Err(error) if matches!(error.code, "CANCELLED" | "CONTEXT_CHANGED") => return Err(error),
                     Err(error) => json!({"ok":false,"error":error}),
                 };

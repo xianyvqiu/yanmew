@@ -2,9 +2,10 @@ import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {cleanup,fireEvent,render,screen,waitFor,within} from "@testing-library/react";
 import StickerLibraryPanel from "./StickerLibraryPanel";
 import StickerBindings from "./StickerBindings";
+import {openStickerLibrary} from "../../stickerApi";
 import type {ChatSticker,StickerLibrary,StickerTag} from "../../stickerApi";
 const api=vi.hoisted(()=>({query:vi.fn(),mutate:vi.fn(),import:vi.fn(),image:vi.fn(),listen:vi.fn()}));
-vi.mock("../../stickerApi",()=>({stickerApi:api}));
+vi.mock("../../stickerApi",()=>({stickerApi:api,openStickerLibrary:vi.fn()}));
 vi.mock("../../api",()=>({errorMessage:(e:Error)=>e.message,configurationApi:{listPersonas:async()=>[{id:"1",name:"小猫"},{id:"2",name:"小鱼"}]}}));
 let libraries:StickerLibrary[],tags:StickerTag[],stickers:ChatSticker[];
 beforeEach(()=>{
@@ -15,6 +16,20 @@ beforeEach(()=>{
   api.query.mockImplementation(async(q)=>{let rows:any[]=q.entity==="libraries"?libraries:q.entity==="tags"?tags:stickers;rows=rows.filter(r=>(q.entity!=="stickers"||!q.tagIds?.length||q.tagIds.every((id:string)=>r.tags.some((t:StickerTag)=>t.id===id)))&&(!q.query||`${r.title??r.name} ${r.description??""}`.includes(q.query)));const pages=Math.max(1,Math.ceil(rows.length/12)),page=Math.min(q.page??1,pages);return{items:rows.slice((page-1)*12,page*12),page,pages,total:rows.length};});
 });
 afterEach(cleanup);
+it("库卡片和库详情显示绑定人设名称，指定ID可直接进入详情",async()=>{
+  const view=render(<StickerLibraryPanel/>);expect(await screen.findByText("当前绑定：小猫")).toBeTruthy();view.unmount();
+  render(<StickerLibraryPanel requestedId="1"/>);await screen.findByRole("heading",{name:"猫猫收藏"});expect(screen.getByText("当前绑定：小猫")).toBeTruthy();
+});
+it("目标库已不存在时显示错误，不打开返回结果中的其他库",async()=>{
+  render(<StickerLibraryPanel requestedId="99"/>);
+  expect(await screen.findByText("该表情包库已不存在，请从列表重新选择。")).toBeTruthy();
+  expect(screen.queryByRole("button",{name:"库设置与绑定"})).toBeNull();
+});
+it("人设库摘要不隐式跳转，独立详情按钮携带具体库ID",async()=>{
+  render(<StickerBindings personaId="2"/>);const summary=screen.getByText("聊天表情包库",{selector:"summary"});expect(summary.getAttribute("aria-expanded")).toBe("false");fireEvent.click(summary);
+  fireEvent.click(await screen.findByText("日常猫猫"));expect(openStickerLibrary).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"查看表情包库详情：猫猫收藏"}));expect(openStickerLibrary).toHaveBeenCalledWith("1");
+});
 async function openLibrary(){render(<StickerLibraryPanel/>);fireEvent.click(await screen.findByRole("button",{name:/猫猫收藏/}));await screen.findByText("挥手猫");}
 it("新建库填写标题和简介，不提供用户发送入口",async()=>{
   render(<StickerLibraryPanel/>);fireEvent.click(screen.getByRole("button",{name:"新建表情包库"}));const d=screen.getByRole("dialog");fireEvent.change(within(d).getByLabelText("表情包库标题"),{target:{value:"日常贴贴"}});fireEvent.change(within(d).getByLabelText("库简介"),{target:{value:"轻松聊天用"}});fireEvent.click(within(d).getByRole("button",{name:"保存"}));await waitFor(()=>expect(api.mutate).toHaveBeenCalledWith({op:"saveLibrary",id:null,revision:null,title:"日常贴贴",description:"轻松聊天用"}));expect(screen.queryByRole("button",{name:/发送表情包/})).toBeNull();
@@ -35,5 +50,5 @@ it("标签管理可搜索修改和确认删除，不删除历史图片",async()=
   render(<StickerLibraryPanel/>);fireEvent.click(screen.getByRole("button",{name:"标签管理"}));fireEvent.click(await screen.findByRole("button",{name:/开心.*编辑标签/}));const d=screen.getByRole("dialog");fireEvent.click(within(d).getByRole("button",{name:"删除标签"}));expect(within(d).getByText("已经发送的聊天图片会保留。")).toBeTruthy();fireEvent.click(within(d).getByRole("button",{name:"确认删除"}));await waitFor(()=>expect(api.mutate).toHaveBeenCalledWith({op:"delete",entity:"tags",id:"1",revision:0}));
 });
 it("人设可绑定和解除共享库",async()=>{
-  render(<StickerBindings personaId="2"/>);fireEvent.click(await screen.findByRole("button",{name:"绑定"}));await waitFor(()=>expect(api.mutate).toHaveBeenCalledWith({op:"bind",libraryId:"1",personaId:"2",bound:true}));
+  render(<StickerBindings personaId="2"/>);fireEvent.click(screen.getByText("聊天表情包库",{selector:"summary"}));fireEvent.click(await screen.findByRole("button",{name:"绑定"}));await waitFor(()=>expect(api.mutate).toHaveBeenCalledWith({op:"bind",libraryId:"1",personaId:"2",bound:true}));
 });

@@ -41,6 +41,7 @@
   --ym-pet-ink: #8e4e65;
   --ym-pet-ink-muted: #96536a;
   --ym-scrim: rgba(20, 18, 22, 0.38);
+  --ym-glass-surface: rgba(255, 250, 251, .78);
 }
 
 [data-theme="dark"] {
@@ -81,6 +82,7 @@
   --ym-pet-ink: #a05d77;
   --ym-pet-ink-muted: #aa6881;
   --ym-scrim: rgba(0, 0, 0, 0.58);
+  --ym-glass-surface: rgba(50, 41, 56, .80);
 }
 
 :root {
@@ -88,9 +90,11 @@
   --ym-font-kaomoji: "Cascadia Mono", "Segoe UI Symbol", "Meiryo", Consolas, monospace;
   --ym-font-body: 14px;
   --ym-font-caption: 12px;
+  --ym-font-heading: 18px;
   --ym-font-pet: 28px;
   --ym-radius-md: 12px;
   --ym-radius-lg: 16px;
+  --ym-radius-xl: 20px;
   --ym-radius-pill: 999px;
   --ym-shadow-sm: 0 3px 12px -6px rgba(22, 18, 24, .20);
   --ym-shadow-md: 0 12px 30px -12px rgba(22, 18, 24, .24), 0 2px 8px -4px rgba(22, 18, 24, .12);

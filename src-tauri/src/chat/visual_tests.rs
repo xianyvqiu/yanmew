@@ -23,12 +23,19 @@ fn image_chat_uses_function_call_with_persona_scoped_picture_and_keeps_text_libr
         runtime.read(|s,_|{s.connection.execute_batch("INSERT INTO pet_artworks(persona_id,kind,name,category,image_file,created_at,updated_at) VALUES(1,'base','初始形象','normal','base.png','a','a'),(1,'expression','自然交谈','chat','chat.png','a','a'),(1,'expression','开心','chat','happy.png','a','a');UPDATE personas SET pet_image_enabled=1 WHERE id=1;")?;Ok(())}).unwrap();
         let (prepared, _) = submit(&runtime, 1, 1, 0, "我今天中了一个小奖！".into()).unwrap();
         let saved = run_persisted(&client(), prepared, |_| {}).await.unwrap();
+        let message = saved.assistant_message.unwrap();
+        assert_eq!(message.content, "好开心！");
         assert_eq!(
-            saved.assistant_message.unwrap().expression.as_deref(),
+            message.expression.as_deref(),
             Some("@pet-image:3")
         );
         let requests = server.requests.lock().unwrap();
         assert_eq!(requests.len(), 2);
+        let observation=requests[1]["messages"].as_array().unwrap().iter().find(|m|m["role"]=="tool").unwrap();
+        let observation:Value=serde_json::from_str(observation["content"].as_str().unwrap()).unwrap();
+        assert_eq!(observation["result"]["applied"], true);
+        assert!(observation["result"].get("expression").is_none());
+        assert!(!observation.to_string().contains("@pet-image:"));
         assert!(requests[0]["tools"]
             .as_array()
             .unwrap()

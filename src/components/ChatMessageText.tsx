@@ -31,9 +31,9 @@ function kaomojiSource(content: string, node: ExtraProps["node"]): string | unde
 }
 
 /** AI 正文渲染 Markdown；持久化和编辑使用原文，原文区只在展示与复制时去掉包装。 */
-function ChatMessageText({ content, markdown = true }: { content: string; markdown?: boolean }) {
+function ChatMessageText({ content, markdown = true, expression, streaming = false }: { content: string; markdown?: boolean; expression?: string | null; streaming?: boolean }) {
   const [error, setError] = useState("");
-  const prepared = plainDisplay(content);
+  const prepared = plainDisplay(content, markdown ? expression : undefined, streaming);
   const link = (url: string, children: ReactNode, key?: number) => <a key={key} href={url} onClick={event => {
     event.preventDefault();
     setError("");

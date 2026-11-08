@@ -47,7 +47,7 @@ export default function SettingsNavigation({ page, onSelect, tutorialPage }: { p
     if (group) setExpanded(current => ({ ...current, [group.title]: true, ...(group.title !== scopedTitle ? { "全局设置": true } : {}) }));
   }, [tutorialPage]);
   const items = (group: typeof settingsGroups[number]) => group.items.map((item, index) => <button key={item} data-onboarding-page={item} type="button" className="ym-button ym-settings-nav-item"
-    style={{ "--ym-nav-delay": `${Math.min(index, 6) * 35}ms` } as CSSProperties}
+    style={{ "--ym-nav-delay": `${Math.min(index, 6) * 14}ms` } as CSSProperties}
     onClick={() => onSelect(item)} aria-current={item === page ? "page" : undefined}>{item}</button>);
   return <nav className="ym-settings-nav" aria-label="设置导航">
     <NavigationGroup title="全局设置" open={!!expanded["全局设置"]} onToggle={() => toggle("全局设置")}>

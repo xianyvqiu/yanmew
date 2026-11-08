@@ -73,7 +73,7 @@ fn candidate_is_saved_only_after_completed_reply_and_duplicate_is_idempotent() {
     let runtime = crate::runtime::test_runtime(&server.url);
     let before = prompt(&runtime);
     let events = Arc::new(Events::default());
-    let (mut prepared, _) = submit(&runtime, 1, 1, 0, "重要交流".into()).unwrap();
+    let (mut prepared, _) = submit(&runtime, 1, 1, 0, "以后解释时先说结论再说明理由，这是长期的交流偏好。".into()).unwrap();
     prepared.set_tool_events(events.clone());
     let mut saw_text = false;
     let saved = tauri::async_runtime::block_on(run_persisted(&client(), prepared, |event| {

@@ -99,7 +99,7 @@ export default function ProvidersPanel() {
   return <>
     <section className="ym-page-card" aria-label="通用模型提供商">
       <div className="ym-page-heading"><h2>通用模型提供商</h2>
-        <button className="ym-button" disabled={disabled || editing !== undefined} onClick={() => { setEditing(null); setError(null); setNotice(""); }}>新增提供商</button></div>
+        <button className="ym-button" data-variant="primary" disabled={disabled || editing !== undefined} onClick={() => { setEditing(null); setError(null); setNotice(""); }}>新增提供商</button></div>
       <p className="ym-page-note">统一保存服务连接与Key，下方按用途选择模型。聊天、记忆和识图使用兼容接口；生图另支持部分官方原生接口，详见下方生图说明。已支持的模型联网会直接使用当前连接，无需另填搜索Key；也可以单独配置搜索服务。</p>
       {loading && <p role="status">正在读取提供商…</p>}
       {error && !deleting && (!error.field || editing === undefined) && <div className="ym-page-error" role="alert">{error.message}<button className="ym-button" disabled={busy} onClick={() => { setError(null); void refresh().catch(showError); }}>重新读取</button></div>}

@@ -7,14 +7,16 @@ type PersonaFormProps = {
   error: AppError | null;
   onSave: (input: PersonaInput, imageMode?:boolean) => Promise<void>;
   onCancel: () => void;
+  inline?: boolean;
 };
 
 const colorPattern = /^#[\da-f]{6}$/i;
 
-export default function PersonaForm({ persona, busy, error, onSave, onCancel }: PersonaFormProps) {
+export default function PersonaForm({ persona, busy, error, onSave, onCancel, inline = false }: PersonaFormProps) {
   const id = useId();
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
+    if (inline) return;
     form.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
     form.current?.querySelector("input")?.focus({ preventScroll: true });
   }, []);
@@ -24,6 +26,17 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
   const [color, setColor] = useState(persona?.color ?? "#ffb6c1");
   const [selfEvolveEnabled, setSelfEvolveEnabled] = useState(persona?.selfEvolveEnabled ?? true);
   const [imageMode,setImageMode]=useState(false);
+  const saved = useRef(persona);
+  useEffect(() => {
+    const previous = saved.current;
+    saved.current = persona;
+    if (!inline || !previous || !persona) return;
+    setName(value => value === previous.name ? persona.name : value);
+    setPrompt(value => value === previous.prompt ? persona.prompt : value);
+    setInitialPrompt(value => value === previous.initialPrompt ? persona.initialPrompt : value);
+    setColor(value => value === previous.color ? persona.color : value);
+    setSelfEvolveEnabled(value => value === previous.selfEvolveEnabled ? persona.selfEvolveEnabled : value);
+  }, [persona, inline]);
   const [validationErrors, setValidationErrors] = useState<Partial<Record<"name" | "prompt" | "color", string>>>({});
 
   const errorFor = (field: "name" | "prompt" | "color") =>
@@ -59,7 +72,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
 
   return <form ref={form} className="ym-persona-form" onSubmit={submit}>
     <fieldset disabled={busy}>
-      <legend>{persona ? "编辑人设" : "新增人设"}</legend>
+      <legend>{inline ? "人设设定" : persona ? "编辑人设" : "新增人设"}</legend>
 
       <label className="ym-field" htmlFor={`${id}-name`}>
         人设名称
@@ -122,6 +135,7 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
             }}
           />
         </div>
+        <span className="ym-page-note">快捷预设色</span>
         <div className="ym-inline-form" aria-label="预设人设颜色">
           {[["粉色", "#ffb6c1"], ["蓝色", "#b6c7ff"], ["绿色", "#b8dfc0"], ["紫色", "#d0b8ed"]].map(([label, value]) =>
             <button key={value} type="button" className="ym-button" aria-pressed={color.toLowerCase() === value}
@@ -140,13 +154,19 @@ export default function PersonaForm({ persona, busy, error, onSave, onCancel }: 
           checked={selfEvolveEnabled}
           onChange={event => setSelfEvolveEnabled(event.target.checked)}
         />
-        <span className="ym-page-note">仅在重要且明确的问题需要修正时小幅调整，日常小事不修改；完整回复成功后保存，初始设定保留。</span>
+        <span className="ym-page-note">明确的长期反馈可触发小幅调整，保留核心性格；普通情绪和玩笑不修改。完整回复成功后保存，初始设定保留。</span>
       </div>
 
       {!persona&&<div className="ym-field"><label>图片模式<input type="checkbox" role="switch" checked={imageMode} onChange={event=>setImageMode(event.target.checked)}/></label><span className="ym-page-note">保存后上传透明初始图，自动生成基础表情预览；生成使用已配置的生图服务，可能产生额度费用，检查并接受后启用。</span></div>}
       <div className="ym-inline-form">
         <button className="ym-button" type="submit">{busy ? "正在保存…" : "保存人设"}</button>
-        <button className="ym-button" type="button" onClick={onCancel}>取消</button>
+        <button className="ym-button" type="button" onClick={() => {
+          if (inline && persona) {
+            setName(persona.name); setPrompt(persona.prompt); setInitialPrompt(persona.initialPrompt);
+            setColor(persona.color); setSelfEvolveEnabled(persona.selfEvolveEnabled); setValidationErrors({});
+          }
+          onCancel();
+        }}>{inline ? "重置修改" : "取消"}</button>
       </div>
     </fieldset>
   </form>;

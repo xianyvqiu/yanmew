@@ -18,12 +18,18 @@ vi.mock("../components/settings/WeatherPanel", () => ({ default: ({ contextRevis
 vi.mock("../components/settings/PetTimingPanel", () => ({ default: () => <p>桌宠计时表单</p> }));
 vi.mock("../components/settings/PetStatusPanel", () => ({ default: () => <p>桌宠状态内容</p> }));
 vi.mock("../components/settings/MemorySettingsPanel", () => ({ default: () => <p>记忆设置表单</p> }));
+vi.mock("../components/settings/StickerLibraryPanel",()=>({default:({requestedId}:{requestedId?:string})=><p>表情包库详情：{requestedId}</p>}));
 vi.mock("../components/PluginManagerPanel", () => ({ default: () => <p>小游戏插件内容</p> }));
 vi.mock("../components/settings/AccessoryPanel", () => ({ default: () => <p>饰品管理内容</p> }));
 vi.mock("../components/TravelPanel", () => ({default:()=> <p>出行与邮箱内容</p>}));
 vi.mock("../components/settings/FestivalPanel", () => ({ default: () => <p>节日管理内容</p> }));
 
 afterEach(cleanup);
+it("人设关联卡片的详情事件切到表情包页并携带具体库ID",async()=>{
+  render(<SettingsPage snapshot={null} loading={false} error="" onRefresh={()=>{}}/>);
+  act(()=>{window.dispatchEvent(new CustomEvent("ym-open-sticker-library",{detail:"library-7"}));});
+  expect(await screen.findByText("表情包库详情：library-7")).toBeTruthy();
+});
 it("人设页在切换上下文的空快照期间保留DOM、局部输入和滚动位置", async()=>{
  const snapshot:WorkspaceContext={context:{personaId:"1",sessionId:"1",contextRevision:1},sessions:[],userProfiles:[],persona:{id:"1",name:"小猫",prompt:"",initialPrompt:"",selfEvolveEnabled:false,lastEvolvedAt:null,color:"#123456",chatBgFile:null,chatBgOpacity:85,chatBgBlur:0,isActive:true,isBuiltin:true,expressions:null}};
  let view:ReturnType<typeof render>;

@@ -48,6 +48,7 @@ export default function ProviderRolesPanel({providers}:{providers:Provider[]}) {
       return <article className="ym-object-card" key={purpose}><div className="ym-page-heading"><h3>{names[purpose]}</h3><button className="ym-button" disabled={!config||busy||editing!==null} onClick={()=>edit(purpose)}>配置{names[purpose]}</button></div>
         <p>{provider?.name??(purpose==="memory"||purpose==="vision"?"跟随聊天":"尚未配置")}</p><p className="ym-page-note">{role?.model??provider?.model??""}</p>
         {purpose==="image"&&<p className="ym-page-note">{role?.enabled?"已开启":"已关闭"} · 饰品失败保留图标、Emoji、颜文字或符号组合；创作失败保留旧图</p>}
+        {purpose==="image"&&<p className="ym-page-note">推荐使用支持参考图片输入的生图模型。</p>}
         {purpose==="image"&&<details><summary>支持的生图服务与地址</summary><p className="ym-page-note">官方地址自动匹配接口；模型要支持图片输出，使用参考形象时还要支持图片输入。中转服务仍需兼容图片编辑接口，不会仅凭模型名猜测协议。</p><ul className="ym-page-note">
           <li>Gemini：generativelanguage.googleapis.com/v1beta（Google原生生图）</li>
           <li>百炼：dashscope.aliyuncs.com，或你的地域／业务空间官方地址（Qwen同步图像模型）</li>

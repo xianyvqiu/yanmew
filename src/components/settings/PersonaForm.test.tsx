@@ -5,6 +5,18 @@ import PersonaForm from "./PersonaForm";
 
 afterEach(() => { cleanup(); });
 
+it("详情自动刷新只更新未改字段，保留草稿且重置后使用最新保存值",()=>{
+  const props={persona,busy:false,error:null,onSave:vi.fn(async()=>{}),onCancel:vi.fn(),inline:true};
+  const view=render(<PersonaForm {...props}/>);
+  fireEvent.change(screen.getByLabelText("当前设定"),{target:{value:"尚未保存的内容"}});
+  view.rerender(<PersonaForm {...props} persona={{...persona,name:"外部更新名称",prompt:"外部更新正文"}}/>);
+  expect((screen.getByLabelText("人设名称") as HTMLInputElement).value).toBe("外部更新名称");
+  expect((screen.getByLabelText("当前设定") as HTMLTextAreaElement).value).toBe("尚未保存的内容");
+  fireEvent.click(screen.getByRole("button",{name:"重置修改"}));
+  expect((screen.getByLabelText("当前设定") as HTMLTextAreaElement).value).toBe("外部更新正文");
+  expect(props.onSave).not.toHaveBeenCalled();
+});
+
 const persona: Persona = {
   id: "persona-1",
   name: "小喵",

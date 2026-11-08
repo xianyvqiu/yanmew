@@ -287,6 +287,12 @@ fn http_stream_eof_errors_and_status_are_not_success() {
                 .await
                 .unwrap_err();
             assert_eq!(error.code, "PROVIDER_UNAVAILABLE");
+            assert!(error.message.contains(&format!("HTTP {status}")));
+            assert!(error.message.contains(match status {
+                401 => "认证失败",
+                429 => "请求受到限制",
+                _ => "服务端暂时异常",
+            }));
             assert!(!error.message.contains("private"));
             assert_eq!(server.requests.lock().unwrap().len(), 1);
             server.finish();

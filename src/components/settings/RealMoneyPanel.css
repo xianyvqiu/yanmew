@@ -1,5 +1,5 @@
 .real-money { container-type:inline-size; min-height:100%; display:flex; flex-direction:column; }
-.real-money>.ym-motion-region { flex:1; }
+.real-money>.ym-motion-region { flex:1;padding-bottom:24px; }
 .real-home { display:grid;gap:20px;min-width:0;padding-bottom:12px; }
 .real-home-hero { display:grid;gap:14px;padding:28px;border:1px solid var(--ym-border-strong);border-radius:22px;background:linear-gradient(125deg,var(--ym-accent-soft),var(--ym-surface)); }
 .real-home-hero>strong { font-size:clamp(32px,5vw,52px);font-variant-numeric:tabular-nums;overflow-wrap:anywhere; }
@@ -16,13 +16,13 @@
 .real-recent button:hover { color:var(--ym-accent-strong); }.real-recent button:active { transform:translateY(1px); }.real-recent button:focus-visible { outline:2px solid var(--ym-focus);outline-offset:2px; }.real-recent button:disabled { cursor:default;opacity:.5; }
 .real-home-dock { position:sticky;bottom:0;z-index:5;align-self:center;margin-top:auto;flex-shrink:0;display:flex;justify-content:center;gap:4px;padding:8px;border:1px solid var(--ym-border-strong);border-radius:24px;background:var(--ym-surface-raised);box-shadow:var(--ym-shadow-md);max-width:100%; }
 @supports (backdrop-filter:blur(16px)) { .real-home-dock { background:color-mix(in srgb,var(--ym-surface-raised) 78%,transparent);backdrop-filter:blur(16px); } }
-.real-dock-item { position:relative;min-width:0; }.real-dock-item>.ym-button { display:grid;justify-items:center;gap:5px;border:0;background:transparent;padding:9px clamp(5px,1.8cqi,13px);border-radius:16px;font-size:12px; }.real-dock-item svg { width:22px;height:22px; }
+.real-dock-item { position:relative;min-width:0; }.ym-window-shell .real-dock-item>.ym-button { display:grid;justify-items:center;gap:5px;min-width:32px;border:0;background:transparent;padding:9px clamp(4px,1.4cqi,13px);border-radius:16px;font-size:12px; }.real-dock-item svg { width:22px;height:22px; }
 .real-dock-item>.ym-button:hover { background:var(--ym-accent-subtle);transform:translateY(-2px); }.real-dock-item>.ym-button:active { transform:scale(.98); }
 .real-dock-item i { position:absolute;top:7px;right:10px;width:7px;height:7px;border-radius:50%;background:var(--ym-accent-strong); }
 .real-dock-tooltip { position:absolute;bottom:calc(100% + 14px);left:50%;width:max-content;max-width:190px;transform:translate(-50%,5px);opacity:0;pointer-events:none;padding:9px 12px;border:1px solid var(--ym-border-strong);border-radius:12px;background:var(--ym-surface-raised);box-shadow:var(--ym-shadow-sm);font-size:12px;line-height:1.6;text-align:center;transition:opacity 180ms var(--ym-ease-standard),transform 180ms var(--ym-ease-standard); }
 .real-dock-item:is(:hover,:focus-within)>.real-dock-tooltip { opacity:1;transform:translate(-50%,0); }
 .real-dock-item:first-child>.real-dock-tooltip { left:0;transform:translateY(5px); }.real-dock-item:last-child>.real-dock-tooltip { left:auto;right:0;transform:translateY(5px); }.real-dock-item:is(:first-child,:last-child):is(:hover,:focus-within)>.real-dock-tooltip { transform:translateY(0); }
-@container (max-width:450px) { .real-dock-item>.ym-button { padding:9px 4px; }.real-home-hero { padding:20px; }.real-recent li>button { align-items:start;flex-wrap:wrap; } }
+@container (max-width:450px) { .ym-window-shell .real-dock-item>.ym-button { padding:9px 4px; }.real-home-hero { padding:20px; }.real-recent li>button { align-items:start;flex-wrap:wrap; } }
 @media (prefers-reduced-motion:reduce) { .real-dock-tooltip { transition:none; }.real-dock-item>.ym-button:is(:hover,:active) { transform:none; } }
 .real-money [aria-pressed="true"] { background:var(--ym-accent-soft); border-color:var(--ym-focus); color:var(--ym-accent-strong); }
 .real-badge { display:inline-grid;place-items:center;min-width:18px;padding:0 4px;border-radius:9px;background:var(--ym-accent-subtle);font-size:11px; }
@@ -87,4 +87,4 @@
 @container (max-width:600px) { .real-filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .real-hero { grid-template-columns:minmax(0,1fr);gap:20px; } }
 @container (max-width:350px) { .real-filter-grid { grid-template-columns:minmax(0,1fr); } .real-money-calendar .ym-calendar-day { padding-inline:1px; } }
 
-.real-dock-item>.ym-button[aria-current="page"] { background:var(--ym-accent-soft);color:var(--ym-accent-strong); }
+.ym-window-shell .real-dock-item>.ym-button[aria-current="page"] { background:var(--ym-accent-soft);color:var(--ym-accent-strong); }

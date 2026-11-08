@@ -102,6 +102,7 @@ export default function PetCreationPanel({ personaId, personaName, onStartSetup 
     const [busy, setBusy] = useState(false);
     const [generating, setGenerating] = useState(false);
     const [newExpression, setNewExpression] = useState<PetArtworkInput>(emptyExpression);
+    const [creating, setCreating] = useState(false);
     const [selected, setSelected] = useState<string[]>([]);
     const [statuses, setStatuses] = useState<Record<string, ArtworkStatus>>({});
     const alive = useRef(true);
@@ -187,13 +188,14 @@ export default function PetCreationPanel({ personaId, personaName, onStartSetup 
  {onStartSetup&&<button className="ym-button" disabled={busy} onClick={onStartSetup}>上传初始图并生成基础表情</button>}
  {!base && <button className="ym-button" disabled={busy || !library} onClick={() => { void run(() => petCreationApi.save(personaId, null, null, { kind: "base", name: "初始形象", prompt: "", description: "日常默认形象", category: "normal", enabled: true })); }}>添加初始形象</button>}</section>
  {base && editor(base)}
- <section className="ym-page-card ym-art-create"><h3>新建表情要求</h3><p className="ym-page-note">每张表情分别填写。生成时会自动参考当前人设和已接受的默认形象，先预览再决定是否使用。</p>
+ <div><button type="button" className="ym-button" disabled={busy} aria-expanded={creating} onClick={() => setCreating(value => !value)}>{creating ? "收起创建表单" : "创建新表情"}</button></div>
+ {creating && <section className="ym-page-card ym-art-create"><h3>新建表情要求</h3><p className="ym-page-note">每张表情分别填写。生成时会自动参考当前人设和已接受的默认形象，先预览再决定是否使用。</p>
  <form onSubmit={e => { e.preventDefault(); if (!newExpression.name.trim() || !newExpression.prompt.trim()) return; void run(async () => {
      const saved = await petCreationApi.save(personaId, null, null, newExpression);
-     if (alive.current) { setSelected(old => [...old.filter(id => id !== saved.id), saved.id]); setNewExpression(emptyExpression()); browser.setSearch(""); browser.setOrder("newest"); }
+     if (alive.current) { setSelected(old => [...old.filter(id => id !== saved.id), saved.id]); setNewExpression(emptyExpression()); setCreating(false); browser.setSearch(""); browser.setOrder("newest"); }
  }, false, "new"); }}>
  <ArtworkFields draft={newExpression} onChange={setNewExpression} disabled={busy}/><ArtworkProgress status={statuses.new}/>
- <div className="ym-inline-form"><button type="submit" className="ym-button" disabled={busy || !library || !newExpression.name.trim() || !newExpression.prompt.trim()}>添加表情</button></div></form></section>
+ <div className="ym-inline-form"><button type="submit" className="ym-button" disabled={busy || !library || !newExpression.name.trim() || !newExpression.prompt.trim()}>添加表情</button></div></form></section>}
  <div className="ym-art-library-heading"><h3>图片表情库</h3><div className="ym-inline-form"><button className="ym-button" disabled={busy || !base?.imageFile || !expressions.some(a => selected.includes(a.id))} onClick={() => { void batch(); }}>生成选中表情 · {selected.length} 项</button>{busy && generating && <button className="ym-button" onClick={stopGeneration}>停止全部生成</button>}</div></div>
  <CardBrowserControls browser={browser} label="图片表情" disabled={busy}/><div className="ym-object-grid ym-art-library-grid">{browser.items.map(editor)}</div>
       <CardBrowserPagination browser={browser} label="图片表情" disabled={busy}/></div>;

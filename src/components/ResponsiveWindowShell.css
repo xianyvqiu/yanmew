@@ -34,7 +34,7 @@
 
 .ym-window-shell__title {
   margin: 0;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -140,7 +140,7 @@
 
   .ym-window-shell__brand { font-size: 18px; }
 
-  .ym-window-shell__title { font-size: 17px; }
+  .ym-window-shell__title { font-size: 22px; }
 
   .ym-window-shell__context {
     grid-column: 1 / -1;

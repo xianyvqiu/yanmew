@@ -1,5 +1,11 @@
 /** 原文区先隔离再交给 Markdown；代码示例中的标签不作为协议。 */
-export function plainDisplay(content: string) {
+export function plainDisplay(content: string, expression?: string | null, streaming = false) {
+  // 图片模式可能一轮多次换图；只隐藏独立首行标记，不要求与最终动作编号相同。
+  if (expression && /^@pet-image:\d+$/.test(expression)) {
+    const text = content.trimStart(), firstLine = text.split(/\r?\n/, 1)[0];
+    if (/^@pet-image:\d+$/.test(firstLine.trimEnd())) content = text.slice(firstLine.length).replace(/^\r?\n(?:[ \t]*\r?\n)*/, "");
+    else if (streaming && text && expression.startsWith(text)) content = "";
+  }
   let prefix = "YANMEWPLAINTEXT";
   while (content.includes(prefix)) prefix += "X";
   const values = new Map<string, string>();

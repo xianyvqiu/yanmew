@@ -39,12 +39,108 @@ fn network() -> AppError {
         "无法连接模型服务，请检查网络、接口地址和提供商状态",
     )
 }
-fn transport(error: reqwest::Error) -> AppError {
+pub(crate) fn transport(error: reqwest::Error) -> AppError {
     if error.is_timeout() {
-        AppError::new("AI_TIMEOUT", "连接模型服务超时，请检查网络或提供商状态")
-    } else {
-        network()
+        return AppError::new("AI_TIMEOUT", "连接模型服务超时，请检查网络、代理及提供商状态");
     }
+    if error.is_builder() {
+        return AppError::new("PROVIDER_UNAVAILABLE", "请求配置无效，请检查接口地址格式，以及 API Key 是否含换行或非法字符");
+    }
+    // 仅在内存中检查错误链；不把可能携带地址、代理凭据的原文传入 DTO 或日志。
+    let message = transport_message(&error);
+    AppError::new("PROVIDER_UNAVAILABLE", message)
+}
+fn transport_message(error: &(dyn std::error::Error + 'static)) -> &'static str {
+    let mut source = Some(error);
+    let mut dns = false;
+    let mut tls = false;
+    let mut proxy = false;
+    let mut refused = false;
+    while let Some(cause) = source {
+        if let Some(io) = cause.downcast_ref::<std::io::Error>() {
+            dns |= matches!(io.raw_os_error(), Some(11001 | 11002 | 11003 | 11004));
+            refused |= io.kind() == std::io::ErrorKind::ConnectionRefused;
+        }
+        let text = cause.to_string().to_ascii_lowercase();
+        dns |= ["dns error", "failed to lookup address", "no such host is known", "name or service not known"].iter().any(|mark| text.contains(mark));
+        tls |= ["certificate", "cert_e_", "sec_e_untrusted_root", "sec_e_wrong_principal", "tls handshake", "ssl handshake"].iter().any(|mark| text.contains(mark));
+        proxy |= ["proxy authentication", "proxy connect", "tunnel error", "unsuccessful tunnel"].iter().any(|mark| text.contains(mark));
+        source = cause.source();
+    }
+    if proxy { "代理连接失败，请检查代理是否运行、认证是否有效，以及该地址的代理规则" }
+    else if tls { "TLS/证书校验或握手失败，请检查系统时间、证书及代理的 HTTPS 设置" }
+    else if dns { "域名解析失败，请检查接口域名、DNS 和代理设置" }
+    else if refused { "连接被拒绝，请检查接口端口、本地代理是否运行及防火墙设置" }
+    else { "无法建立模型服务连接，请检查网络、代理、防火墙及接口地址" }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct Wrapped(std::io::Error);
+    impl std::fmt::Display for Wrapped {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "request failed")
+        }
+    }
+    impl std::error::Error for Wrapped {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> { Some(&self.0) }
+    }
+
+    #[test]
+    fn nested_network_causes_are_classified_without_exposing_private_details() {
+        for (cause, expected) in [
+            ("dns error: private-api-key", "域名解析失败"),
+            ("certificate verify failed: private-api-key", "TLS/证书"),
+            ("unsuccessful tunnel: proxy-user:private-api-key", "代理连接失败"),
+            ("unrecognized transport: private-api-key", "无法建立模型服务连接"),
+        ] {
+            let error = Wrapped(std::io::Error::other(cause));
+            let message = transport_message(&error);
+            assert!(message.contains(expected), "{message}");
+            assert!(!message.contains("private-api-key"));
+            assert!(!message.contains("proxy-user"));
+        }
+        assert!(transport_message(&Wrapped(std::io::Error::from_raw_os_error(11001))).contains("域名解析失败"));
+    }
+
+    #[test]
+    fn real_request_errors_keep_credentials_out_of_feedback() {
+        tauri::async_runtime::block_on(async {
+            let client = reqwest::Client::builder().no_proxy().build().unwrap();
+            let malformed = client.get("http://127.0.0.1/")
+                .bearer_auth("private-api-key\r\ninvalid")
+                .send().await.unwrap_err();
+            let feedback = transport(malformed);
+            assert!(feedback.message.contains("请求配置无效"));
+            assert!(!feedback.message.contains("private-api-key"));
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            drop(listener);
+            let refused = client.get(format!("http://{address}/?secret=private-api-key"))
+                .timeout(Duration::from_secs(3)).send().await.unwrap_err();
+            let feedback = transport(refused);
+            assert!(feedback.message.contains("连接被拒绝"), "{}", feedback.message);
+            assert!(!feedback.message.contains("private-api-key"));
+            assert!(!feedback.message.contains(&address.to_string()));
+        });
+    }
+}
+pub(crate) fn http_failure_message(status: u16) -> String {
+    let advice = match status {
+        401 => "认证失败，请检查 API Key 是否有效且属于当前服务商",
+        402 => "服务商拒绝计费请求，请检查账户余额及额度",
+        403 => "访问被拒绝，请检查模型权限、账户或地区限制",
+        404 => "接口或模型不存在，请检查 Base URL 路径和模型名称",
+        407 => "代理要求认证，请检查代理账号和连接设置",
+        429 => "请求受到限制，请检查额度、并发限制或稍后重试",
+        500..=599 => "服务端暂时异常，请稍后重试或查看提供商状态",
+        300..=399 => "接口发生重定向，程序未自动跟随，请填写服务商给出的最终 API 地址",
+        _ => "请求未成功，请检查接口、模型及服务商配置",
+    };
+    format!("提供商返回 HTTP {status}：{advice}")
 }
 impl AiClient {
     /// 搜索 API 复用已有连接池；公开网页读取另行校验并固定 DNS 地址。
@@ -111,14 +207,11 @@ impl AiClient {
                 if matches!(code, Some("context_length_exceeded" | "context_window_exceeded" | "input_too_long")) {
                     return Err(AppError::new("CONTEXT_TOO_LARGE", "提供商明确返回上下文容量不足，请更换模型或减少本次内容"));
                 }
-                return Err(AppError::new("PROVIDER_UNAVAILABLE", format!("提供商返回 HTTP {status}，请检查密钥、模型权限或稍后重试")));
+                return Err(AppError::new("PROVIDER_UNAVAILABLE", http_failure_message(status)));
             }
             return Err(AppError::new(
                 "PROVIDER_UNAVAILABLE",
-                format!(
-                    "提供商返回 HTTP {}，请检查密钥、模型权限或稍后重试",
-                    response.status().as_u16()
-                ),
+                http_failure_message(response.status().as_u16()),
             ));
         }
         Ok(response)

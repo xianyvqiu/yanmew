@@ -4,6 +4,14 @@ import ChatMessageText from "./ChatMessageText";
 const open = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("../api", () => ({ webSearchApi: { open }, errorMessage: (e: { message: string }) => e.message }));
 afterEach(() => { cleanup(); open.mockClear(); });
+it("旧AI回复隐藏匹配动作前缀，用户消息和代码原样保留",()=>{
+  const view=render(<ChatMessageText content={"@pet-image:94\n\n你好"} expression="@pet-image:94"/>);
+  expect(view.container.textContent).toBe("你好");
+  view.rerender(<ChatMessageText content={"@pet-image:94\n\n你好"} expression="@pet-image:94" markdown={false}/>);
+  expect(view.container.textContent).toContain("@pet-image:94");
+  view.rerender(<ChatMessageText content="`@pet-image:94`" expression="@pet-image:94"/>);
+  expect(view.container.querySelector("code")?.textContent).toBe("@pet-image:94");
+});
 it("来源链接通过宿主打开，颜文字和 HTML 作为普通文字保留", async () => {
   render(<ChatMessageText content={"(・ω・) <script>文字</script> [官方来源](https://example.com/news)"} />);
   expect(screen.getByText(/\(・ω・\)/).textContent).toContain("<script>文字</script>");

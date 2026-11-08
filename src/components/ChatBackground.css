@@ -14,25 +14,25 @@
   .ym-chat-page > .chat-composer,
   .ym-chat-page > .ym-page-card:not(.ym-chat-history)
 ) {
-  background: color-mix(in srgb, var(--ym-surface) 28%, transparent);
+  background: color-mix(in srgb, var(--ym-surface) 58%, transparent);
   border-color: var(--ym-border-strong);
   backdrop-filter: blur(12px);
 }
 .ym-chat-background-host:has(> .ym-background-image) .chat-composer__input {
-  background: color-mix(in srgb, var(--ym-surface-muted) 16%, transparent);
+  background: color-mix(in srgb, var(--ym-surface-muted) 65%, transparent);
 }
 .ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar > .ym-chat-sidebar__action {
-  background: color-mix(in srgb, var(--ym-accent-subtle) 24%, transparent);
+  background: color-mix(in srgb, var(--ym-accent-subtle) 65%, transparent);
 }
 .ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar__session[aria-current="page"] {
-  background: color-mix(in srgb, var(--ym-accent-soft) 38%, transparent);
+  background: color-mix(in srgb, var(--ym-accent-soft) 80%, transparent);
 }
 .ym-chat-background-host:has(> .ym-background-image) .ym-chat-sidebar :is(
   .ym-chat-sidebar__action,
   .ym-chat-sidebar__toggle,
   .ym-chat-sidebar__session
 ):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ym-accent-soft) 28%, transparent);
+  background: color-mix(in srgb, var(--ym-accent-soft) 68%, transparent);
 }
 .ym-background-settings { min-width: 0; padding: 12px 0; container-type: inline-size; }
 .ym-background-settings > .ym-button { white-space: normal; }

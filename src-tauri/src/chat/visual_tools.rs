@@ -12,7 +12,7 @@ pub fn definitions(image_mode: bool) -> Vec<Value> {
         values[1]["function"]["parameters"]["properties"]["useReference"] = json!({"type":"boolean","description":"是否实际使用当前人设已接受的默认形象作参考；画自己或要求外观一致时优先true，其他画面默认false。无需先调用看图工具。"});
         values.push(definition("view_pet_base_image","查看当前人设已接受的默认形象，了解真实外观。",json!({}),vec![]));
         values.push(definition("list_pet_expressions","分页查询当前人设全部已启用且已有正式图片的表情，包含自定义和所有动作类别，返回ID、名称和说明。",json!({"query":{"type":"string","description":"名称或说明中的连续关键词，例如开心；不是多个词组成的布尔查询"},"beforeId":{"type":["string","null"]}}),vec![]));
-        values.push(definition("set_pet_expression","切换本轮桌宠图片表情。",json!({"artworkId":{"type":"string"}}),vec!["artworkId"]));
+        values.push(definition("set_pet_expression","切换本轮桌宠图片表情。成功后自然回答，不把图片ID、内部动作标识或工具结果写进聊天正文。",json!({"artworkId":{"type":"string"}}),vec!["artworkId"]));
     } else {
         values.push(definition("set_pet_expression","结合人设和当前语境创作并显示临时颜文字，不抽取或改写固定表情库。",json!({"expression":{"type":"string","description":"单行临时颜文字，最多14半角显示宽度，非ASCII按2计"}}),vec!["expression"]));
     }

@@ -10,7 +10,7 @@ export function PetChatBubble({ chat, onDetails }: { chat: PetChatState; onDetai
   if (!chat.reply) return null;
   return <section className="pet-chat-bubble" data-pet-interactive aria-label="桌宠聊天回复">
     <div ref={scroll.viewport} className="pet-chat-bubble__body" aria-live="polite" aria-busy={chat.reply.streaming}><div ref={scroll.content}>
-      <ChatMessageText content={chat.reply.text} />
+      <ChatMessageText content={chat.reply.text} expression={chat.reply.expression} streaming={chat.reply.streaming} />
       {chat.reply.images?.map(image=><ChatImage key={image.id} image={image} context={chat.context}/>)}
       {chat.reply.error && <p className="pet-chat-message-error" role="alert">{chat.reply.error}</p>}
       {chat.reply.notice && !chat.reply.streaming && <p className="pet-chat-note">{chat.reply.notice}</p>}

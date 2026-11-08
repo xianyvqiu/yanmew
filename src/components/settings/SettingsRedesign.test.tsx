@@ -62,7 +62,7 @@ it("切换聊天连接恢复各自保存的模型和预算",async()=>{
 });
 it("人设列表仅显示摘要，进入详情后初始设定可以独立修改",async()=>{
   render(<PersonasPanel/>);const card=await screen.findByRole("button",{name:"电子小猫"});expect(screen.queryByRole("button",{name:"编辑 电子小猫"})).toBeNull();
-  expect(screen.getByRole("button",{name:"使用中"}).getAttribute("disabled")).not.toBeNull();fireEvent.click(card);fireEvent.click(screen.getByRole("button",{name:"编辑 电子小猫"}));
+  expect(screen.getByRole("button",{name:"使用中"}).getAttribute("disabled")).not.toBeNull();fireEvent.click(card);
   fireEvent.change(screen.getByLabelText("初始设定"),{target:{value:"新的初始"}});expect((screen.getByLabelText("当前设定") as HTMLTextAreaElement).value).toBe("当前设定正文");
   fireEvent.click(screen.getByRole("button",{name:"保存人设"}));await waitFor(()=>expect(api.updatePersona).toHaveBeenCalledWith("1",expect.objectContaining({initialPrompt:"新的初始",prompt:"当前设定正文",saveAsInitial:false})));
 });

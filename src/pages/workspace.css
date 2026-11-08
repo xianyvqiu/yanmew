@@ -18,16 +18,19 @@
 .ym-page-error { color: var(--ym-danger); background: var(--ym-danger-soft); padding: 12px; border-radius: var(--ym-radius-md); overflow-wrap: anywhere; }
 .ym-page-error .ym-button { margin-left: 8px; }
 .ym-session-delete-entry { margin: 10px 0 0 8px; }
-.ym-session-dialog { box-sizing: border-box; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: hidden; padding: 20px; border: 1px solid var(--ym-border); border-radius: var(--ym-radius-lg); background: var(--ym-surface-raised); color: var(--ym-text); font: inherit; box-shadow: var(--ym-shadow-md); }
+.ym-session-dialog { box-sizing: border-box; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: hidden; padding: 24px; border: 1px solid var(--ym-border-strong); border-radius: var(--ym-radius-xl); background: var(--ym-surface-raised); color: var(--ym-text); font: inherit; box-shadow: var(--ym-shadow-md); }
 .ym-session-dialog[open] { display: flex; flex-direction: column; gap: 16px; }
 .ym-session-dialog > :is(h2, .ym-page-heading, .ym-session-dialog-actions) { flex-shrink: 0; }
 .ym-session-dialog::backdrop { background: var(--ym-scrim); }
+@supports (backdrop-filter: blur(12px)) {
+  .ym-session-dialog { background:var(--ym-glass-surface);backdrop-filter:blur(12px); }
+}
 .ym-session-dialog h2 { margin: 0; font-size: var(--ym-font-heading); }
 .ym-session-dialog-body { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; overflow-wrap: anywhere; line-height: 1.65; }
 .ym-session-dialog-body p { margin: 0 0 12px; }
 .ym-session-dialog-body p:last-child { margin-bottom: 0; }
 .ym-session-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
-.ym-session-dialog-actions .ym-button[data-variant="danger"] { background: var(--ym-danger); color: var(--ym-surface); border-color: var(--ym-danger); }
+.ym-session-dialog-actions .ym-button[data-variant="danger"] { background: var(--ym-danger-soft); color: var(--ym-danger); border-color: var(--ym-danger); }
 .ym-session-dialog-actions .ym-button[data-variant="danger"]:disabled { opacity: .65; }
 .ym-session-dialog-form { display:flex; flex:1 1 auto; flex-direction:column; gap:16px; min-width:0; min-height:0; }
 .ym-message-list { min-width: 0; padding: 0; margin: 0; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -72,7 +75,7 @@
 .ym-chat-history { scroll-behavior:auto; overflow-anchor:none; }
 .ym-chat-history-content { min-width:0; display:flow-root; }
 .ym-settings-scope { display:flex; align-items:flex-start; gap:10px 16px; flex-wrap:wrap; padding:12px 16px; border-left:3px solid var(--ym-accent); border-radius:10px; background:color-mix(in srgb,var(--ym-accent) 7%,transparent); }
-.ym-settings-scope strong { flex:0 0 auto; color:var(--ym-accent); font-size:var(--ym-font-caption); }
+.ym-settings-scope strong { flex:0 0 auto; color:var(--ym-accent-strong); font-size:var(--ym-font-caption); }
 .ym-settings-scope p { flex:1 1 250px; margin:0; color:var(--ym-text-secondary); font-size:var(--ym-font-caption); line-height:1.65; overflow-wrap:anywhere; }
 .ym-chat-history .ym-chat-history-title { font-size:var(--ym-font-caption); color:var(--ym-text-muted); font-weight:500; margin-bottom:12px; }
 .ym-chat-page > .chat-composer { flex:0 0 auto; position:static; padding:10px 12px; }
@@ -90,9 +93,10 @@
 .ym-profile-picker-list { min-height:0; overflow-y:auto; display:grid; gap:8px; }
 .ym-profile-picker-card { display:flex; gap:10px; align-items:center; min-width:0; padding:10px; border:1px solid var(--ym-border); border-radius:var(--ym-radius-md); background:var(--ym-surface-muted); }
 .ym-profile-picker-card[data-selected="true"] { border-color:var(--ym-accent); background:var(--ym-accent-subtle); }
-.ym-profile-picker-select { min-width:0; flex:1; padding:2px; display:grid; gap:4px; text-align:left; border:0; background:transparent; color:var(--ym-text); font:inherit; cursor:pointer; }
-.ym-profile-picker-select:disabled { cursor:default; }
-.ym-profile-picker-select span { color:var(--ym-text-secondary); font-size:var(--ym-font-caption); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
-.ym-profile-picker-select strong { overflow-wrap:anywhere; }
+.ym-profile-picker-summary { min-width:0; flex:1; padding:2px; display:grid; gap:4px; text-align:left; }
+.ym-profile-picker-summary span { color:var(--ym-text-secondary); font-size:var(--ym-font-caption); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+.ym-profile-picker-summary strong { overflow-wrap:anywhere; }
+.ym-profile-picker-actions { display:flex; flex-shrink:0; gap:8px; }
+@media(max-width:480px) { .ym-profile-picker-actions { flex-direction:column; } }
 
 .ym-value-change{display:inline-block;margin-left:10px;color:var(--ym-accent);font-size:.8em;pointer-events:none;animation:ym-value-float 1.8s ease-out both}@keyframes ym-value-float{0%{opacity:0;transform:translateY(8px)}20%{opacity:1}100%{opacity:0;transform:translateY(-26px)}}
