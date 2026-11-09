@@ -10,7 +10,6 @@
       "reference": "resources/personas/gpt/base.png",
       "output": "resources/personas/gpt/emotion_surprised.png",
       "prompt": "Create ONE production transparent PNG expression variant of the character in the reference. The reference is the immutable identity, outfit, rendering style, full-body chibi head-to-body proportions, colors and overall screen scale. Maintain a standing front-facing full-body sprite, head large as in the reference, complete horns/ears/hair/tail/feet visible. Character occupies about 92% of square canvas height. Transparent background with genuine alpha, no backdrop, ground, glow, cast shadow, text, symbols, border or extra characters. Expression is clearly SURPRISED by a sudden friendly click, not fear, not happy smiling, not crying. Preserve detailed clean anime linework.\nWhite dragon girl's confident composure briefly cracks: lavender eyes wide, eyebrows raised, small parted mouth, one hand instinctively touches her chest and the other lifts palm outward; tail tip curls upward and small wings flare slightly. Proud but caught off guard, not cowering.",
-      "generatedSource": "C:/Users/xiany/.codex/generated_images/01a090c8-4a6a-7572-a02e-ffd10899c0d8/exec-bb4b3f93-3a17-4842-80a5-9bc4c76de2ca.png",
       "width": 1254,
       "height": 1254,
       "sha256": "72a84e2f0d70b8ce04ab1324d0c1430ca81f4b34aeba6f390626cc5d0d36784c"
@@ -22,7 +21,6 @@
       "reference": "resources/personas/claude/base.png",
       "output": "resources/personas/claude/emotion_surprised.png",
       "prompt": "Create ONE production transparent PNG expression variant of the character in the reference. The reference is the immutable identity, outfit, rendering style, full-body chibi head-to-body proportions, colors and overall screen scale. Maintain a standing front-facing full-body sprite, head large as in the reference, complete horns/ears/hair/tail/feet visible. Character occupies about 92% of square canvas height. Transparent background with genuine alpha, no backdrop, ground, glow, cast shadow, text, symbols, border or extra characters. Expression is clearly SURPRISED by a sudden friendly click, not fear, not happy smiling, not crying. Preserve detailed clean anime linework.\nOrange-haired scholar lady's reserved intellectual surprise: amber eyes widen, lips form a small surprised o, one hand covers her slightly open mouth while the other steadies her closed book against her waist. Upright composed posture, slightly raised shoulders, restrained and elegant.",
-      "generatedSource": "C:/Users/xiany/.codex/generated_images/01a090c8-4a6a-7572-a02e-ffd10899c0d8/exec-34d1dae4-2ab7-4133-a2c0-def3e3739131.png",
       "width": 1254,
       "height": 1254,
       "sha256": "f1826c9c8637c565e5e7ed7c4c0e9db266ed0950c9375e9f5de9e2becd1a40af"
@@ -34,7 +32,6 @@
       "reference": "resources/personas/gemini/base.png",
       "output": "resources/personas/gemini/emotion_surprised.png",
       "prompt": "Create ONE production transparent PNG expression variant of the character in the reference. The reference is the immutable identity, outfit, rendering style, full-body chibi head-to-body proportions, colors and overall screen scale. Maintain a standing front-facing full-body sprite, head large as in the reference, complete horns/ears/hair/tail/feet visible. Character occupies about 92% of square canvas height. Transparent background with genuine alpha, no backdrop, ground, glow, cast shadow, text, symbols, border or extra characters. Expression is clearly SURPRISED by a sudden friendly click, not fear, not happy smiling, not crying. Preserve detailed clean anime linework.\nPurple-haired cat girl's bouncy startled curiosity: heterochromatic red and gold eyes wide, little open o mouth, ears perk straight up, both hands lifted open near shoulder level, tail rises into a playful question-like curve without drawing any symbol. Feet remain standing; energetic reaction, not fear.",
-      "generatedSource": "C:/Users/xiany/.codex/generated_images/01a090c8-4a6a-7572-a02e-ffd10899c0d8/exec-727b66cc-a73d-45e4-bda3-ddb2d0942910.png",
       "width": 1254,
       "height": 1254,
       "sha256": "761dd6be77309c8e10c006e211a4b53bedb6afa392abec0965cd0ac50f401bed"
@@ -46,7 +43,6 @@
       "reference": "resources/personas/deepseek/base.png",
       "output": "resources/personas/deepseek/emotion_surprised.png",
       "prompt": "Create ONE production transparent PNG expression variant of the character in the reference. The reference is the immutable identity, outfit, rendering style, full-body chibi head-to-body proportions, colors and overall screen scale. Maintain a standing front-facing full-body sprite, head large as in the reference, complete horns/ears/hair/tail/feet visible. Character occupies about 92% of square canvas height. Transparent background with genuine alpha, no backdrop, ground, glow, cast shadow, text, symbols, border or extra characters. Expression is clearly SURPRISED by a sudden friendly click, not fear, not happy smiling, not crying. Preserve detailed clean anime linework.\nBlue whale-maid girl caught daydreaming: blue eyes go round and blank with surprise, mouth tiny open o, one hand freezes with pen raised while the other holds her notebook tilted against her torso, whale fin ears lift and thick tail pauses midcurl. A gentle dazed double-take, distinct from the others.",
-      "generatedSource": "C:/Users/xiany/.codex/generated_images/01a090c8-4a6a-7572-a02e-ffd10899c0d8/exec-19af48ad-fbb1-4719-8ebb-a5f4ce24be3a.png",
       "width": 1254,
       "height": 1254,
       "sha256": "4c355640ffef7dc3c874feb4ef5eb0ed943966fb1e08c4d43eb312c59ee826ca"

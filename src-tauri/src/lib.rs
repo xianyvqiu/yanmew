@@ -450,6 +450,7 @@ pub fn run() {
         .expect("启动颜喵失败")
         .run(|app, event| {
             if let tauri::RunEvent::WindowEvent { label, event, .. } = &event {
+                onboarding::window_event(app,label,event);
                 if label == "main" {
                     if let Some(window) = app.get_webview_window("main") {
                         if let Err(error) = app.state::<pet_position::WindowPosition>()

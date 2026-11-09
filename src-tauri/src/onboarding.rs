@@ -27,7 +27,7 @@ pub async fn set_onboarding_state(window:WebviewWindow,app:AppHandle,state:Optio
  if let Some(s)=&state {if !matches!(s.target.as_str(),"settings"|"main"|"chat")||s.step>=s.total||s.total>80||s.title.len()>500||s.text.len()>4000||s.error.len()>4000{return Err(AppError::validation("guide","教程步骤无效"))}}
  let previous=app.state::<Guide>().state.lock().map_err(|_|AppError::storage())?.clone();
  if let Some(s)=&state {if previous.as_ref().map(|p|p.target.as_str())!=Some(s.target.as_str()) {
-   match s.target.as_str(){"chat"=>crate::desktop_windows::open(app.clone(),crate::desktop_windows::Page::Chat).await?,"settings"=>{window.show().map_err(failure)?;window.unminimize().map_err(failure)?;window.set_focus().map_err(failure)?;},"main"=>{if let Some(pet)=app.get_webview_window("main"){pet.show().map_err(failure)?;pet.unminimize().map_err(failure)?;}},_=>()}
+   match s.target.as_str(){"chat"=>crate::desktop_windows::open(app.clone(),crate::desktop_windows::Page::Chat).await?,"settings"=>{window.show().map_err(failure)?;window.unminimize().map_err(failure)?;window.set_focus().map_err(failure)?;},"main"=>{if let Some(pet)=app.get_webview_window("main"){pet.show().map_err(failure)?;pet.unminimize().map_err(failure)?;pet.set_focus().map_err(failure)?;}},_=>()}
  }}
  *app.state::<Guide>().state.lock().map_err(|_|AppError::storage())?=state.clone();
  // 同一窗口内保留提示层，待新位置就绪后原位更新，避免每一步先消失再出现。
@@ -79,7 +79,8 @@ pub async fn show_onboarding_overlay(window:WebviewWindow,app:AppHandle,token:u6
   let panel=stable_placement(previous.as_ref(),&state,bounds,area,work.size.width as f64/scale,work.size.height as f64/scale);
   let view=View{scale,theme:if theme.as_deref()==Some("dark"){"dark".into()}else{"light".into()},panel,bounds,area,state};
   let existed=owner.get_webview_window("onboarding").is_some();
-  let layer=match owner.get_webview_window("onboarding"){Some(w)=>w,None=>WebviewWindowBuilder::new(&owner,"onboarding",WebviewUrl::App("index.html".into())).title("颜喵 · 新手引导").transparent(true).decorations(false).shadow(false).always_on_top(true).skip_taskbar(true).resizable(false).visible(false).background_color(tauri::window::Color(0,0,0,0)).build().map_err(failure)?};
+  let layer=match owner.get_webview_window("onboarding"){Some(w)=>w,None=>WebviewWindowBuilder::new(&owner,"onboarding",WebviewUrl::App("index.html".into())).title("颜喵 · 新手引导").transparent(true).decorations(false).shadow(false).always_on_top(false).focused(false).skip_taskbar(true).resizable(false).visible(false).background_color(tauri::window::Color(0,0,0,0)).build().map_err(failure)?};
+  attach_owner(&layer,&window)?;
   let reposition=layer.outer_position().map_err(failure)?!=work.position;
   let resize=layer.outer_size().map_err(failure)?!=work.size;
   if reposition{layer.set_position(tauri::Position::Physical(work.position)).map_err(failure)?;}
@@ -87,9 +88,99 @@ pub async fn show_onboarding_overlay(window:WebviewWindow,app:AppHandle,token:u6
   if !existed||reposition||resize||previous.as_ref().is_none_or(|p|p.scale!=scale||p.bounds!=view.bounds||p.area!=view.area||p.panel!=view.panel){apply_region(&layer,&view,scale)?;}
   *owner.state::<Guide>().view.lock().map_err(|_|AppError::storage())?=Some(view);
   layer.emit("onboarding-view-changed",()).map_err(failure)?;
-  if !layer.is_visible().map_err(failure)?{layer.show().map_err(failure)?;layer.set_always_on_top(true).map_err(failure)?;}Ok(())
+  sync_visibility(&owner)?;Ok(())
  })();let _=tx.send(result);}).map_err(failure)?;
  rx.await.map_err(|_|AppError::storage())?
+}
+/// 窗口切换不推进教程；只在目标窗口或教程本身位于前台时显示。
+fn should_show(target_visible:bool,target_minimized:bool,target_foreground:bool,layer_foreground:bool)->bool {
+ target_visible&&!target_minimized&&(target_foreground||layer_foreground)
+}
+#[cfg(windows)]
+fn attach_owner(layer:&WebviewWindow,target:&WebviewWindow)->AppResult<()> {
+ native::attach_owner(layer.hwnd().map_err(failure)?,target.hwnd().map_err(failure)?)
+}
+#[cfg(not(windows))]
+fn attach_owner(_layer:&WebviewWindow,_target:&WebviewWindow)->AppResult<()>{Ok(())}
+fn sync_visibility(app:&AppHandle)->AppResult<()> {
+ let state=app.state::<Guide>().state.lock().map_err(|_|AppError::storage())?.clone();
+ let view=app.state::<Guide>().view.lock().map_err(|_|AppError::storage())?.clone();
+ let Some(layer)=app.get_webview_window("onboarding")else{return Ok(())};
+ let Some(state)=state.filter(|s|view.as_ref().is_some_and(|v|v.state.token==s.token&&v.state.step==s.step&&v.state.viewing==s.viewing&&v.state.target==s.target))else{layer.hide().map_err(failure)?;return Ok(())};
+ let Some(target)=app.get_webview_window(&state.target)else{layer.hide().map_err(failure)?;return Ok(())};
+ #[cfg(windows)]
+ {
+  let hwnd=layer.hwnd().map_err(failure)?;let target_hwnd=target.hwnd().map_err(failure)?;
+  native::sync_visibility(hwnd,target_hwnd)?;
+ }
+ #[cfg(not(windows))]
+ {
+  if should_show(target.is_visible().map_err(failure)?,target.is_minimized().map_err(failure)?,target.is_focused().map_err(failure)?,layer.is_focused().map_err(failure)?){layer.show().map_err(failure)?;}else{layer.hide().map_err(failure)?;}
+ }
+ Ok(())
+}
+pub fn window_event(app:&AppHandle,label:&str,event:&tauri::WindowEvent) {
+ if !matches!(event,tauri::WindowEvent::Focused(_)|tauri::WindowEvent::Resized(_)|tauri::WindowEvent::Destroyed){return;}
+ let target=app.state::<Guide>().state.lock().ok().and_then(|s|s.as_ref().map(|s|s.target.clone()));
+ if target.as_deref()!=Some(label)&&label!="onboarding"{return;}
+ // 排到本轮焦点消息之后，避免 owner 失焦到教程自身时短暂隐藏；不主动抢焦点。
+ let owner=app.clone();let _=app.run_on_main_thread(move||{
+  if let Err(error)=sync_visibility(&owner){
+   if let Some(layer)=owner.get_webview_window("onboarding"){let _=layer.hide();}
+   eprintln!("更新教程可见性失败：{error}");
+  }
+ });
+}
+#[cfg(windows)]
+mod native {
+ use super::*;
+ use windows::Win32::{Foundation::{HWND,GetLastError,SetLastError,WIN32_ERROR},UI::WindowsAndMessaging::*};
+ fn failed()->AppError{AppError::new("ONBOARDING_WINDOW_ERROR","教程窗口层级设置失败，请重试或跳过教程")}
+ pub(super) fn attach_owner(layer:HWND,target:HWND)->AppResult<()> {
+  unsafe {
+   if GetWindowLongPtrW(layer,GWLP_HWNDPARENT)!=target.0 as isize {
+    SetLastError(WIN32_ERROR(0));
+    if SetWindowLongPtrW(layer,GWLP_HWNDPARENT,target.0 as isize)==0&&GetLastError().0!=0{return Err(failed());}
+   }
+   // 桌宠允许置顶，教程只继承其层级；普通设置/聊天窗口不进入全局置顶组。
+   let order=if GetWindowLongPtrW(target,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize!=0{HWND_TOPMOST}else{HWND_NOTOPMOST};
+   SetWindowPos(layer,Some(order),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER).map_err(|_|failed())?;
+  }
+  Ok(())
+ }
+ pub(super) fn sync_visibility(layer:HWND,target:HWND)->AppResult<()> {
+  unsafe {
+   let foreground=GetForegroundWindow();
+   let visible=should_show(IsWindowVisible(target).as_bool(),IsIconic(target).as_bool(),foreground==target,foreground==layer);
+   if visible {
+    if !IsWindowVisible(layer).as_bool(){let _=ShowWindow(layer,SW_SHOWNOACTIVATE);}
+   }else if IsWindowVisible(layer).as_bool(){let _=ShowWindow(layer,SW_HIDE);}
+  }
+  Ok(())
+ }
+ #[cfg(test)]
+ mod tests {
+  use super::*;use windows::core::w;
+  #[test]fn owner_changes_do_not_activate_or_demote_the_pet() {
+   unsafe {
+    let settings=CreateWindowExW(WINDOW_EX_STYLE(0),w!("STATIC"),w!("guide-test-settings"),WS_OVERLAPPED,0,0,10,10,None,None,None,None).unwrap();
+    let pet=CreateWindowExW(WS_EX_TOPMOST,w!("STATIC"),w!("guide-test-pet"),WS_OVERLAPPED,0,0,10,10,None,None,None,None).unwrap();
+    let layer=CreateWindowExW(WINDOW_EX_STYLE(0),w!("STATIC"),w!("guide-test-layer"),WS_POPUP,0,0,10,10,None,None,None,None).unwrap();
+    let foreground=GetForegroundWindow();
+    attach_owner(layer,pet).unwrap();assert_eq!(GetWindow(layer,GW_OWNER).unwrap(),pet);assert_ne!(GetWindowLongPtrW(pet,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);
+    attach_owner(layer,settings).unwrap();assert_eq!(GetWindow(layer,GW_OWNER).unwrap(),settings);assert_eq!(GetWindowLongPtrW(layer,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);assert_ne!(GetWindowLongPtrW(pet,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);
+    sync_visibility(layer,settings).unwrap();assert!(!IsWindowVisible(layer).as_bool());assert_eq!(GetForegroundWindow(),foreground);
+    let _=DestroyWindow(layer);let _=DestroyWindow(pet);let _=DestroyWindow(settings);
+   }
+  }
+ }
+}
+#[cfg(test)]mod visibility_tests {
+ use super::*;
+ #[test]fn external_foreground_or_hidden_owner_hides_guide_but_guide_focus_keeps_it() {
+  assert!(should_show(true,false,true,false));assert!(should_show(true,false,false,true));
+  assert!(!should_show(true,false,false,false));assert!(!should_show(true,true,true,false));assert!(!should_show(false,false,false,true));
+ }
 }
 #[cfg(windows)]
 fn apply_region(window:&WebviewWindow,view:&View,scale:f64)->AppResult<()> {

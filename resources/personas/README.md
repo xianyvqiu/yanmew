@@ -2,6 +2,8 @@
 
 GPT白龙娘、Claude理工大小姐、Gemini猫娘、DeepSeek鲸鱼少女的透明桌宠资源。角色和安装逻辑在 `src-tauri/src/preset_personas.rs`，产品规则见[桌宠自定义创作设计](../../docs/桌宠自定义创作设计.md)和[聊天表情与生图设计](../../docs/聊天表情与生图设计.md)。
 
+生成记录保留提示词、仓库内相对资源路径、尺寸与校验指纹，不保存包含个人用户名的本机绝对路径。清理生成记录不改变PNG素材或程序中的资源引用。
+
 每位31张静态透明PNG，总124张：
 
 - `emotion_surprised.png`：普通点击的惊讶反应及聊天中的惊讶语境。各自参考base，分别表现白龙娘失去镇定、Claude克制掩嘴、Gemini竖耳举手、DeepSeek走神后愣住；精确提示见[surprised-generation-prompts.json](surprised-generation-prompts.json)。
