@@ -60,6 +60,67 @@ fn public_warnings_filter_old_and_other_cities_and_reject_incomplete_pages() {
     )
     .is_err());
 }
+#[test]
+fn public_warnings_merge_province_feed_without_duplicates_or_other_districts() {
+    let now = Utc::now();
+    let time = (now + chrono::Duration::hours(8)).format("%Y/%m/%d %H:%M").to_string();
+    let row = |id: &str, title: &str| json!({"title":title,"alertid":id,"issuetime":time,"url":format!("/publish/alarm/{id}.html")});
+    let city = row("city", "上海市气象台发布大风蓝色预警信号");
+    let data = json!({"code":0,"data":{"page":{"totalPage":1,"list":[city.clone(),row("baoshan","上海市宝山区气象台发布大风黄色预警信号")]},"provinceAlarms":[city,row("other","江苏省气象台发布大风蓝色预警信号"),row("ended","上海市气象台解除大风预警信号")]}});
+    let (items, _) = parse::warnings(&data, &region(), now).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "city");
+    let mut only_province = data.clone();
+    only_province["data"]["page"]["list"] = json!([]);
+    assert_eq!(parse::warnings(&only_province, &region(), now).unwrap().0.len(), 1);
+    only_province["data"]["provinceAlarms"] = json!({"changed":"schema"});
+    assert!(parse::warnings(&only_province, &region(), now).is_err());
+    let mut jiangsu = region(); jiangsu.province = "江苏省".into(); jiangsu.city = "南京市".into(); jiangsu.district = "玄武区".into();
+    let joint = json!({"code":0,"data":{"page":{"totalPage":1,"list":[]},"provinceAlarms":[row("joint","江苏省应急管理厅和江苏省气象台发布大风蓝色预警信号")]}});
+    assert_eq!(parse::warnings(&joint, &jiangsu, now).unwrap().0.len(), 1);
+}
+#[test]
+fn municipality_region_moves_district_out_of_city_and_keeps_parent() {
+    for address in [json!({"state":"上海市","city":"徐汇区","country_code":"cn"}),json!({"state":"上海市","county":"徐汇区","country_code":"cn"})] {
+        let found = parse::region(&json!({"address":address})).unwrap();
+        assert_eq!(found.city,"上海市"); assert_eq!(found.district,"徐汇区"); assert_eq!(found.name,"上海市 · 徐汇区");
+    }
+}
+#[test]
+fn shanghai_index_keeps_central_signal_without_treating_baoshan_as_xuhui() {
+    let body = "alarm_index([{\"w1\":\"上海市\",\"w2\":\"上海市\",\"w3\":\"宝山区\",\"w5\":\"大风\",\"w7\":\"黄色\"},{\"w1\":\"上海市中心城区\",\"w2\":\"上海市\",\"w3\":\"上海市\",\"w5\":\"大风\",\"w7\":\"蓝色\"}]);";
+    let mut r = region(); r.district = "徐汇区".into();
+    let items = parse::shanghai_warnings(body, &r).unwrap();
+    assert_eq!(items.len(),1); assert_eq!(items[0].level,"blue"); assert!(items[0].title.contains("中心城区"));
+    assert_eq!(items[0].issued_at,"来源未提供"); assert!(items[0].description.contains("解除时间"));
+    let mut legacy = r.clone(); legacy.city = "徐汇区".into(); legacy.district.clear();
+    assert_eq!(parse::shanghai_warnings(body, &legacy).unwrap()[0].id,items[0].id);
+    r.district = "宝山区".into(); let baoshan = parse::shanghai_warnings(body,&r).unwrap();
+    assert_eq!(baoshan.len(),1); assert_eq!(baoshan[0].level,"yellow");
+    r.district = "浦东新区".into(); assert!(parse::shanghai_warnings(body,&r).unwrap().is_empty());
+    let mut nmc = items[0].clone(); nmc.id = "official-id".into(); nmc.title = "上海市气象台发布中心城区大风蓝色预警信号".into();
+    assert!(parse::same_warning(&nmc,&items[0])); assert!(!parse::same_warning(&nmc,&baoshan[0]));
+}
+#[test]
+fn shanghai_index_rejects_scripts_and_unknown_schema_instead_of_reporting_no_warnings() {
+    for body in ["alarm_index([]);alert(1)","other_callback([])","alarm_index({})","alarm_index([{}])","alarm_index([{\"w1\":\"上海市\",\"w2\":\"上海市\",\"w3\":\"上海市\",\"w5\":\"大风\",\"w7\":\"未知\"}])"] {
+        assert!(parse::shanghai_warnings(body,&region()).is_err());
+    }
+    assert!(parse::shanghai_warnings("alarm_index([])",&region()).unwrap().is_empty());
+    let mut other = region(); other.province = "江苏省".into();
+    assert!(parse::shanghai_warnings("alarm_index([])",&other).is_err());
+}
+#[test]
+#[ignore = "手动核对公开免费预警来源，不使用个人位置或模型Key"]
+fn shanghai_public_warning_sources_read_only_smoke() {
+    tauri::async_runtime::block_on(async {
+        let client=Client::new().unwrap(); let mut r=region(); r.city="徐汇区".into(); r.district.clear();
+        let warnings=client.warnings(Some(&r),Utc::now(),&Cancellation::default()).await.unwrap();
+        let sample=serde_json::to_string_pretty(&warnings).unwrap();
+        std::fs::write(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.test-temp/207-weather-warnings/rust-public-warnings.json"),sample).unwrap();
+        println!("public warning sources verified: {} results for fixed Xuhui region",warnings.len());
+    });
+}
 fn track(lon: f64, lat: f64, time: i64) -> Value {
     json!({"typhoon":[123,"TEST","测试",2630,2630,null,null,"start",[[1,"time",time,"TY",126.,20.,950,40.,"NW",16,[],{"BABJ":[[24,"time",lon,lat,950,40,"BABJ","TY"]]}]]]})
 }

@@ -6,6 +6,7 @@ pub(crate) async fn retry_care(runtime: Runtime, revision:u64, kind:&str, events
     events.weather_changed();result
 }
 mod parse;
+const SHANGHAI_WARNING_INDEX: &str = "https://d1.weather.com.cn/shweather/alarmIndex.json";
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -171,7 +172,11 @@ impl Client {
     async fn text(&self, url: &str, cancel: &Cancellation) -> AppResult<String> {
         let mut response = cancel
             .wait(Duration::from_secs(10), async {
-                self.http.get(url).send().await.map_err(|_| unavailable())
+                let mut request = self.http.get(url);
+                if url == SHANGHAI_WARNING_INDEX {
+                    request = request.header(reqwest::header::REFERER, "https://www.weather.com.cn/shanghai/");
+                }
+                request.send().await.map_err(|_| unavailable())
             })
             .await?;
         if !response.status().is_success() {
@@ -217,6 +222,21 @@ impl Client {
         if region.province.is_empty() || region.country_code != "cn" {
             return Err(unavailable());
         }
+        if parse::is_shanghai(region) {
+            let supplement = async {
+                let body = self.text(SHANGHAI_WARNING_INDEX, cancel).await?;
+                parse::shanghai_warnings(&body, region)
+            };
+            // 两个来源任一失败，都不把部分查询当作完整的“最新空结果”。
+            let (mut items, extra) = tokio::try_join!(self.nmc_warnings(region, now, cancel), supplement)?;
+            for item in extra {
+                if !items.iter().any(|old| parse::same_warning(old, &item)) { items.push(item); }
+            }
+            return Ok(items);
+        }
+        self.nmc_warnings(region, now, cancel).await
+    }
+    async fn nmc_warnings(&self, region: &Region, now: DateTime<Utc>, cancel: &Cancellation) -> AppResult<Vec<Warning>> {
         let mut items = vec![];
         for page in 1..=10 {
             let mut url =
@@ -233,7 +253,8 @@ impl Client {
             items.extend(records);
             if page >= total {
                 items.sort_by(|a, b| b.issued_at.cmp(&a.issued_at));
-                items.dedup_by(|a, b| a.id == b.id);
+                let mut seen = std::collections::HashSet::new();
+                items.retain(|item| seen.insert(item.id.clone()));
                 return Ok(items);
             }
         }

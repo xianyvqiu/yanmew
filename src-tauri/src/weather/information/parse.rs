@@ -22,8 +22,13 @@ pub(super) fn region(v: &Value) -> AppResult<Region> {
             .to_string()
     };
     let province = pick(&["state", "province"]);
-    let city = pick(&["city", "town", "municipality", "county"]);
-    let district = pick(&["city_district", "district", "county"]);
+    let mut city = pick(&["city", "town", "municipality"]);
+    let mut district = pick(&["city_district", "district", "county"]);
+    if city.ends_with(['区', '县']) {
+        if district.is_empty() { district = city.clone(); }
+        city.clear();
+    }
+    if city.is_empty() && municipality(&province) { city = province.clone(); }
     let mut names = vec![];
     for name in [&province, &city, &district] {
         if !name.is_empty() && !names.contains(name) {
@@ -111,17 +116,17 @@ fn level(title: &str) -> String {
     "unknown".into()
 }
 fn local(title: &str, region: &Region) -> bool {
-    // 省级信号影响范围较广，保留并标注来源；地方信号限定到本城市/区县。
+    // 匹配发布单位，不能因标题含“上海市”而接纳其他区的专属信号。
     [&region.city, &region.district]
         .iter()
         .filter(|s| s.chars().count() >= 2)
-        .any(|name| title.contains(name.as_str()))
+        .any(|name| title.contains(&format!("{name}气象台")) || title.contains(&format!("{name}中心气象台")))
         || (!region.province.is_empty()
-            && title.starts_with(&format!(
+            && title.contains(&format!(
                 "{}气象台",
                 region.province.trim_end_matches(['省', '市'])
             )))
-        || title.starts_with(&format!("{}气象台", region.province))
+        || (!region.province.is_empty() && title.contains(&format!("{}气象台", region.province)))
 }
 pub(super) fn warnings(
     v: &Value,
@@ -134,13 +139,18 @@ pub(super) fn warnings(
     let page = &v["data"]["page"];
     let list = page["list"].as_array().ok_or_else(unavailable)?;
     let mut items = vec![];
-    for row in list {
+    let province = match v["data"].get("provinceAlarms") {
+        None | Some(Value::Null) => &[][..],
+        Some(Value::Array(rows)) => rows.as_slice(),
+        _ => return Err(unavailable()),
+    };
+    for row in list.iter().chain(province) {
         let title = s(&row["title"]);
         let issued = s(&row["issuetime"]);
         let date = chrono::NaiveDateTime::parse_from_str(&issued, "%Y/%m/%d %H:%M")
             .map_err(|_| unavailable())?;
         let stamp = date.and_utc() - chrono::Duration::hours(8);
-        if now.signed_duration_since(stamp).num_hours() > 24
+        if now.signed_duration_since(stamp) > chrono::Duration::hours(24)
             || stamp > now + chrono::Duration::minutes(10)
             || !local(&title, region)
             || title.contains("解除")
@@ -152,8 +162,10 @@ pub(super) fn warnings(
         {
             return Err(unavailable());
         }
+        let id = s(&row["alertid"]);
+        if id.is_empty() { return Err(unavailable()); }
         items.push(Warning {
-            id: s(&row["alertid"]),
+            id,
             level: level(&title),
             title,
             description: "公开预警动态；最新生效状态、影响范围与防御指南请查看官方原文。".into(),
@@ -162,10 +174,61 @@ pub(super) fn warnings(
             source: "中央气象台 · 公开预警信号".into(),
         });
     }
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|item| seen.insert(item.id.clone()));
     Ok((
         items,
         page["totalPage"].as_u64().ok_or_else(unavailable)?.max(1),
     ))
+}
+fn municipality(name: &str) -> bool {
+    matches!(name, "上海市" | "北京市" | "天津市" | "重庆市")
+}
+pub(super) fn is_shanghai(region: &Region) -> bool {
+    matches!(region.province.as_str(), "上海市" | "上海") && region.country_code == "cn"
+}
+pub(super) fn same_warning(a: &Warning, b: &Warning) -> bool {
+    let key = |title: &str| title.replace("气象台", "").replace("发布", "").replace("信号", "");
+    a.id == b.id || key(&a.title) == key(&b.title)
+}
+pub(super) fn shanghai_warnings(body: &str, region: &Region) -> AppResult<Vec<Warning>> {
+    // 只解析固定回调包装，不执行脚本；上海站索引没有发布时间，不编造时间。
+    let raw = body.trim().trim_end_matches(';').strip_prefix("alarm_index(")
+        .and_then(|s| s.strip_suffix(')')).ok_or_else(unavailable)?;
+    let data: Value = serde_json::from_str(raw).map_err(|_| unavailable())?;
+    let rows = data.as_array().filter(|rows| rows.len() <= 200).ok_or_else(unavailable)?;
+    if !is_shanghai(region) { return Err(unavailable()); }
+    // 兼容已保存的旧缓存：旧版可能将徐汇区放在city，district为空。
+    let district = if region.district.is_empty() { &region.city } else { &region.district };
+    let central = matches!(district.as_str(), "徐汇区" | "黄浦区" | "长宁区" | "静安区" | "普陀区" | "虹口区" | "杨浦区");
+    let mut items = Vec::new();
+    for row in rows {
+        let area = s(&row["w1"]);
+        let city = s(&row["w2"]);
+        let target = s(&row["w3"]);
+        let kind = s(&row["w5"]);
+        let color = s(&row["w7"]);
+        if kind.contains("解除") { continue; }
+        if area.is_empty() || city != "上海市" || target.is_empty() || kind.is_empty()
+            || kind.chars().count() > 30 || !matches!(color.as_str(), "红色" | "橙色" | "黄色" | "蓝色") {
+            return Err(unavailable());
+        }
+        let applies = if area == "上海市中心城区" { central }
+            else if target == "上海市" && area == "上海市" { true }
+            else { target == *district };
+        if !applies { continue; }
+        let scope = if area == "上海市中心城区" { area } else { format!("上海市{}", target.trim_start_matches("上海市")) };
+        let title = format!("{scope}{kind}{color}预警信号");
+        items.push(Warning {
+            id: format!("shanghai-index:{scope}:{kind}:{color}"), level: level(&title), title,
+            description: format!("中国天气网上海站公开预警索引，范围：{scope}。来源未提供发布时间和解除时间；最新生效状态、影响范围及防御指南以官方发布为准。"),
+            issued_at: "来源未提供".into(), url: "https://www.weather.com.cn/shanghai/".into(),
+            source: "中国天气网 · 上海市气象服务中心".into(),
+        });
+    }
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|item| seen.insert(item.id.clone()));
+    Ok(items)
 }
 pub(super) fn qweather(v: &Value, now: DateTime<Utc>) -> AppResult<Vec<Warning>> {
     let rows = v["alerts"].as_array().ok_or_else(unavailable)?;

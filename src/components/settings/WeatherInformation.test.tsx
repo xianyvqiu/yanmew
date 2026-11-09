@@ -19,7 +19,7 @@ it.each(["error","stale","clockRollback"])("%s状态保留信息但不宣称风�
 it("预警卡原位展开正文、机构、原文链接，文字作为文本呈现",async()=>{
  const info=data();info.warnings.items=[{id:"1",title:"上海市暴雨橙色预警",description:"注意避开积水路段 <script>test</script>",level:"orange",issuedAt:"2026/10/22 10:00",url:"https://www.nmc.cn/publish/alarm/1.html",source:"上海市气象台"}];
  show(info);fireEvent.click(screen.getByText("上海市暴雨橙色预警"));expect(screen.getByText(/注意避开积水路段/)).toBeTruthy();
- expect(document.querySelector("script")).toBeNull();fireEvent.click(screen.getByRole("link",{name:"官方原文与防御指南"}));await waitFor(()=>expect(api.open).toHaveBeenCalledWith("https://www.nmc.cn/publish/alarm/1.html"));
+ expect(document.querySelector("script")).toBeNull();fireEvent.click(screen.getByRole("link",{name:"查看预警来源与详情"}));await waitFor(()=>expect(api.open).toHaveBeenCalledWith("https://www.nmc.cn/publish/alarm/1.html"));
 });
 it("关怀只显示当前人设的缓存，不通过页面重新调用模型",()=>{
  const info=data();info.warnings.care={personaId:"1",name:"电子小猫",text:"出门记得带伞呀"};const view=show(info);expect(screen.getByText("出门记得带伞呀")).toBeTruthy();

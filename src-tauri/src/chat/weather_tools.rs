@@ -32,7 +32,7 @@ pub fn read(runtime:&Runtime,call:&ToolCall)->AppResult<Value>{
     let total=items.len();let pages=total.div_ceil(page_size).max(1);
     let offset=(input.page as usize-1).saturating_mul(page_size);
     let stale=checked.is_none_or(|at|now.signed_duration_since(at).num_minutes()>=30);
-    Ok(json!({"available":checked.is_some(),"region":info.region,"checkedAt":checked,"stale":stale,"error":error,"items":items.into_iter().skip(offset).take(page_size).collect::<Vec<_>>(),"total":total,"page":input.page,"totalPages":pages,"note":"资料来自天气页已有公开来源缓存，原链接可供核对"}))
+    Ok(json!({"available":checked.is_some(),"region":info.region,"checkedAt":checked,"stale":stale,"error":error,"items":items.into_iter().skip(offset).take(page_size).collect::<Vec<_>>(),"total":total,"page":input.page,"totalPages":pages,"note":"资料来自天气页已有公开来源缓存，本工具不会刷新。stale只反映缓存时效，不保证来源完整；total为0不代表当地无预警或官方已解除。来源未提供的发布时间不得用checkedAt代替，原链接可供核对。"}))
   })
 }
 
@@ -53,6 +53,7 @@ mod tests{
   let data:crate::weather::information::Dashboard=serde_json::from_value(json!({"position":{"latitude":31.0,"longitude":121.0,"locatedAt":at},"region":null,"forecast":null,"forecastError":null,"warnings":feed(json!(warnings)),"typhoons":feed(json!([{"id":"one","name":"台风","intensity":"热带风暴","publishedAt":at,"windSpeed":20.0,"distanceKm":300.0,"points":points,"url":"https://www.nmc.cn/typhoon"}])),"links":[],"searchError":null})).unwrap();
   runtime.read(|s,_|{s.weather.information=Some(data);Ok(())}).unwrap();
   let page=read(&runtime,&call("get_weather_warnings",json!({"page":2}))).unwrap();assert_eq!(page["total"],25);assert_eq!(page["items"].as_array().unwrap().len(),5);assert_eq!(page["stale"],true);assert!(page["error"].as_str().unwrap().contains("刷新失败"));assert_eq!(page["items"][0]["source"],"气象台");
+  assert!(page["note"].as_str().unwrap().contains("不保证来源完整"));assert!(page["note"].as_str().unwrap().contains("不得用checkedAt代替"));
   let typhoon=read(&runtime,&call("get_typhoon_tracking",json!({}))).unwrap();assert_eq!(typhoon["items"][0]["points"].as_array().unwrap().len(),64);assert_eq!(typhoon["items"][0]["pathTruncated"],true);assert!(typhoon.get("position").is_none());
   runtime.read(|s,_|{assert!(s.weather.information.as_ref().unwrap().warnings.care.is_none());assert_eq!(s.weather.information.as_ref().unwrap().warnings.items.len(),25);Ok(())}).unwrap();
  }
