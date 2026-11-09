@@ -1,4 +1,4 @@
-.ym-weather-information { display:grid; gap:22px; min-width:0; }
+.ym-weather-information { display:grid; gap:22px; min-width:0; container:ym-weather-information / inline-size; }
 .ym-weather-info-card { min-width:0; padding:clamp(18px,3vw,26px); border:1px solid var(--ym-border); border-radius:var(--ym-radius-lg); background:var(--ym-surface); overflow-wrap:anywhere; animation:ym-weather-module-in 280ms var(--ym-ease-standard) both; }
 .ym-weather-info-card:nth-child(2) { animation-delay:40ms; }
 .ym-weather-info-card:nth-child(3) { animation-delay:80ms; }
@@ -65,17 +65,17 @@
 .ym-weather-days svg,.ym-weather-hours svg { width:34px; height:34px; color:var(--ym-accent-strong); }
 .ym-weather-days small,.ym-weather-hours small { color:var(--ym-text-muted); font-size:12px; }
 .ym-weather-days strong { font-weight:500; }
-.ym-weather-hours { display:grid; grid-template-columns:repeat(auto-fit,minmax(65px,1fr)); gap:8px; }
+.ym-weather-hours { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
 .ym-weather-subheading { margin:24px 0 12px; font-size:14px; font-weight:600; }
 .ym-weather-clothing { display:flex; align-items:flex-start; gap:16px; padding:18px; border-radius:12px; background:var(--ym-accent-subtle); }
 .ym-weather-clothing>svg { width:32px; height:32px; color:var(--ym-accent-strong); flex-shrink:0; }
 .ym-weather-clothing strong { font-size:15px; font-weight:600; line-height:1.6; }
 .ym-weather-clothing p { margin:8px 0 0; font-size:13px; line-height:1.7; color:var(--ym-text-secondary); }
-.ym-weather-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:12px; margin-top:18px; }
-.ym-weather-metrics article { display:grid; gap:16px; padding:18px; border:1px solid var(--ym-border); border-radius:12px; }
+.ym-weather-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.ym-weather-metrics article { min-width:0; display:grid; gap:16px; padding:18px; border:1px solid var(--ym-border); border-radius:12px; }
 .ym-weather-metrics article>span { display:flex; gap:8px; align-items:center; font-size:13px; color:var(--ym-text-secondary); }
 .ym-weather-metrics svg { width:18px; height:18px; color:var(--ym-accent-strong); }
-.ym-weather-metrics strong { font-size:26px; font-weight:500; font-variant-numeric:tabular-nums; }
+.ym-weather-metrics strong { min-width:0; overflow-wrap:anywhere; font-size:26px; font-weight:500; font-variant-numeric:tabular-nums; }
 .ym-weather-attribution { margin:0; font-size:12px; line-height:1.7; color:var(--ym-text-muted); }
 .ym-weather-visual .ym-weather-heading { align-items:center; }
 .ym-weather-visual .ym-weather-eyebrow { font-size:18px; font-weight:600; letter-spacing:0; color:var(--ym-text); }
@@ -85,6 +85,8 @@
 .ym-weather-visual .ym-weather-reading strong { font-size:64px; font-weight:500; }
 .ym-weather-visual .ym-weather-reading .ym-weather-range { font-size:13px; color:var(--ym-text-muted); }
 @keyframes ym-weather-module-in { from {opacity:0;transform:translateY(8px);} to {opacity:1;transform:translateY(0);} }
+@container ym-weather-information (min-width:640px) { .ym-weather-hours { grid-template-columns:repeat(8,minmax(0,1fr)); }.ym-weather-metrics { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@container ym-weather-information (max-width:359px) { .ym-weather-hours { grid-template-columns:repeat(2,minmax(0,1fr)); }.ym-weather-metrics { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:520px) { .ym-weather-warning summary { flex-wrap:wrap; }.ym-weather-warning summary strong { flex-basis:65%; }.ym-weather-visual .ym-weather-clock { width:100%;text-align:left; }.ym-weather-visual .ym-weather-primary { flex:1; }.ym-weather-visual .ym-weather-reading strong {font-size:54px;} }
 @media(max-width:520px) { .ym-temperature-trend text {font-size:30px;}.ym-typhoon-track text {font-size:23px;} }
 @media(prefers-reduced-motion:reduce) { .ym-weather-info-card,.ym-weather-warning[open]>div,.ym-weather-extended-reading article {animation:none;}.ym-weather-source {transition:none;transform:none;} }
