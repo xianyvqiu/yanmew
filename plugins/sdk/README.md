@@ -183,7 +183,9 @@ void start();
 
 ## 打包与实际安装
 
-推荐下载 [Windows x64 开发工具包](https://github.com/xianyvqiu/yanmew-community-games/releases/tag/devkit-v1.0.1)，核对随附 SHA-256 后解压。工具包包含打包器、SDK、模板及本教程，不需要访问主仓库或安装 Rust、Node.js；仅编写网页即可开发插件。工具位置为解压目录下 `bin/yanmew-plugin.exe`。
+安装试玩需要颜喵Windows主程序，开发工具包不包含它；请使用提供给作者的当前测试包，主项目开源后的获取方式以[主项目README](https://github.com/xianyvqiu/yanmew)为准。本教程使用宿主协议1.0.0，社区浏览入口已包含在20261110-145616及后续构建中。
+
+推荐下载 [Windows x64 开发工具包](https://github.com/xianyvqiu/yanmew-community-games/releases/tag/devkit-v1.0.2)，核对随附 SHA-256 后解压。工具包包含打包器、SDK、模板及本教程，不需要访问主仓库或安装 Rust、Node.js；仅编写网页即可开发插件。工具位置为解压目录下 `bin/yanmew-plugin.exe`。
 
 维护者如需从源码构建，可在颜喵主源码目录按根 README 配好 Rust/MSVC、Node.js 和资源后执行：
 
@@ -196,7 +198,7 @@ cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin yanmew
 源码构建的工具位于 `src-tauri/target/release/yanmew-plugin.exe`。以下使用预编译工具，修改 `$pluginCli` 为实际解压路径，插件源码假设保存在 `C:\games\guess-number`，输出位于本机临时目录：
 
 ```powershell
-$pluginCli = 'C:\tools\yanmew-plugin-devkit-1.0.1-windows-x64\bin\yanmew-plugin.exe'
+$pluginCli = 'C:\tools\yanmew-plugin-devkit-1.0.2-windows-x64\bin\yanmew-plugin.exe'
 $gameSource = 'C:\games\guess-number'
 $packageFile = Join-Path $env:TEMP 'org.example.guess-number-1.0.0.yanmew-game'
 & $pluginCli pack $gameSource $packageFile
@@ -359,6 +361,8 @@ await window.yanmew.storage.set("ui.summary", {
 
 ## 钱包和网络
 
+需要可运行的完整例子时，先看[喵币计算挑战](../examples/wallet-challenge/README.md)：包含manifest、完整HTML/CSS/JavaScript和许可，开始扣1喵币、答对奖励2喵币，演示原请求持久化、重复点击保护、响应未知、保存失败及重开核对。开发工具包1.0.2及以上在`examples/wallet-challenge/`附带同一示例。请在独立可丢弃资料中安装测试，不用自己的日常钱包测试；示例不是社区目录的正式作品。
+
 ### 钱包结算与存档的衔接
 
 钱包和插件 JSON 存档不是同一个事务。含奖励、购买或入场费的操作应按以下顺序设计：
@@ -414,17 +418,29 @@ export function migrate(snapshot, targetVersion) {
 
 `mock-host.js` 的 `createMockHost({id,version,settings})` 返回模拟 SDK，可赋给开发页的 `window.yanmew`。存档按插件 ID 保存到浏览器 localStorage；模拟器不开放真实钱包和网络，也不承诺与宿主容量校验完全一致。这些权限、CSP、迁移隔离和原生关闭必须在真实颜喵宿主验收。
 
-在只用于浏览器开发的 HTML 中，先加载模拟器，再加载游戏脚本。例如该开发页放在主仓库根目录 `dev-game.html`，你的游戏放在 `example-game/ui/`，页面主体复制游戏的 DOM，只把最后的脚本替换为以下开发启动代码：
+先建立自己的开发工作目录，将工具包的`sdk/mock-host.js`（社区源码中为`developer/sdk/mock-host.js`，主项目中为`plugins/sdk/mock-host.js`）复制到下列位置。游戏使用前面完整示例的四个文件，放在`example-game/`；这些路径均相对于此工作目录，不要求访问主仓库：
+
+```text
+workspace/
+  sdk/mock-host.js
+  example-game/manifest.json
+  example-game/ui/index.html
+  example-game/ui/style.css
+  example-game/ui/main.js
+  dev-game.html
+```
+
+`dev-game.html`仅用于普通浏览器，复制`example-game/ui/index.html`后将CSS地址改为`./example-game/ui/style.css`，保留页面主体的DOM，只把最后的脚本替换为：
 
 ```html
 <script type="module">
-  import {createMockHost} from "./plugins/sdk/mock-host.js";
+  import {createMockHost} from "./sdk/mock-host.js";
   window.yanmew = createMockHost({id: "org.example.guess-number"});
   await import("./example-game/ui/main.js");
 </script>
 ```
 
-用本地 HTTP 服务器打开开发页，例如在主仓库根目录执行 `python -m http.server 8787 --bind 127.0.0.1` 后访问 `http://127.0.0.1:8787/dev-game.html`；这只是可选调试方式，不增加插件的 Python 依赖。不要双击 file:// 页面来判断模块加载结果。开发页内联脚本只用于普通浏览器，不放进正式包；原生宿主使用前面的独立 main.js，并自动注入真实 SDK。
+在上述`workspace/`目录执行`python -m http.server 8787 --bind 127.0.0.1`，访问`http://127.0.0.1:8787/dev-game.html`。先确认模拟宿主、游戏JS和CSS均从该地址正常载入；这只是可选调试方式，不增加插件的Python依赖。不要双击file://页面来判断模块加载结果。开发页及模拟宿主不放进正式游戏包；正式包仍以`example-game/`为源，原生宿主自动注入真实SDK。
 
 ## 调试与常见问题
 
@@ -480,6 +496,8 @@ npm run release:local -- org.example.guess-number
 应用内“社区小游戏”源码已接入，须使用包含该改动的新构建；它使用本社区仓库的 `catalog.json`，不会自动搜索作者自己的 Release。进入目录需要维护者为正式社区 Release 填入版本、附件地址/大小/SHA-256、发布时间，以及固定到源码提交的 README 地址和 SHA-256；仅合入源码不等于已经出现在列表。下载由浏览器完成，再返回颜喵从本地安装、确认权限，不自动安装或授权。当前可使用前述手动下载和本地安装流程。
 
 ## 发布前验收
+
+应用内社区页的“下载”只打开系统浏览器，安装包保存位置由浏览器决定，通常是Windows“下载”文件夹；启用“每次询问保存位置”时由用户选择。下载不会自动写入颜喵包目录，也不会自动安装。下载完成后从颜喵的“从本地安装”选择`.yanmew-game`，确认后插件文件进入应用管理的`data/plugins/`；便携版的data位于EXE旁。下载文件与已安装插件是两份独立文件。
 
 至少完成以下实际验证，并在游戏 README 写明宿主版本、结果和未测项：
 

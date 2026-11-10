@@ -1,0 +1,17 @@
+{
+  "id": "org.example.wallet-challenge",
+  "name": "喵币计算挑战（开发示例）",
+  "description": "演示入场扣费、答对奖励、存档及待结算恢复，仅用于独立测试资料。",
+  "author": "YanMew contributors",
+  "version": "1.0.0",
+  "api_version": "1.0.0",
+  "entry": "ui/index.html",
+  "storage_version": 1,
+  "permissions": ["wallet.modify"],
+  "network_origins": [],
+  "settings_schema": [],
+  "repository": "https://github.com/xianyvqiu/yanmew-community-games",
+  "homepage": null,
+  "release_page": null,
+  "migration": null
+}

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>喵币计算挑战</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+  <h1>喵币计算挑战</h1>
+  <p>开发示例：开始一局扣1喵币，答对奖励2喵币。请在独立、可丢弃的颜喵资料中测试。</p>
+  <p id="balance">正在读取余额…</p><p id="progress"></p>
+  <button id="start" disabled>开始一局（1喵币）</button>
+  <form id="answer-form"><label><span id="question">尚未开始</span><input id="answer" type="number" inputmode="numeric" autocomplete="off" disabled></label><button id="submit" disabled>提交答案</button></form>
+  <p id="status" role="status">正在连接宿主…</p>
+  <button id="retry" hidden disabled>重新核对结算</button><button id="close" disabled>关闭</button>
+</main><script type="module" src="main.js"></script></body></html>

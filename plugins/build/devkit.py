@@ -25,7 +25,7 @@ def build(version, metadata_path):
     stage = output / name
     (stage / "bin").mkdir(parents=True)
     shutil.copy2(cli, stage / "bin/yanmew-plugin.exe")
-    for directory in ("sdk", "template"):
+    for directory in ("sdk", "template", "examples"):
         shutil.copytree(root / "plugins" / directory, stage / directory)
     shutil.copy2(root / "LICENSE", stage / "LICENSE")
     shutil.copy2(root / "LICENSE", stage / "template/LICENSE.txt")
@@ -38,7 +38,6 @@ def build(version, metadata_path):
     text = re.sub(r"devkit-\d+\.\d+\.\d+-windows-x64", f"devkit-{version}-windows-x64", text)
     text = text.replace("../build/README.md", "../README.md#打包与校验")
     text = text.replace("../first-party/", "https://github.com/xianyvqiu/yanmew/blob/develop/plugins/first-party/")
-    text = text.replace('"./plugins/sdk/mock-host.js"', '"./sdk/mock-host.js"')
     text += "\n主仓库第一方示例为可选参考；主仓库未公开时需要访问权限。本教程的完整猜数字示例、模板和全部接口可独立使用。\n"
     sdk.write_text(text, encoding="utf-8", newline="\n")
     metadata = json.loads(pathlib.Path(metadata_path).read_text(encoding="utf-8-sig"))
