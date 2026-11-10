@@ -34,6 +34,8 @@ impl PetEventSink for PetEvents {
     }
 }
 impl crate::events::ChatToolEventSink for PetEvents {
+    fn configuration_changed(&self) {let _=self.0.emit("configuration_changed",());}
+    fn wallet_changed(&self) {let _=self.0.emit(crate::events::WALLET_CHANGED,());}
     fn real_money_changed(&self) {let _=self.0.emit("real-money-changed",());}
     fn real_money_failed(&self,error:&crate::error::AppError) {let _=self.0.emit("real-money-error",error);}
     fn festivals_changed(&self) { let _ = self.0.emit(crate::events::FESTIVALS_CHANGED, serde_json::json!({"sessionId":null})); }

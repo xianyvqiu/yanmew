@@ -19,6 +19,27 @@ fn calls(items: &[(&str, &str, Value)]) -> String {
 fn append() -> Value { json!({"operation":"append","section_index":null,"content":"中文🙂内容"}) }
 
 #[test]
+fn normal_chat_can_read_then_change_appearance_theme_and_sign_in_with_real_tool_receipts() {
+    tauri::async_runtime::block_on(async {
+        let server=Server::new(vec![
+            Response::json(json!({"expression":"(^_^)"})),
+            Response::sse(&calls(&[("read-theme","get_ui_theme",json!({})),("read-style","get_chat_appearance",json!({})),("read-sign","get_daily_sign_in_status",json!({}))])),
+            Response::sse(&calls(&[("theme","set_ui_theme",json!({"mode":"dark","confirmedByUser":true})),("style","update_chat_appearance",json!({"bubbleStyle":"outline","opacity":40,"confirmedByUser":true})),("sign","daily_sign_in",json!({"confirmedByUser":true}))])),
+            Response::sse(&(text_event("主题和人设共用的聊天外观已调整，签到已按实际结果处理。")+&finish_event("stop"))),
+        ]);
+        let runtime=crate::runtime::test_runtime(&server.url);
+        let (prepared,_)=submit(&runtime,1,1,0,"切换暗色，聊天气泡用描边，背景不透明度40%，帮我签到".into()).unwrap();
+        let saved=run_persisted(&client(),prepared,|_|{}).await.unwrap();assert_eq!(saved.round.status,crate::models::ChatRoundStatus::Completed);
+        runtime.read(|s,_|{assert_eq!(crate::config::get(&s.connection)?["theme_mode"],"dark");let style=crate::persona::background::snapshot(s,1,Some(0))?;assert_eq!(style.opacity,40);assert_eq!(style.appearance.bubble_style,"outline");assert_eq!(s.connection.query_row("SELECT count(*) FROM currency_ledger WHERE reason IN ('daily_sign_in','sign_in_festival')",[],|r|r.get::<_,i64>(0))?,1);Ok(())}).unwrap();
+        let requests=server.requests.lock().unwrap();
+        let tools=requests[1]["tools"].as_array().unwrap();for name in ["get_ui_theme","set_ui_theme","get_chat_appearance","update_chat_appearance","get_daily_sign_in_status","daily_sign_in"]{assert!(tools.iter().any(|tool|tool["function"]["name"]==name));}
+        let receipts=requests[3]["messages"].as_array().unwrap().iter().filter(|m|m["role"]=="tool").filter_map(|m|serde_json::from_str::<Value>(m["content"].as_str()?).ok()).collect::<Vec<_>>();
+        assert!(receipts.iter().any(|v|v["result"]["grantedCoins"].is_string()&&v["result"]["newlySignedIn"]==true));
+        drop(requests);server.finish();
+    });
+}
+
+#[test]
 fn normal_chat_skill_function_call_creates_in_library_and_binds_only_current_persona(){
  tauri::async_runtime::block_on(async{
   let server=Server::new(vec![Response::json(json!({"expression":"(^_^)"})),Response::sse(&calls(&[("new-skill","create_skill",json!({"title":"简明表达","summary":"先结论","body":"回答问题时先说结论，再说明必要细节。"}))])),Response::sse(&(text_event("已经保存并绑定。")+&finish_event("stop")))]);

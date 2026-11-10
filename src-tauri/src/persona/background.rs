@@ -81,7 +81,7 @@ pub struct Input {
 fn conflict() -> AppError {
     AppError::new("CONFLICT", "聊天外观已在其他窗口修改，请重新读取后再保存")
 }
-fn snapshot(store: &Store, id: i64, revision: Option<u64>) -> AppResult<Background> {
+pub(crate) fn snapshot(store: &Store, id: i64, revision: Option<u64>) -> AppResult<Background> {
     if let Some(revision) = revision {
         if revision != store.context_revision
             || crate::persona::context(&store.connection, revision)?.persona_id != id.to_string()
@@ -281,6 +281,13 @@ pub fn save(
     revision: Option<u64>,
     input: Input,
 ) -> AppResult<Background> {
+    save_guarded(runtime,id,revision,input, |_|Ok(()))
+}
+/// 额外请求守卫在读取及最终提交前重核；普通设置页沿用原保存入口。
+pub(crate) fn save_guarded(
+    runtime: &Runtime, id:i64, revision:Option<u64>, input:Input,
+    guard:impl Fn(&Store)->AppResult<()>,
+) -> AppResult<Background> {
     if let Some(appearance) = &input.appearance { appearance.validate()?; }
     if input.expected.persona_id != id.to_string() {
         return Err(AppError::validation("personaId", "背景不属于目标人设"));
@@ -295,6 +302,7 @@ pub fn save(
         ));
     }
     runtime.read(|store, _| {
+        guard(store)?;
         if snapshot(store, id, revision)? == input.expected {
             Ok(())
         } else {
@@ -317,6 +325,7 @@ pub fn save(
         None
     };
     let result = runtime.read(|store, _| {
+        guard(store)?;
         if snapshot(store, id, revision)? != input.expected {
             return Err(conflict());
         }

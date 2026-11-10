@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 mod coordinator;
 mod media;
 mod tools;
+mod settings_tools;
 mod weather_tools;
 mod visual_tools;
 mod sticker_tools;
