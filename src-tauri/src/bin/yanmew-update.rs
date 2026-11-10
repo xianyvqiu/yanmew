@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// 独立助手直接复用更新模块，不链接桌宠运行时及其C/C++运行库。
+#[cfg(windows)]
+#[path="../updates/mod.rs"]
+mod updates;
 #[cfg(windows)]
 fn main(){
-    use yanwenzi_lib::updates::{self as update,install,network,windows as native};
+    use updates::{self as update,install,network,windows as native};
     use std::{fs,path::PathBuf};
     let args:Vec<_>=std::env::args_os().collect();
     let result=(||->update::Result<()>{

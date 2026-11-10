@@ -22,7 +22,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '正式程序构建失败，未组装便携版' }
         [ordered]@{buildId=$buildId;sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot 'src-tauri/target/release/yanwenzi.exe') -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content -LiteralPath $buildRecord -Encoding utf8NoBOM
     }
-    & cargo build --manifest-path src-tauri/Cargo.toml --bin yanmew-update --release --locked --offline
+    & cargo rustc --manifest-path src-tauri/Cargo.toml --bin yanmew-update --release --locked --offline -- -C target-feature=+crt-static
     if ($LASTEXITCODE -ne 0) { throw '更新助手构建失败，未组装便携版' }
     $config = Get-Content -LiteralPath 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
     $executable = Join-Path $projectRoot 'src-tauri/target/release/yanwenzi.exe'
