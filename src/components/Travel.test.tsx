@@ -22,6 +22,21 @@ const trip: Travel = {id:"3",sessionId:"1",status:"away",startedAt:"2026-10-09T0
 const target: LetterTarget = {...context,travelId:"3",replyToId:null};
 let stored: Letter;
 let exists = true;
+it("收起的信件可以直接点星星往返收藏，不展开也不标已读",async()=>{
+ render(<TravelPanel context={context} personaName="小喵" tab="mailbox"/>);
+ const star=await screen.findByRole("button",{name:"收藏信件"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));
+ expect(star.getAttribute("aria-pressed")).toBe("false");expect(star.querySelector("svg")?.getAttribute("fill")).toBe("none");
+ fireEvent.click(star);
+ const saved=await screen.findByRole("button",{name:"取消收藏信件"});await waitFor(()=>expect(saved).toHaveProperty("disabled",false));
+ expect(saved.getAttribute("aria-pressed")).toBe("true");expect(saved.querySelector("svg")?.getAttribute("fill")).toBe("currentColor");
+ expect(api.letters.flags).toHaveBeenCalledWith(context,"7",{favorite:true});expect(api.letters.get).not.toHaveBeenCalled();expect(stored.isRead).toBe(false);expect(screen.queryByRole("region",{name:"信件详情"})).toBeNull();
+ fireEvent.click(saved);await screen.findByRole("button",{name:"收藏信件"});expect(api.letters.flags).toHaveBeenLastCalledWith(context,"7",{favorite:false});expect(api.letters.get).not.toHaveBeenCalled();
+});
+it("星星收藏信件失败保留空心状态和未读，显示保存错误",async()=>{
+ api.letters.flags.mockRejectedValue(new Error("收藏保存失败"));render(<TravelPanel context={context} personaName="小喵" tab="mailbox"/>);
+ const star=await screen.findByRole("button",{name:"收藏信件"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));fireEvent.click(star);
+ expect((await screen.findByRole("alert")).textContent).toBe("收藏保存失败");await waitFor(()=>expect(star).toHaveProperty("disabled",false));expect(star.getAttribute("aria-pressed")).toBe("false");expect(api.letters.get).not.toHaveBeenCalled();expect(stored.isRead).toBe(false);
+});
 beforeEach(() => {
   vi.resetAllMocks(); exists=true;
   stored={id:"7",sessionId:"1",travelId:"3",sender:"ai",content:"湖边很好 (・ω・)",replyToId:null,hasBeenReplied:false,replyDueAt:null,replyState:"none",letterKind:"midway",isFavorite:false,isRead:false,createdAt:"2026-10-09T00:30:00Z"};
@@ -68,7 +83,7 @@ it("邮箱收藏筛选查到分页外信件，切标签保留，取消最后收�
  fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的信件"}));await screen.findByText("珍藏信件");expect(screen.queryByText("普通信件0")).toBeNull();
  expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",1,[],true);
  fireEvent.click(screen.getByRole("button",{name:"出行历史"}));fireEvent.click(screen.getByRole("button",{name:"邮箱"}));expect(screen.getByRole("checkbox",{name:"只看收藏的信件"})).toHaveProperty("checked",true);
- fireEvent.click(screen.getByRole("button",{name:/珍藏信件/}));fireEvent.click(await screen.findByRole("button",{name:"取消收藏"}));
+ fireEvent.click(await screen.findByRole("button",{name:"取消收藏信件"}));
  await screen.findByText("当前筛选下没有收藏的信件。");expect(screen.queryByText("还没有信件。出门期间可以寄一封信。")).toBeNull();
  expect(screen.getByRole("checkbox",{name:"只看收藏的信件"})).toHaveProperty("checked",true);
  fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的信件"}));await screen.findByText("普通信件0");
@@ -108,10 +123,10 @@ it("详情成功加载后标已读，收藏和回信绑定原出行与上下文"
   fireEvent.click(screen.getByRole("button",{name:/小喵的来信/}));
   await waitFor(()=>expect(screen.queryByRole("region",{name:"信件详情"})).toBeNull());
   fireEvent.click(screen.getByRole("button",{name:/小喵的来信/}));
-  await screen.findByRole("button",{name:"收藏"});
-  fireEvent.click(screen.getByRole("button",{name:"收藏"}));
+  await screen.findByRole("button",{name:"收藏信件"});
+  fireEvent.click(screen.getByRole("button",{name:"收藏信件"}));
   await waitFor(()=>expect(api.letters.flags).toHaveBeenCalledWith(context,"7",{favorite:true}));
-  await screen.findByRole("button",{name:"取消收藏"});
+  await screen.findByRole("button",{name:"取消收藏信件"});
   fireEvent.click(screen.getByRole("button",{name:"回信"}));
   await waitFor(()=>expect(api.navigation.openLetter).toHaveBeenCalledWith(context,"3","7"));
 });

@@ -22,13 +22,25 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
 });
 afterEach(cleanup);
+it("收起的伴手礼直接点星星往返收藏，不读取或展开详情",async()=>{
+ let saved={...gift};api.list.mockImplementation(async()=>[saved]);api.favorite.mockImplementation(async(_context,_id,favorite)=>{saved={...saved,isFavorite:favorite};return saved;});
+ render(<SouvenirPanel context={context}/>);const star=await screen.findByRole("button",{name:"收藏伴手礼"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));fireEvent.click(star);
+ const active=await screen.findByRole("button",{name:"取消收藏伴手礼"});await waitFor(()=>expect(active).toHaveProperty("disabled",false));expect(active.getAttribute("aria-pressed")).toBe("true");
+ expect(api.favorite).toHaveBeenCalledWith(context,"3",true);expect(api.get).not.toHaveBeenCalled();expect(screen.queryByRole("region",{name:"伴手礼详情"})).toBeNull();
+ fireEvent.click(active);const cleared=await screen.findByRole("button",{name:"收藏伴手礼"});expect(cleared.getAttribute("aria-pressed")).toBe("false");expect(api.favorite).toHaveBeenLastCalledWith(context,"3",false);expect(api.get).not.toHaveBeenCalled();
+});
+it("星星收藏伴手礼失败保留原状态并显示错误",async()=>{
+ api.favorite.mockRejectedValue(new Error("收藏保存失败"));render(<SouvenirPanel context={context}/>);
+ const star=await screen.findByRole("button",{name:"收藏伴手礼"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));fireEvent.click(star);
+ expect((await screen.findByRole("alert")).textContent).toBe("收藏保存失败");await waitFor(()=>expect(star).toHaveProperty("disabled",false));expect(star.getAttribute("aria-pressed")).toBe("false");expect(api.get).not.toHaveBeenCalled();
+});
 it("收藏筛选找出分页外伴手礼，刷新保留，取消收藏后移出列表",async()=>{
  let saved={...gift,content:"珍藏伴手礼",isFavorite:true};const regular=Array.from({length:25},(_,i)=>({...gift,id:String(100+i),content:`普通伴手礼${i}`}));
  api.list.mockImplementation(async()=>[...regular,saved]);api.get.mockImplementation(async()=>saved);api.favorite.mockImplementation(async(_context,_id,favorite)=>{saved={...saved,isFavorite:favorite};return saved;});
  render(<SouvenirPanel context={context}/>);await screen.findByText("普通伴手礼0");expect(screen.queryByText("珍藏伴手礼")).toBeNull();
  fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"}));await screen.findByText("珍藏伴手礼");expect(screen.queryByText("普通伴手礼0")).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"刷新伴手礼"}));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",1,[],true));
- fireEvent.click(screen.getByRole("button",{name:/珍藏伴手礼/}));fireEvent.click(await screen.findByRole("button",{name:"取消收藏"}));
+ fireEvent.click(await screen.findByRole("button",{name:"取消收藏伴手礼"}));
  await screen.findByText("当前筛选下没有收藏的伴手礼。");expect(screen.queryByText("还没有收到伴手礼。")).toBeNull();expect(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"})).toHaveProperty("checked",true);
  fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"}));await screen.findByText("普通伴手礼0");
 });
@@ -43,8 +55,8 @@ it("查看备注和收藏绑定当前会话，不修改钱包", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /湖边明信片/ }));
   await screen.findByText("挑了最漂亮的一张给你。");
   api.list.mockResolvedValue([{ ...gift, isFavorite: true }]); api.get.mockResolvedValue({ ...gift, isFavorite: true });
-  fireEvent.click(screen.getByRole("button", { name: "收藏" }));
-  await screen.findByRole("button", { name: "取消收藏" });
+  fireEvent.click(screen.getByRole("button", { name: "收藏伴手礼" }));
+  await screen.findByRole("button", { name: "取消收藏伴手礼" });
   expect(api.favorite).toHaveBeenCalledWith(context, "3", true);
 });
 it("删除先确认，取消不提交，成功后关闭详情并刷新", async () => {
@@ -101,10 +113,10 @@ it("通知后保留当前筛选并更新收藏详情", async () => {
   await screen.findByRole("button",{name:/湖边明信片/});
   fireEvent.change(screen.getByRole("searchbox"),{target:{value:"湖边"}});
   fireEvent.click(await screen.findByRole("button",{name:/湖边明信片/}));
-  await screen.findByRole("button",{name:"收藏"});
-  api.get.mockResolvedValue({...gift,isFavorite:true});
+  await screen.findByRole("button",{name:"收藏伴手礼"});
+  api.get.mockResolvedValue({...gift,isFavorite:true});api.list.mockResolvedValue([{...gift,isFavorite:true}]);
   await act(async () => {notify();fireEvent.focus(window);});
-  await screen.findByRole("button",{name:"取消收藏"});
+  await screen.findByRole("button",{name:"取消收藏伴手礼"});
   expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"湖边","newest",1,[]);
 });
 

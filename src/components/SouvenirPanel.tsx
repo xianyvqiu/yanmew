@@ -2,6 +2,7 @@ import SouvenirImage from "./SouvenirImage";
 import SouvenirImageSettings from "./SouvenirImageSettings";
 import TravelFilter, {TravelOriginLabel} from "./TravelFilter";
 import InlineDetailCard from "./InlineDetailCard";
+import UiIcon from "./UiIcon";
 import CardBrowserControls, {CardBrowserPagination} from "./CardBrowserControls";
 import {useRemoteCardBrowser} from "../hooks/useRemoteCardBrowser";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -76,15 +77,17 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
     {!loading && !browser.loading && !browser.total && !browser.search && !error && !browser.error && <p className="ym-page-empty">{browser.favoritesOnly?"当前筛选下没有收藏的伴手礼。":"还没有收到伴手礼。"}</p>}
     <TravelFilter browser={browser} disabled={busy} favoriteFilter={{label:"只看收藏的伴手礼",checked:browser.favoritesOnly,onChange:browser.setFavoritesOnly}}/><CardBrowserControls browser={browser} label="伴手礼" timeLabel="获得时间" disabled={busy}/>
     {browser.error&&<p role="alert" className="ym-page-error">{browser.error}</p>}
-    <ul className="ym-letter-list ym-mailbox-list">{browser.items.map(item=><li key={item.id}>
+    <ul className="ym-letter-list ym-mailbox-list">{browser.items.map(item=><li key={item.id} className="ym-card-with-favorite">
       <InlineDetailCard thumbnail={item.imageFile?<SouvenirImage item={item} context={context}/>:undefined} title={item.title?.trim()||`${item.travel?.destination||"旅行"}·伴手礼`} summary={item.content.length>140?item.content.slice(0,140)+"…":item.content} meta={<><TravelOriginLabel travel={item.travel} travelId={item.travelId}/><span>{travelTime(item.createdAt)}</span></>} expanded={selected===item.id} disabled={busy} detailLabel="伴手礼详情" onToggle={()=>{setDetail(null);setSelected(selected===item.id?null:item.id);}}>
 {detail ? <>
         <div className="ym-page-heading"><h3>{detail.title?.trim()||`${browser.items.find(i=>i.id===detail.id)?.travel?.destination||"旅行"}·伴手礼`}</h3><button className="ym-button" onClick={() => setSelected(null)}>关闭详情</button></div>
         <p className="ym-letter-body">{detail.content}</p><p className="ym-letter-body">{detail.note}</p>
         <p className="ym-page-note">{travelTime(detail.createdAt)} · {detail.isFavorite ? "已收藏" : "未收藏"}</p>
-        <div className="ym-inline-form"><button className="ym-button" disabled={busy || loading || browser.loading} onClick={() => { void act(() => souvenirsApi.favorite(context, detail.id, !detail.isFavorite)); }}>{detail.isFavorite ? "取消收藏" : "收藏"}</button>
+        <div className="ym-inline-form">
           <button className="ym-button" data-variant="danger" disabled={busy || loading || browser.loading} onClick={() => { setError(""); setDeleting(detail); }}>删除伴手礼</button></div>
-      </> : <p className="ym-page-note">{selected ? error ? "礼物详情暂不可用，请刷新后重试。" : "正在读取礼物详情…" : "选择一件伴手礼，看看它写的备注。"}</p>}</InlineDetailCard></li>)}</ul>
+      </> : <p className="ym-page-note">{selected ? error ? "礼物详情暂不可用，请刷新后重试。" : "正在读取礼物详情…" : "选择一件伴手礼，看看它写的备注。"}</p>}</InlineDetailCard>
+      <button type="button" className="ym-button ym-card-favorite" aria-label={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} title={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} aria-pressed={item.isFavorite} disabled={busy||loading||browser.loading} onClick={()=>{void act(()=>souvenirsApi.favorite(context,item.id,!item.isFavorite));}}><UiIcon name="star" filled={item.isFavorite}/></button>
+      </li>)}</ul>
       <CardBrowserPagination browser={browser} label="伴手礼" disabled={busy}/>
 
     <dialog ref={dialog} className="ym-session-dialog" aria-labelledby="souvenir-delete-title" onCancel={event => { if (busy) event.preventDefault(); else setDeleting(null); }}>

@@ -1,4 +1,11 @@
 .ym-travel-panel { display: grid; gap: 16px; min-width: 0; }
+.ym-card-with-favorite { position:relative;min-width:0; }
+.ym-card-with-favorite>.ym-letter-card>.ym-letter-item { padding-inline-end:74px; }
+.ym-card-with-favorite>.ym-card-favorite.ym-button { position:absolute;inset-block-start:14px;inset-inline-end:14px;display:grid;place-items:center;box-sizing:border-box;width:44px;height:44px;min-height:44px;padding:9px;border:1px solid transparent;border-radius:50%;background:transparent;color:var(--ym-text-secondary); }
+.ym-card-with-favorite>.ym-card-favorite .ym-ui-icon { width:24px;height:24px; }
+.ym-card-with-favorite>.ym-card-favorite[aria-pressed="true"] { color:var(--ym-accent-strong); }
+.ym-card-with-favorite>.ym-card-favorite:hover:not(:disabled) { background:var(--ym-accent-soft);color:var(--ym-accent-strong); }
+.ym-card-with-favorite>.ym-card-favorite:focus-visible { outline:2px solid var(--ym-focus);outline-offset:2px; }
 .ym-favorite-filter { display:flex!important;align-items:center;justify-content:flex-start!important;gap:10px;margin-block:14px;width:fit-content;cursor:pointer; }
 .ym-favorite-filter input { appearance:auto;width:17px!important;height:17px;margin:0;flex:none;accent-color:var(--ym-accent-strong); }
 .ym-travel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
