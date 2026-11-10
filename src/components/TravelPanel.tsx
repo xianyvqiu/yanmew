@@ -100,6 +100,13 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
+  const toggleFavorite = (letter: Letter) => act(async () => {
+    const saved = await lettersApi.flags(context, letter.id, { favorite: !letter.isFavorite });
+    if (alive.current) {
+      setDetail(previous => previous?.id === saved.id ? { ...previous, isFavorite: saved.isFavorite } : previous);
+      mailBrowser.refresh();
+    }
+  }, undefined, false);
   const canReply = Boolean(detail?.sender === "ai" && !detail.hasBeenReplied && travel.current?.id === detail.travelId && !travel.loading && !travel.error);
   if (!context.sessionId) return <section className="ym-page-card"><h2>出行与邮箱</h2><p>当前没有会话，请先在聊天窗口创建会话。</p></section>;
   return <div className="ym-travel-panel">
@@ -109,7 +116,7 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
       {travel.current ? <><p>{travel.current.destination ? `目的地：${travel.current.destination}` : "正在准备本次行程。"}</p>
         <p className="ym-page-note">计划返回：{travelTime(travel.current.plannedReturnAt)}。切换人设或会话会取消本次旅行和待回信，不生成返回奖励。</p>
         <button className="ym-button" disabled={busy || travel.loading || Boolean(travel.error)} onClick={() => { void act(() => navigation.openLetter(context, travel.current!.id)); }}>写信</button></>
-        : <p className="ym-page-note">{travel.loading ? "正在读取出行状态…" : "它在家，可以查看以前的出行和信件。"}</p>}
+        : <p className="ym-page-note">{travel.loading && travel.version === 0 ? "正在读取出行状态…" : "它在家，可以查看以前的出行和信件。"}</p>}
       {(error || travel.error) && <p role="alert" className="ym-page-error">{error || travel.error}</p>}
       {travel.facts.active && <p role="status">正在准备旅行行程…</p>}
       {travel.facts.failures.map(failure => <p key={failure.travelId} role="alert">行程准备失败：{failure.error.message}。约 {failure.retryAfterSeconds} 秒后重试。</p>)}
@@ -139,13 +146,13 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
       <CardBrowserPagination browser={tripsBrowser} label="出行" disabled={busy}/>
 
     </section> : <section className="ym-page-card" aria-label="邮箱">
-      <h2>邮箱</h2>{mailBrowser.loading && <p role="status">正在读取信件…</p>}
+      <h2>邮箱</h2>{mailBrowser.loading && !mailBrowser.items.length && <p role="status">正在读取信件…</p>}
       {!mailBrowser.loading && !mailBrowser.total && !mailBrowser.search && !mailBrowser.error && <p className="ym-page-note">{mailBrowser.favoritesOnly?"当前筛选下没有收藏的信件。":"还没有信件。出门期间可以寄一封信。"}</p>}
       <TravelFilter browser={mailBrowser} disabled={busy} favoriteFilter={{label:"只看收藏的信件",checked:mailBrowser.favoritesOnly,onChange:mailBrowser.setFavoritesOnly}}/><CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
       {mailBrowser.error&&<p role="alert" className="ym-page-error">{mailBrowser.error}</p>}
       <ul className="ym-letter-list ym-mailbox-list">{mailBrowser.items.map(letter=><li key={letter.id} data-letter-id={letter.id} className="ym-card-with-favorite">
         <InlineDetailCard title={letter.sender==="user"?"我寄出的信":`${personaName}的来信`} meta={<><LetterKindBadge letter={letter}/><time>{travelTime(letter.createdAt)}</time><TravelOriginLabel travel={letter.travel} travelId={letter.travelId}/></>} summary={<>{letter.content.replace(/\s+/g," ").slice(0,140)}{letter.content.length>140?"…":""}</>} status={<span className="ym-letter-meta"><span className="ym-letter-read-badge" data-read={letter.isRead||readIds.has(letter.id)}>{letter.isRead||readIds.has(letter.id)?"已读":"未读"}</span>{letter.isFavorite&&" · 已收藏"}{letter.hasBeenReplied&&" · 已回复"}{letter.replyState!=="none"&&` · ${replyStateName[letter.replyState]}`}</span>} expanded={selection===letter.id} detailLabel="信件详情" onToggle={()=>openLetter(letter.id)}>
-        {detailLoading ? <p role="status">正在读取信件…</p> : detail ? <>
+        {detailLoading && !detail ? <p role="status">正在读取信件…</p> : detail ? <>
         <div className="ym-page-heading"><h3>{detail.sender === "user" ? "我寄出的信" : `${personaName}的来信`}</h3><button className="ym-button" onClick={closeLetter}>收起信件</button></div>
         <p className="ym-letter-meta"><LetterKindBadge letter={detail}/> {letterKindNotes[detail.letterKind]} · {travelTime(detail.createdAt)} · {detail.isFavorite ? "已收藏" : "未收藏"}</p>
         <p className="ym-letter-body">{detail.content}</p>
@@ -155,7 +162,7 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
           {detail.sender === "ai" && <button className="ym-button" disabled={busy || !canReply} onClick={() => { void act(() => navigation.openLetter(context, detail.travelId!, detail.id)); }}>回信</button>}
           <button className="ym-button" data-variant="danger" disabled={busy} onClick={() => { setDeleting(detail); }}>删除信件</button></div>
       </> : <p className="ym-page-note">选择一封信，查看完整内容。</p>}</InlineDetailCard>
-        <button type="button" className="ym-button ym-card-favorite" aria-label={letter.isFavorite?"取消收藏信件":"收藏信件"} title={letter.isFavorite?"取消收藏信件":"收藏信件"} aria-pressed={letter.isFavorite} disabled={busy||mailBrowser.loading} onClick={()=>{void act(()=>lettersApi.flags(context,letter.id,{favorite:!letter.isFavorite}));}}><UiIcon name="star" filled={letter.isFavorite}/></button>
+        <button type="button" className="ym-button ym-card-favorite" aria-label={letter.isFavorite?"取消收藏信件":"收藏信件"} title={letter.isFavorite?"取消收藏信件":"收藏信件"} aria-pressed={letter.isFavorite} disabled={busy||mailBrowser.loading} onClick={()=>{void toggleFavorite(letter);}}><UiIcon name="star" filled={letter.isFavorite}/></button>
       </li>)}</ul>
       <CardBrowserPagination browser={mailBrowser} label="信件" disabled={busy}/>
 

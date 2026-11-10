@@ -9,6 +9,7 @@ function openNavigation() {
   for (const name of ["全局设置", "基础服务", "扩展服务", "人设与会话设置"]) fireEvent.click(screen.getByRole("button", { name }));
 }
 
+vi.mock("../components/settings/AppInfoPanel",()=>({default:()=> <p>关于颜喵独立内容</p>}));
 vi.mock("../components/settings/GeneralPanel", () => ({ default: () => <p>主题表单</p> }));
 vi.mock("../components/settings/ProvidersPanel", () => ({ default: () => <p>提供商表单</p> }));
 vi.mock("../components/settings/PersonasPanel", () => ({ default: ({detailRequest}:{detailRequest?:{id:string}}) => <p>人设表单{detailRequest&&<span data-testid="detail-id">{detailRequest.id}</span>}</p> }));
@@ -159,4 +160,8 @@ it("上下文加载失败时仍能打开手册，窄窗选择器保留入口", a
   expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("帮助与使用手册");
   fireEvent.click(screen.getByText(/^第一次使用：/));
   expect(screen.getByText(/先配好聊天即可/)).toBeTruthy();
+});
+
+it("关于颜喵是独立入口，不依赖当前会话加载成功",async()=>{
+ await act(async()=>{render(<SettingsPage snapshot={null} loading={true} error="上下文读取失败" onRefresh={()=>{}}/>);});fireEvent.click(screen.getByRole("button",{name:"关于颜喵"}));expect(screen.getByText("关于颜喵独立内容")).toBeTruthy();expect((screen.getByLabelText("设置页面") as HTMLSelectElement).value).toBe("关于颜喵");
 });

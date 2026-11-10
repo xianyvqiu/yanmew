@@ -55,5 +55,6 @@ export default function SettingsNavigation({ page, onSelect, tutorialPage }: { p
     </NavigationGroup>
     <NavigationGroup title={scopedTitle} open={!!expanded[scopedTitle]} onToggle={() => toggle(scopedTitle)}>{items(settingsGroups[2])}</NavigationGroup>
     <button type="button" data-onboarding-page="帮助与使用手册" className="ym-button ym-settings-nav-item" aria-current={page === "帮助与使用手册" ? "page" : undefined} onClick={() => onSelect("帮助与使用手册")}>帮助与使用手册</button>
+    <button type="button" className="ym-button ym-settings-nav-item" aria-current={page === "关于颜喵" ? "page" : undefined} onClick={() => onSelect("关于颜喵")}>关于颜喵</button>
   </nav>;
 }

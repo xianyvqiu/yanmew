@@ -61,6 +61,8 @@ mod stickers;
 mod sticker_commands;
 mod card_browser;
 mod community_games;
+pub mod updates;
+mod update_commands;
 pub mod reminders;
 mod reminder_email;
 pub mod reminder_extract;
@@ -280,6 +282,11 @@ pub fn run() {
             commands::get_reminder_occurrence,
             commands::polish_reminder_occurrence,
             commands::get_app_info,
+            update_commands::get_app_update_status,
+            update_commands::check_app_update,
+            update_commands::install_app_update,
+            update_commands::open_app_information_link,
+            update_commands::uninstall_app,
             commands::request_app_exit,
             commands::get_reminder_email,
             commands::save_reminder_email,
@@ -365,6 +372,9 @@ pub fn run() {
             commands::set_active_persona
         ]))
         .setup(|app| {
+            app.manage(update_commands::Service::default());
+            let update_app=app.handle().clone();
+            tauri::async_runtime::spawn(async move {let _=update_commands::check(update_app).await;});
             #[cfg(windows)]
             app.handle().plugin(tauri_plugin_autostart::Builder::new()
                 .app_name(autostart::ENTRY_NAME).build())?;

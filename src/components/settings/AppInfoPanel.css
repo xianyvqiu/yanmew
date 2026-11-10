@@ -1,0 +1,9 @@
+.ym-app-info { display:grid;gap:20px;min-width:0; }
+.ym-app-info-details { display:grid;grid-template-columns:max-content minmax(0,1fr);gap:14px 20px; }
+.ym-app-info-details dt { color:var(--ym-text-secondary); }
+.ym-app-info-details dd { margin:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;overflow-wrap:anywhere;min-width:0; }
+.ym-app-info-links { display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:20px; }
+.ym-app-update-release { margin-top:20px;padding-top:16px;border-top:1px solid var(--ym-border);min-width:0; }
+.ym-app-update-notes { white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8; }
+.ym-app-info progress { width:100%;accent-color:var(--ym-accent); }
+@media(max-width:480px) { .ym-app-info-details { grid-template-columns:minmax(0,1fr);gap:8px; }.ym-app-info-details dd { margin-bottom:12px; } }

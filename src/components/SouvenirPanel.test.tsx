@@ -34,6 +34,33 @@ it("星星收藏伴手礼失败保留原状态并显示错误",async()=>{
  const star=await screen.findByRole("button",{name:"收藏伴手礼"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));fireEvent.click(star);
  expect((await screen.findByRole("alert")).textContent).toBe("收藏保存失败");await waitFor(()=>expect(star).toHaveProperty("disabled",false));expect(star.getAttribute("aria-pressed")).toBe("false");expect(api.get).not.toHaveBeenCalled();
 });
+it.each([false,true])("收藏伴手礼时保留页面内容，延迟刷新不插入占位（展开=%s）",async(expanded)=>{
+ let changed!:(event:{sessionId:string})=>void;
+ api.listen.mockImplementation(async receive=>{changed=receive;return()=>{};});
+ render(<SouvenirPanel context={context}/>);
+ const star=await screen.findByRole("button",{name:"收藏伴手礼"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));
+ const card=screen.getByRole("button",{name:/湖边明信片/});
+ if(expanded){fireEvent.click(card);await screen.findByText(gift.note);}
+ const body=expanded?screen.getByRole("region",{name:"伴手礼详情"}).querySelector(".ym-letter-body"):null;
+ let finishList!:(value:unknown)=>void,finishDetail!:(value:Souvenir)=>void;
+ api.browse.mockImplementation(()=>new Promise(done=>{finishList=done;}));
+ api.get.mockImplementation(()=>new Promise(done=>{finishDetail=done;}));
+ const saved={...gift,isFavorite:true};
+ api.favorite.mockImplementation(async()=>{changed({sessionId:context.sessionId});return saved;});
+ fireEvent.click(star);
+ await waitFor(()=>expect(finishList).toBeTypeOf("function"));
+ expect(screen.queryByText("正在读取伴手礼…")).toBeNull();
+ expect(screen.queryByText("正在读取礼物详情…")).toBeNull();
+ if(expanded){
+   await waitFor(()=>expect(finishDetail).toBeTypeOf("function"));
+   expect(screen.getByRole("region",{name:"伴手礼详情"}).querySelector(".ym-letter-body")).toBe(body);
+   expect(screen.getByText(gift.note)).toBeTruthy();
+   await act(async()=>{finishDetail(saved);});
+ }
+ await act(async()=>{finishList({items:[saved],total:1,page:1,pages:1});});
+ expect(screen.getByRole("button",{name:"取消收藏伴手礼"}).getAttribute("aria-pressed")).toBe("true");
+ expect(card.isConnected).toBe(true);expect(card.getAttribute("aria-expanded")).toBe(String(expanded));
+});
 it("收藏筛选找出分页外伴手礼，刷新保留，取消收藏后移出列表",async()=>{
  let saved={...gift,content:"珍藏伴手礼",isFavorite:true};const regular=Array.from({length:25},(_,i)=>({...gift,id:String(100+i),content:`普通伴手礼${i}`}));
  api.list.mockImplementation(async()=>[...regular,saved]);api.get.mockImplementation(async()=>saved);api.favorite.mockImplementation(async(_context,_id,favorite)=>{saved={...saved,isFavorite:favorite};return saved;});

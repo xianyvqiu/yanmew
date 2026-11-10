@@ -958,7 +958,11 @@ pub async fn get_wallet(window: WebviewWindow, runtime: State<'_, Runtime>) -> A
 #[tauri::command]
 pub fn get_app_info(window: WebviewWindow, app: AppHandle) -> AppResult<crate::models::AppInfo> {
     authorize(&window)?;
-    Ok(crate::models::AppInfo { name: app.config().product_name.clone().unwrap_or_else(|| "颜喵 YanMew".into()), version: app.package_info().version.to_string() })
+    let exe=std::env::current_exe().map_err(|_|AppError::storage())?;
+    let root=exe.parent().ok_or_else(AppError::storage)?;
+    #[cfg(windows)] let data=crate::updates::windows::data_root(root).map_err(|message|AppError::new("APP_INFO_FAILED",message))?;
+    #[cfg(not(windows))] let data=root.join("data");
+    Ok(crate::models::AppInfo { name: app.config().product_name.clone().unwrap_or_else(|| "颜喵 YanMew".into()), version: app.package_info().version.to_string(),build_id:crate::updates::BUILD_ID.into(),mode:if root.join("yanmew-installed").exists(){"installed"}else{"portable"}.into(),data_directory:data.to_string_lossy().into_owned(),program_directory:root.to_string_lossy().into_owned() })
 }
 
 #[tauri::command]

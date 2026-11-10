@@ -37,6 +37,38 @@ it("星星收藏信件失败保留空心状态和未读，显示保存错误",as
  const star=await screen.findByRole("button",{name:"收藏信件"});await waitFor(()=>expect(star).toHaveProperty("disabled",false));fireEvent.click(star);
  expect((await screen.findByRole("alert")).textContent).toBe("收藏保存失败");await waitFor(()=>expect(star).toHaveProperty("disabled",false));expect(star.getAttribute("aria-pressed")).toBe("false");expect(api.letters.get).not.toHaveBeenCalled();expect(stored.isRead).toBe(false);
 });
+it.each([false,true])("收藏信件时保留页面内容，延迟刷新不插入占位（展开=%s）",async(expanded)=>{
+ let changed!:(event:{sessionId:string})=>void;
+ api.letters.listen.mockImplementation(async receive=>{changed=receive;return()=>{};});
+ api.travel.current.mockResolvedValue(null);stored.isRead=true;
+ render(<TravelPanel context={context} personaName="小喵" tab="mailbox"/>);
+ const star=await screen.findByRole("button",{name:"收藏信件"});
+ await screen.findByText("它在家，可以查看以前的出行和信件。");
+ await waitFor(()=>expect(star).toHaveProperty("disabled",false));
+ if(expanded){fireEvent.click(screen.getByRole("button",{name:/小喵的来信/}));await screen.findByRole("button",{name:"删除信件"});}
+ const body=expanded?screen.getByRole("region",{name:"信件详情"}).querySelector(".ym-letter-body"):null;
+ const browse=api.browse.getMockImplementation()!;
+ let finishList!:(value:unknown)=>void,finishTravel!:(value:null)=>void,finishDetail!:(value:Letter)=>void;
+ api.browse.mockImplementation((kind,...args)=>kind==="letters"?new Promise(done=>{finishList=done;}):browse(kind,...args));
+ api.travel.current.mockImplementation(()=>new Promise(done=>{finishTravel=done;}));
+ api.letters.get.mockImplementation(()=>new Promise(done=>{finishDetail=done;}));
+ api.letters.flags.mockImplementation(async(_scope,_id,flags)=>{stored={...stored,isFavorite:flags.favorite};changed({sessionId:context.sessionId!});return {...stored};});
+ fireEvent.click(star);
+ await waitFor(()=>expect(finishList).toBeTypeOf("function"));
+ expect(screen.queryByText("正在读取信件…")).toBeNull();
+ expect(screen.queryByText("正在读取出行状态…")).toBeNull();
+ expect(screen.getByText("它在家，可以查看以前的出行和信件。")).toBeTruthy();
+ await act(async()=>{finishTravel(null);});
+ if(expanded){
+   await waitFor(()=>expect(finishDetail).toBeTypeOf("function"));
+   expect(screen.getByRole("region",{name:"信件详情"}).querySelector(".ym-letter-body")).toBe(body);
+   expect(screen.queryByText("正在读取信件…")).toBeNull();
+   await act(async()=>{finishDetail({...stored});});
+ }
+ await act(async()=>{finishList({items:[{...stored}],total:1,page:1,pages:1});});
+ expect(screen.getByRole("button",{name:"取消收藏信件"}).getAttribute("aria-pressed")).toBe("true");
+ expect(screen.getByRole("button",{name:/小喵的来信/}).getAttribute("aria-expanded")).toBe(String(expanded));
+});
 beforeEach(() => {
   vi.resetAllMocks(); exists=true;
   stored={id:"7",sessionId:"1",travelId:"3",sender:"ai",content:"湖边很好 (・ω・)",replyToId:null,hasBeenReplied:false,replyDueAt:null,replyState:"none",letterKind:"midway",isFavorite:false,isRead:false,createdAt:"2026-10-09T00:30:00Z"};

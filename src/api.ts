@@ -1,8 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 /** 应用信息来自运行程序；退出复用已有原生退出事件的保存流程。 */
+export type AppInfo = { name:string;version:string;buildId:string;mode:"portable"|"installed";dataDirectory:string;programDirectory:string };
+export type AppUpdateStatus = {phase:"idle"|"checking"|"no_release"|"available"|"up_to_date"|"downloading"|"installing"|"error";message:string;checkedAt:string|null;downloaded:number;total:number;candidate:{manifest:{version:string;buildId:string;assetName:string;size:number;sha256:string;schemaVersion:number};releaseUrl:string;notes:string}|null};
 export const appApi = {
-  info: () => invoke<{ name: string; version: string }>("get_app_info"),
+  info: () => invoke<AppInfo>("get_app_info"),
   exit: () => invoke<void>("request_app_exit"),
+  updateStatus:()=>invoke<AppUpdateStatus>("get_app_update_status"),
+  checkUpdate:()=>invoke<AppUpdateStatus>("check_app_update"),
+  update:()=>invoke<void>("install_app_update",{confirmedByUser:true}),
+  openInformation:(kind:"repository"|"community"|"issues"|"releases"|"updateRelease"|"data")=>invoke<void>("open_app_information_link",{kind}),
+  uninstall:()=>invoke<void>("uninstall_app",{confirmedByUser:true}),
 };
 import type { BackupRequest, BackupArchive, BackupExportOptions, BackupImportPreview, BackupImportConfirm, BackupImported } from "./types";
 /** 六类导出共用流式文件协议；后端系统窗口选择目标，取消返回null。 */

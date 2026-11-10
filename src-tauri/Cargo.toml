@@ -33,4 +33,4 @@ lettre = { version = "=0.11.23", default-features = false, features = ["builder"
 
 [target.'cfg(windows)'.dependencies]
 tauri-plugin-autostart = "=2.5.1"
-windows = { version = "0.61", features = ["Devices_Geolocation", "Devices_Enumeration", "Foundation", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_System_Com", "Win32_UI_Shell_Common", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Devices_Geolocation", "Devices_Enumeration", "Foundation", "Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_System_Com", "Win32_UI_Shell_Common", "Win32_Storage_FileSystem", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }

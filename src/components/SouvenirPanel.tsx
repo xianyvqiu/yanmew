@@ -50,19 +50,27 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
     return () => { disposed = true; alive.current = false; generation++; stops.forEach(stop => stop()); window.removeEventListener("focus", focus); };
   }, [context.personaId, context.sessionId, context.contextRevision]);
   useEffect(() => {
-    let disposed = false; setDetail(null);
+    let disposed = false;
+    if (!selected) { setDetail(null); return; }
     if (selected) void souvenirsApi.get(context, selected).then(item => { if (!disposed) setDetail(item); })
       .catch(cause => { if (!disposed) setError(errorMessage(cause)); });
     return () => { disposed = true; };
   }, [selected, detailVersion]);
   useEffect(() => { if (deleting) dialog.current?.showModal(); else dialog.current?.close(); }, [deleting]);
-  const act = async (operation: () => Promise<unknown>, after?: () => void) => {
+  const act = async (operation: () => Promise<unknown>, after?: () => void, reload = true) => {
     if (locked.current) return;
     locked.current = true; setBusy(true); setError("");
-    try { await operation(); if (alive.current) { after?.(); await refresh(); } }
+    try { await operation(); if (alive.current) { after?.(); if (reload) await refresh(); } }
     catch (cause) { if (alive.current) setError(errorMessage(cause)); }
     finally { locked.current = false; if (alive.current) setBusy(false); }
   };
+  const toggleFavorite = (item: Souvenir) => act(async () => {
+    const saved = await souvenirsApi.favorite(context, item.id, !item.isFavorite);
+    if (alive.current) {
+      setDetail(previous => previous?.id === saved.id ? { ...previous, isFavorite: saved.isFavorite } : previous);
+      browser.refresh();
+    }
+  }, undefined, false);
   return <section className="ym-page-card" aria-label="伴手礼">
     <div className="ym-page-heading"><h2>伴手礼</h2><button className="ym-button" disabled={busy || loading || browser.loading} onClick={() => { void refresh(); }}>刷新伴手礼</button></div>
     <p className="ym-page-note">这里保存旅行带回的普通礼物和可选图片。可佩戴的旅行饰品在“饰品”页查看；删除礼物不会清除出行事实、信件或游记，也不会再次发放。</p>
@@ -72,7 +80,7 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
     {status?.notice && <p className="ym-page-note" role="status">{status.notice}</p>}
     {status?.failures.map(failure => <p key={failure.travelId} role="alert" className="ym-page-error">礼物生成失败：{failure.error.message}。约 {failure.retryAfterSeconds} 秒后重试。</p>)}
     {Boolean(status?.failures.length) && <button className="ym-button" disabled={busy || Boolean(status?.active)} onClick={() => { void act(() => souvenirsApi.retry(context)); }}>重试待生成礼物</button>}
-    {(loading || browser.loading) && <p role="status">正在读取伴手礼…</p>}
+    {((loading && !status) || (browser.loading && !browser.items.length)) && <p role="status">正在读取伴手礼…</p>}
     {error && <p role="alert" className="ym-page-error">{error}</p>}
     {!loading && !browser.loading && !browser.total && !browser.search && !error && !browser.error && <p className="ym-page-empty">{browser.favoritesOnly?"当前筛选下没有收藏的伴手礼。":"还没有收到伴手礼。"}</p>}
     <TravelFilter browser={browser} disabled={busy} favoriteFilter={{label:"只看收藏的伴手礼",checked:browser.favoritesOnly,onChange:browser.setFavoritesOnly}}/><CardBrowserControls browser={browser} label="伴手礼" timeLabel="获得时间" disabled={busy}/>
@@ -86,7 +94,7 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
         <div className="ym-inline-form">
           <button className="ym-button" data-variant="danger" disabled={busy || loading || browser.loading} onClick={() => { setError(""); setDeleting(detail); }}>删除伴手礼</button></div>
       </> : <p className="ym-page-note">{selected ? error ? "礼物详情暂不可用，请刷新后重试。" : "正在读取礼物详情…" : "选择一件伴手礼，看看它写的备注。"}</p>}</InlineDetailCard>
-      <button type="button" className="ym-button ym-card-favorite" aria-label={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} title={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} aria-pressed={item.isFavorite} disabled={busy||loading||browser.loading} onClick={()=>{void act(()=>souvenirsApi.favorite(context,item.id,!item.isFavorite));}}><UiIcon name="star" filled={item.isFavorite}/></button>
+      <button type="button" className="ym-button ym-card-favorite" aria-label={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} title={item.isFavorite?"取消收藏伴手礼":"收藏伴手礼"} aria-pressed={item.isFavorite} disabled={busy||loading||browser.loading} onClick={()=>{void toggleFavorite(item);}}><UiIcon name="star" filled={item.isFavorite}/></button>
       </li>)}</ul>
       <CardBrowserPagination browser={browser} label="伴手礼" disabled={busy}/>
 

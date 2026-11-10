@@ -2,12 +2,28 @@
 param([switch]$SkipBuild, [switch]$PassThru)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$previousBuild = $env:YANMEW_BUILD_ID
+$buildId = Get-Date -Format 'yyyyMMdd-HHmmss'
+$releaseStamp = $buildId
+$buildRecord = Join-Path $projectRoot 'src-tauri/target/release/yanmew-build-id.json'
+if ($SkipBuild) {
+    if (-not (Test-Path -LiteralPath $buildRecord)) { throw '缺少已编译程序的构建编号，不能复用；请去掉SkipBuild重新构建' }
+    $record = Get-Content -LiteralPath $buildRecord -Raw | ConvertFrom-Json
+    $buildId = $record.buildId
+    if ($buildId -notmatch '^\d{8}-\d{6}$') { throw '已编译程序的构建编号无效' }
+    $existingExe = Join-Path $projectRoot 'src-tauri/target/release/yanwenzi.exe'
+    if ((Get-FileHash -LiteralPath $existingExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $record.sha256) { throw 'EXE与构建编号记录不一致，请重新构建' }
+}
+$env:YANMEW_BUILD_ID = $buildId
 Push-Location $projectRoot
 try {
     if (-not $SkipBuild) {
         & npm run tauri build -- --no-bundle
         if ($LASTEXITCODE -ne 0) { throw '正式程序构建失败，未组装便携版' }
+        [ordered]@{buildId=$buildId;sha256=(Get-FileHash -LiteralPath (Join-Path $projectRoot 'src-tauri/target/release/yanwenzi.exe') -Algorithm SHA256).Hash.ToLowerInvariant()} | ConvertTo-Json | Set-Content -LiteralPath $buildRecord -Encoding utf8NoBOM
     }
+    & cargo build --manifest-path src-tauri/Cargo.toml --bin yanmew-update --release --locked --offline
+    if ($LASTEXITCODE -ne 0) { throw '更新助手构建失败，未组装便携版' }
     $config = Get-Content -LiteralPath 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
     $executable = Join-Path $projectRoot 'src-tauri/target/release/yanwenzi.exe'
     if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw '缺少 release 可执行文件' }
@@ -28,11 +44,14 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $runtimeDirectory.FullName $required) -PathType Leaf)) { throw "运行库缺少 $required" }
     }
 
-    $releaseRoot = Join-Path $projectRoot ('releases/' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    $releaseRoot = Join-Path $projectRoot ('releases/' + $releaseStamp)
     if (Test-Path -LiteralPath $releaseRoot) { throw '发布目录已存在，请稍后重试，原产物不覆盖' }
     $portable = Join-Path $releaseRoot "YanMew-$($config.version)-windows-x64"
     New-Item -ItemType Directory -Path $portable | Out-Null
     Copy-Item -LiteralPath $executable -Destination $portable
+    $helper = Join-Path $projectRoot 'src-tauri/target/release/yanmew-update.exe'
+    Copy-Item -LiteralPath $helper -Destination $portable
+    Copy-Item -LiteralPath $helper -Destination (Join-Path $releaseRoot '颜喵一键更新.exe')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $portable
     Copy-Item -LiteralPath (Join-Path $projectRoot 'resources/portable-README.md') -Destination (Join-Path $portable '使用说明.md')
     & (Join-Path $PSScriptRoot 'copy-embedding-resources.ps1') -Destination $portable
@@ -110,14 +129,21 @@ try {
     $notices | Set-Content -LiteralPath (Join-Path $portable 'THIRD_PARTY_NOTICES.md') -Encoding UTF8
 
     if (Test-Path -LiteralPath (Join-Path $portable 'data')) { throw '发布目录不得包含用户数据' }
+    $files = @(Get-ChildItem -LiteralPath $portable -File -Recurse | Sort-Object FullName | ForEach-Object {
+        [ordered]@{path=[IO.Path]::GetRelativePath($portable,$_.FullName).Replace('\','/');size=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+    })
+    [ordered]@{schemaVersion=1;product='com.yanmew.pet';version=$config.version;buildId=$buildId;files=$files} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $portable 'yanmew-package.json') -Encoding utf8NoBOM
     $archive = Join-Path $releaseRoot '颜喵 YanMew-portable.zip'
     Compress-Archive -LiteralPath $portable -DestinationPath $archive -CompressionLevel Optimal
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding UTF8
+    [ordered]@{schemaVersion=1;version=$config.version;buildId=$buildId;assetName=[IO.Path]::GetFileName($archive);size=(Get-Item -LiteralPath $archive).Length;sha256=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $releaseRoot 'yanmew-update.json') -Encoding utf8NoBOM
+    "$((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant())  颜喵一键更新.exe" | Set-Content -LiteralPath (Join-Path $releaseRoot '颜喵一键更新.exe.sha256') -Encoding utf8NoBOM
     Write-Output "便携目录：$portable"
     Write-Output "便携 ZIP：$archive"
     Write-Output "SHA-256：$hash"
     if ($PassThru) { Write-Output ([pscustomobject]@{ ReleaseDirectory = $releaseRoot; PortableDirectory = $portable; Archive = $archive }) }
 } finally {
+    $env:YANMEW_BUILD_ID = $previousBuild
     Pop-Location
 }

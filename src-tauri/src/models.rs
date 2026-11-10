@@ -77,6 +77,10 @@ pub struct DailySignInResult {
 pub struct AppInfo {
     pub name: String,
     pub version: String,
+    pub build_id: String,
+    pub mode: String,
+    pub data_directory: String,
+    pub program_directory: String,
 }
 
 /// 当前会话亲密度，只读查询不结算计时、不发放奖励。
