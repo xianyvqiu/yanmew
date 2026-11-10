@@ -7,6 +7,24 @@ const context={personaId:"1",sessionId:"1",contextRevision:1};
 const page=(name:string)=>({items:[{id:name}],total:1,page:1,pages:1,travels:[]});
 beforeEach(()=>{vi.resetAllMocks();api.browse.mockResolvedValue(page("current"));api.listen.mockResolvedValue(()=>{});});
 afterEach(cleanup);
+it("收藏条件回首页，刷新保留搜索和出行，切换会话重置",async()=>{
+ let changed!:()=>void;api.listen.mockImplementation(async(_,receive)=>{changed=receive;return()=>{};});
+ const {result,rerender}=renderHook(scope=>useRemoteCardBrowser<{id:string}>("letters",scope),{initialProps:context});
+ await waitFor(()=>expect(result.current.loading).toBe(false));
+ act(()=>{result.current.setSearch("灯塔");result.current.setTravelIds(["7"]);result.current.setPage(3);});
+ await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"灯塔","newest",3,["7"]));
+ act(()=>result.current.setFavoritesOnly(true));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"灯塔","newest",1,["7"],true));
+ act(()=>result.current.setPage(2));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",context,"灯塔","newest",2,["7"],true));
+ const key=result.current.selectionKey;await act(async()=>changed());await waitFor(()=>expect(result.current.loading).toBe(false));expect(result.current.favoritesOnly).toBe(true);expect(result.current.selectionKey).toBe(key);
+ const next={...context,sessionId:"2",contextRevision:2};rerender(next);await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("letters",next,"","newest",1,[]));expect(result.current.favoritesOnly).toBe(false);
+});
+it("收藏筛选完成后迟到的全部列表不会覆盖结果",async()=>{
+ const old:((value:ReturnType<typeof page>)=>void)[]=[];
+ api.browse.mockImplementation((...args:unknown[])=>args[6]===true?Promise.resolve(page("favorite")):new Promise(resolve=>old.push(resolve)));
+ const {result}=renderHook(()=>useRemoteCardBrowser<{id:string}>("souvenirs",context));await waitFor(()=>expect(old.length).toBeGreaterThan(0));
+ act(()=>result.current.setFavoritesOnly(true));await waitFor(()=>expect(result.current.items[0]?.id).toBe("favorite"));
+ await act(async()=>old.forEach(resolve=>resolve(page("unfiltered"))));expect(result.current.items[0]?.id).toBe("favorite");
+});
 it("订阅建立后补查并拒绝较早的迟到结果",async()=>{
  let old!:(value:ReturnType<typeof page>)=>void,ready!:(stop:()=>void)=>void;
  api.browse.mockImplementationOnce(()=>new Promise(resolve=>{old=resolve;}));

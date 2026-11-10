@@ -11,8 +11,8 @@ beforeEach(() => {
   api.status.mockResolvedValue({ active: null, pendingCount: 0, failures: [], notice: null });
   api.listen.mockResolvedValue(() => {}); api.favorite.mockResolvedValue(gift); api.delete.mockResolvedValue(undefined); api.retry.mockResolvedValue(undefined);
   api.browserListen.mockResolvedValue(() => {});
-  api.browse.mockImplementation(async (_kind, scope, search, order, page) => {
-    const rows = (await api.list(scope)).filter((row: Record<string, unknown>) => JSON.stringify(row).includes(search));
+  api.browse.mockImplementation(async (_kind, scope, search, order, page, travelIds:string[]=[], favoritesOnly=false) => {
+    const rows = (await api.list(scope)).filter((row: Record<string, unknown>) => JSON.stringify(row).includes(search)&&(!favoritesOnly||row.isFavorite===true)&&(!travelIds.length||travelIds.includes(String(row.travelId))));
     if (order === "oldest") rows.reverse();
     const pages = Math.max(1, Math.ceil(rows.length / 12));
     const current = Math.min(page, pages);
@@ -22,6 +22,16 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
 });
 afterEach(cleanup);
+it("收藏筛选找出分页外伴手礼，刷新保留，取消收藏后移出列表",async()=>{
+ let saved={...gift,content:"珍藏伴手礼",isFavorite:true};const regular=Array.from({length:25},(_,i)=>({...gift,id:String(100+i),content:`普通伴手礼${i}`}));
+ api.list.mockImplementation(async()=>[...regular,saved]);api.get.mockImplementation(async()=>saved);api.favorite.mockImplementation(async(_context,_id,favorite)=>{saved={...saved,isFavorite:favorite};return saved;});
+ render(<SouvenirPanel context={context}/>);await screen.findByText("普通伴手礼0");expect(screen.queryByText("珍藏伴手礼")).toBeNull();
+ fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"}));await screen.findByText("珍藏伴手礼");expect(screen.queryByText("普通伴手礼0")).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"刷新伴手礼"}));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",1,[],true));
+ fireEvent.click(screen.getByRole("button",{name:/珍藏伴手礼/}));fireEvent.click(await screen.findByRole("button",{name:"取消收藏"}));
+ await screen.findByText("当前筛选下没有收藏的伴手礼。");expect(screen.queryByText("还没有收到伴手礼。")).toBeNull();expect(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"})).toHaveProperty("checked",true);
+ fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"}));await screen.findByText("普通伴手礼0");
+});
 it("多选出行在请求中传递并显示卡片所属出行",async()=>{
  const trips=[{id:"4",destination:"湖边",startedAt:"2026-10-13T00:00:00Z"},{id:"8",destination:"山间",startedAt:"2026-10-12T00:00:00Z"}];api.browse.mockResolvedValue({items:[{...gift,travel:trips[0]}],travels:trips,total:1,page:1,pages:1});render(<SouvenirPanel context={context}/>);await screen.findByRole("button",{name:/湖边明信片/});expect(screen.getByText(/出发 · 湖边/)).toBeTruthy();fireEvent.click(screen.getByText("按出行筛选"));fireEvent.click(screen.getByRole("checkbox",{name:/湖边/}));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",1,["4"]));fireEvent.click(screen.getByRole("checkbox",{name:/山间/}));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",1,["4","8"]));fireEvent.click(screen.getByRole("button",{name:"清除筛选"}));await waitFor(()=>expect(api.browse).toHaveBeenLastCalledWith("souvenirs",context,"","newest",1,[]));
 });

@@ -342,7 +342,7 @@ export const festivalsApi = {
 
 export type CardKind="travels"|"letters"|"journals"|"accessories"|"souvenirs"|"dates";
 export const cardBrowserApi={
-  browse:<T,>(kind:CardKind,context:CurrentContext,search:string,order:"newest"|"oldest",page:number,travelIds:string[]=[])=>invoke<{items:T[];total:number;page:number;pages:number;travels?:import("./types").TravelOrigin[]}>("browse_cards",{input:{kind,context,search,order,page,travelIds}}),
+  browse:<T,>(kind:CardKind,context:CurrentContext,search:string,order:"newest"|"oldest",page:number,travelIds:string[]=[],favoritesOnly=false)=>invoke<{items:T[];total:number;page:number;pages:number;travels?:import("./types").TravelOrigin[]}>("browse_cards",{input:{kind,context,search,order,page,travelIds,...(favoritesOnly?{favoritesOnly:true}:{})}}),
   listen:(kind:CardKind,receive:()=>void)=>listen(kind==="accessories"?"accessories-changed":kind==="dates"?"festivals-changed":"travel-changed",receive),
 };
 

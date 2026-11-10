@@ -12,9 +12,10 @@ const api = vi.hoisted(() => ({
   letters: { list:vi.fn(),get:vi.fn(),flags:vi.fn(),delete:vi.fn(),status:vi.fn(),retry:vi.fn(),send:vi.fn(),listen:vi.fn() },
   pet: {listen:vi.fn()},
   journals: {list:vi.fn(),get:vi.fn(),status:vi.fn(),retry:vi.fn(),update:vi.fn(),delete:vi.fn()},
+  souvenirs:{list:vi.fn(),get:vi.fn(),favorite:vi.fn(),delete:vi.fn(),status:vi.fn(),retry:vi.fn(),imageSettings:vi.fn(),setImageSettings:vi.fn(),listenImageSettings:vi.fn()},
   navigation: {openLetter:vi.fn(),open:vi.fn()},
 }));
-vi.mock("../api", () => ({cardBrowserApi:{browse:api.browse,listen:api.browserListen},travelApi:api.travel,lettersApi:api.letters,petApi:api.pet,travelJournalsApi:api.journals,errorMessage:(e: {message?:string})=>e.message ?? "读取失败"}));
+vi.mock("../api", () => ({cardBrowserApi:{browse:api.browse,listen:api.browserListen},travelApi:api.travel,lettersApi:api.letters,petApi:api.pet,travelJournalsApi:api.journals,souvenirsApi:api.souvenirs,errorMessage:(e: {message?:string})=>e.message ?? "读取失败"}));
 vi.mock("../platform/navigation", () => ({navigation:api.navigation}));
 const context: CurrentContext = {personaId:"1",sessionId:"1",contextRevision:2};
 const trip: Travel = {id:"3",sessionId:"1",status:"away",startedAt:"2026-10-09T00:00:00Z",plannedReturnAt:"2099-10-09T01:00:00Z",actualReturnAt:null,cancelledAt:null,midwayLetterAt:"2026-10-09T00:30:00Z",destination:"湖边",factsState:"ready",midwayLetterState:"done",returnLetterState:"pending",giftState:"pending",journalState:"pending",giftKind:null};
@@ -29,6 +30,7 @@ beforeEach(() => {
   api.journals.list.mockResolvedValue([{id:"8",sessionId:"1",travelId:"3",title:"旅行标题",createdAt:"a",updatedAt:"a"}]);
   api.journals.get.mockResolvedValue({id:"8",sessionId:"1",travelId:"3",title:"旅行标题",content:"旅行正文",createdAt:"a",updatedAt:"a"});
   api.journals.status.mockResolvedValue({active:null,pendingCount:0,failures:[],notice:null});
+  api.souvenirs.list.mockResolvedValue([]);api.souvenirs.status.mockResolvedValue({active:null,pendingCount:0,failures:[],notice:null});api.souvenirs.imageSettings.mockResolvedValue(false);api.souvenirs.listenImageSettings.mockResolvedValue(()=>{});
   api.letters.status.mockResolvedValue({active:null,failures:[],notice:null});
   api.letters.list.mockImplementation(async()=>exists?[{...stored}]:[]);
   api.letters.get.mockImplementation(async()=> { if(!exists) throw {code:"NOT_FOUND",message:"信件已删除"};return {...stored}; });
@@ -38,9 +40,9 @@ beforeEach(() => {
   for(const listen of [api.travel.listen,api.letters.listen,api.pet.listen]) listen.mockResolvedValue(()=>{});
   api.navigation.openLetter.mockResolvedValue(undefined); api.navigation.open.mockResolvedValue(undefined);
   api.browserListen.mockResolvedValue(()=>{});
-  api.browse.mockImplementation(async(kind,scope,search,order,page)=>{
-    const source=kind==="travels"?api.travel:kind==="letters"?api.letters:api.journals;
-    const records=(await source.list(scope)).filter((row:object)=>JSON.stringify(row).includes(search));
+  api.browse.mockImplementation(async(kind,scope,search,order,page,travelIds:string[]=[],favoritesOnly=false)=>{
+    const source=kind==="travels"?api.travel:kind==="letters"?api.letters:kind==="souvenirs"?api.souvenirs:api.journals;
+    const records=(await source.list(scope)).filter((row:{isFavorite?:boolean;travelId?:string})=>JSON.stringify(row).includes(search)&&(!favoritesOnly||row.isFavorite===true)&&(!travelIds.length||Boolean(row.travelId&&travelIds.includes(row.travelId))));
     if(order==="oldest")records.reverse();
     const pages=Math.max(1,Math.ceil(records.length/12)),current=Math.min(page,pages);
     return {items:records.slice((current-1)*12,current*12),total:records.length,page:current,pages};
@@ -49,6 +51,28 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};
 });
 afterEach(cleanup);
+it("伴手礼切换邮箱再返回时保留收藏和搜索条件",async()=>{
+ api.souvenirs.list.mockResolvedValue([{id:"50",sessionId:"1",travelId:"3",title:"珍藏礼物",content:"湖边的礼物",note:"",isFavorite:true,createdAt:trip.startedAt}]);
+ render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"伴手礼"}));
+ await screen.findByText("珍藏礼物");fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"}));fireEvent.change(screen.getByRole("searchbox"),{target:{value:"珍藏"}});
+ await waitFor(()=>expect(api.browse).toHaveBeenCalledWith("souvenirs",context,"珍藏","newest",1,[],true));
+ fireEvent.click(screen.getByRole("button",{name:"邮箱"}));await screen.findByRole("checkbox",{name:"只看收藏的信件"});
+ fireEvent.click(screen.getByRole("button",{name:"伴手礼"}));expect(screen.getByRole("checkbox",{name:"只看收藏的伴手礼"})).toHaveProperty("checked",true);expect(screen.getByRole("searchbox")).toHaveProperty("value","珍藏");
+});
+it("邮箱收藏筛选查到分页外信件，切标签保留，取消最后收藏显示正确空态",async()=>{
+ stored={...stored,content:"珍藏信件",isFavorite:true,isRead:true};
+ const regular=Array.from({length:25},(_,i)=>({...stored,id:String(100+i),content:`普通信件${i}`,isFavorite:false}));
+ api.letters.list.mockImplementation(async()=>[...regular,{...stored}]);
+ render(<TravelPanel context={context} personaName="小喵"/>);fireEvent.click(screen.getByRole("button",{name:"邮箱"}));
+ await screen.findByText("普通信件0");expect(screen.queryByText("珍藏信件")).toBeNull();
+ fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的信件"}));await screen.findByText("珍藏信件");expect(screen.queryByText("普通信件0")).toBeNull();
+ expect(api.browse).toHaveBeenCalledWith("letters",context,"","newest",1,[],true);
+ fireEvent.click(screen.getByRole("button",{name:"出行历史"}));fireEvent.click(screen.getByRole("button",{name:"邮箱"}));expect(screen.getByRole("checkbox",{name:"只看收藏的信件"})).toHaveProperty("checked",true);
+ fireEvent.click(screen.getByRole("button",{name:/珍藏信件/}));fireEvent.click(await screen.findByRole("button",{name:"取消收藏"}));
+ await screen.findByText("当前筛选下没有收藏的信件。");expect(screen.queryByText("还没有信件。出门期间可以寄一封信。")).toBeNull();
+ expect(screen.getByRole("checkbox",{name:"只看收藏的信件"})).toHaveProperty("checked",true);
+ fireEvent.click(screen.getByRole("checkbox",{name:"只看收藏的信件"}));await screen.findByText("普通信件0");
+});
 it("邮箱区分回信、途中主动信和回来信，详情解释来信来源",async()=>{
  const reply={...stored,id:"9",letterKind:"reply" as const,replyToId:"8",isRead:true,content:"这是针对原信的回答"};
  const midway={...stored,id:"10",letterKind:"midway" as const,isRead:true,content:"半程主动报平安"};

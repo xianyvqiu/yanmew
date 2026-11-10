@@ -7,7 +7,7 @@ use serde::{Deserialize,Serialize};
 pub struct Context {pub persona_id:String,pub session_id:Option<String>,pub context_revision:u64}
 #[derive(Deserialize)]
 #[serde(rename_all="camelCase",deny_unknown_fields)]
-pub struct Query {pub kind:String,pub context:Context,pub search:String,pub order:String,pub page:u32,#[serde(default)] pub travel_ids:Vec<String>}
+pub struct Query {pub kind:String,pub context:Context,pub search:String,pub order:String,pub page:u32,#[serde(default)] pub travel_ids:Vec<String>,#[serde(default)] pub favorites_only:bool}
 #[derive(Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct Trip {pub id:String,pub destination:Option<String>,pub started_at:String}
@@ -30,17 +30,20 @@ pub fn browse(store:&Store,input:Query)->AppResult<Page> {
     let order=match input.order.as_str(){"newest"=>"DESC","oldest"=>"ASC",_=>return Err(AppError::validation("order","请选择时间正序或倒序"))};
     if input.page==0{return Err(AppError::validation("page","页码从1开始"));}
     let trip_kind=matches!(input.kind.as_str(),"letters"|"journals"|"souvenirs");
+    let favorite_kind=matches!(input.kind.as_str(),"letters"|"souvenirs");
+    if input.favorites_only&&!favorite_kind{return Err(AppError::validation("favoritesOnly","仅信件和伴手礼支持收藏筛选"));}
     if input.travel_ids.len()>1000 || (!trip_kind&&!input.travel_ids.is_empty()){return Err(AppError::validation("travelIds","出行筛选参数无效"));}
     let ids=input.travel_ids.iter().map(|id|crate::error::parse_id(id)).collect::<AppResult<Vec<_>>>()?;
     let selected=serde_json::to_string(&ids).map_err(|_|AppError::storage())?;
     let c=&store.connection;
     for id in &ids {if !c.query_row("SELECT EXISTS(SELECT 1 FROM travels WHERE session_id=?1 AND id=?2)",params![session,id],|r|r.get::<_,bool>(0))?{return Err(AppError::not_found());}}
     let trip_filter=if trip_kind {" AND (?3='[]' OR travel_id IN (SELECT value FROM json_each(?3)))"} else {" AND ?3='[]'"};
-    let filter=format!("{} AND instr(lower({content}),lower(?2))>0{trip_filter}",if global {"?1=0"}else{"session_id=?1"});
-    let total:u64=c.query_row(&format!("SELECT count(*) FROM {table} WHERE {filter}"),params![session,input.search.trim(),selected],|r|r.get(0))?;
+    let favorite_filter=if favorite_kind {" AND (?4=0 OR is_favorite=1)"}else{" AND ?4=0"};
+    let filter=format!("{} AND instr(lower({content}),lower(?2))>0{trip_filter}{favorite_filter}",if global {"?1=0"}else{"session_id=?1"});
+    let total:u64=c.query_row(&format!("SELECT count(*) FROM {table} WHERE {filter}"),params![session,input.search.trim(),selected,input.favorites_only],|r|r.get(0))?;
     let pages=u32::try_from(total.div_ceil(12).max(1)).map_err(|_|AppError::storage())?;let page=input.page.min(pages);
-    let mut q=c.prepare(&format!("SELECT id FROM {table} WHERE {filter} ORDER BY {time} {order},id {order} LIMIT 12 OFFSET ?4"))?;
-    let ids=q.query_map(params![session,input.search.trim(),selected,i64::from(page-1)*12],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?;
+    let mut q=c.prepare(&format!("SELECT id FROM {table} WHERE {filter} ORDER BY {time} {order},id {order} LIMIT 12 OFFSET ?5"))?;
+    let ids=q.query_map(params![session,input.search.trim(),selected,input.favorites_only,i64::from(page-1)*12],|r|r.get::<_,i64>(0))?.collect::<Result<Vec<_>,_>>()?;
     let mut items=Vec::new();
     for id in ids {
         let mut value=match input.kind.as_str() {
@@ -66,12 +69,49 @@ pub fn browse(store:&Store,input:Query)->AppResult<Page> {
 mod tests {
     use super::*;
     #[test]
+    fn favorites_filter_full_letters_and_souvenirs_before_counting_and_paging() {
+        let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");
+        runtime.read(|s,_|{
+            s.connection.execute("INSERT INTO sessions(id,persona_id,title,created_at,updated_at) VALUES(999,1,'other','2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')",[])?;
+            for id in 1..=30 {s.connection.execute("INSERT INTO travels(id,session_id,status,started_at,planned_return_at,midway_letter_at,cancelled_at,facts_state,destination,activities_json,facts_version,facts_ready_at,created_at) VALUES(?1,1,'cancelled','2026-10-01T00:00:00Z','2026-10-01T02:00:00Z','2026-10-01T01:00:00Z','2026-10-01T02:00:00Z','ready','目的地','[{\"elapsed_minutes\":0,\"description\":\"散步\"}]',1,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')",[id])?;}
+            for i in 0..30 {
+                let text=if i==0||i==24{format!("目标记录{i}")}else{format!("旅行记录{i}")};let at=format!("2026-10-{:02}T00:00:00Z",i+1);
+                s.connection.execute("INSERT INTO letters(session_id,travel_id,sender,content,letter_kind,is_favorite,created_at) VALUES(1,?1,'ai',?2,'reply',?3,?4)",params![i%2+1,text,i<15,at])?;
+                s.connection.execute("INSERT INTO souvenirs(session_id,travel_id,title,content,note,is_favorite,created_at) VALUES(1,?1,?2,?2,'备注',?3,?4)",params![i+1,text,i<15,at])?;
+            }
+            s.connection.execute("INSERT INTO letters(session_id,sender,content,letter_kind,is_favorite,created_at) VALUES(999,'ai','目标外部信件','reply',1,'2026-11-01T00:00:00Z')",[])?;
+            s.connection.execute("INSERT INTO souvenirs(session_id,content,note,is_favorite,created_at) VALUES(999,'目标外部礼物','',1,'2026-11-01T00:00:00Z')",[])?;
+            for kind in ["letters","souvenirs"] {
+                let query=|favorites_only,page|Query{kind:kind.into(),context:Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0},search:"".into(),order:"newest".into(),page,travel_ids:vec![],favorites_only};
+                let all=browse(s,query(false,1))?;assert_eq!(all.total,30);assert!(all.items.iter().all(|row|row["isFavorite"]==false));
+                let favorites=browse(s,query(true,2))?;assert_eq!(favorites.total,15);assert_eq!(favorites.pages,2);assert_eq!(favorites.items.len(),3);assert!(favorites.items.iter().all(|row|row["isFavorite"]==true&&row["sessionId"]=="1"));
+                let mut selected=query(true,1);selected.travel_ids=if kind=="letters"{vec!["2".into()]}else{(1..=7).map(|i|(i*2).to_string()).collect()};assert_eq!(browse(s,selected)?.total,7);
+                let mut search=query(true,99);search.search="目标".into();search.travel_ids=vec!["1".into()];search.order="oldest".into();let found=browse(s,search)?;assert_eq!(found.total,1);assert_eq!(found.page,1);
+                let id=crate::error::parse_id(found.items[0]["id"].as_str().unwrap())?;
+                s.connection.execute(&format!("UPDATE {kind} SET is_favorite=0 WHERE id=?1"),[id])?;
+                let mut empty=query(true,99);empty.search="目标".into();let empty=browse(s,empty)?;assert_eq!(empty.total,0);assert_eq!(empty.page,1);assert_eq!(empty.pages,1);assert!(empty.items.is_empty());
+                let mut wrong=query(true,1);wrong.context.session_id=Some("999".into());assert!(browse(s,wrong).is_err());
+            }
+            Ok(())
+        }).unwrap();
+    }
+    #[test]
+    fn omitted_favorite_filter_keeps_old_queries_and_unsupported_kinds_reject_it() {
+        let input=serde_json::json!({"kind":"letters","context":{"personaId":"1","sessionId":"1","contextRevision":0},"search":"","order":"newest","page":1});
+        let old:Query=serde_json::from_value(input.clone()).unwrap();assert!(!old.favorites_only);
+        let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");runtime.read(|s,_|{
+            assert_eq!(browse(s,old)?.total,0);
+            let mut input=input.clone();input["kind"]=serde_json::json!("accessories");input["favoritesOnly"]=serde_json::json!(true);
+            assert!(browse(s,serde_json::from_value(input).unwrap()).is_err());Ok(())
+        }).unwrap();
+    }
+    #[test]
     fn trip_multiselect_filters_before_pagination_and_keeps_ownership(){
         let runtime=crate::runtime::test_runtime("http://127.0.0.1:1/v1");
         runtime.read(|store,_|{
             for id in 1..=3 {store.connection.execute("INSERT INTO travels(id,session_id,status,started_at,planned_return_at,midway_letter_at,cancelled_at,facts_state,destination,activities_json,facts_version,facts_ready_at,created_at) VALUES(?1,1,'cancelled','2026-10-01T00:00:00Z','2026-10-01T02:00:00Z','2026-10-01T01:00:00Z','2026-10-01T02:00:00Z','ready',?2,'[{\"elapsed_minutes\":0,\"description\":\"散步\"}]',1,'2026-10-01T00:00:00Z','2026-10-01T00:00:00Z')",params![id,format!("目的地{id}")])?;}
             for i in 0..30 {store.connection.execute("INSERT INTO letters(session_id,travel_id,sender,content,letter_kind,created_at) VALUES(1,?1,'ai',?2,'reply','2026-10-01T00:00:00Z')",params![i%3+1,format!("旅途信件{i}")])?;}
-            let query=|ids:Vec<&str>,page|Query{kind:"letters".into(),context:Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0},search:"旅途".into(),order:"newest".into(),page,travel_ids:ids.into_iter().map(str::to_owned).collect()};
+            let query=|ids:Vec<&str>,page|Query{kind:"letters".into(),context:Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0},search:"旅途".into(),order:"newest".into(),page,travel_ids:ids.into_iter().map(str::to_owned).collect(),favorites_only:false};
             let page=browse(store,query(vec!["1","3"],2))?;assert_eq!(page.total,20);assert_eq!(page.items.len(),8);assert_eq!(page.travels.len(),3);assert!(page.items.iter().all(|r|r["travelId"]=="1"||r["travelId"]=="3"));assert!(page.items.iter().all(|r|r["travel"]["destination"].as_str().unwrap().starts_with("目的地")));
             let mut filtered=query(vec!["1"],1);filtered.search="信件0".into();assert_eq!(browse(store,filtered)?.total,1);
             assert!(browse(store,query(vec!["999"],1)).is_err());assert!(browse(store,query(vec!["1 OR 1=1"],1)).is_err());
@@ -86,7 +126,7 @@ mod tests {
                 kind:"birthday".into(),name:"全局生日".into(),calendar_type:"solar".into(),month:2,day:29,
                 is_leap_month:false,blessing:"生日祝福".into(),note:None,
             },"user",chrono::Local::now().date_naive(),chrono::Utc::now())?;
-            let query=||Query {kind:"dates".into(),context:Context {persona_id:"1".into(),session_id:None,context_revision:0},search:"生日".into(),order:"newest".into(),page:1,travel_ids:vec![]};
+            let query=||Query {kind:"dates".into(),context:Context {persona_id:"1".into(),session_id:None,context_revision:0},search:"生日".into(),order:"newest".into(),page:1,travel_ids:vec![],favorites_only:false};
             let before=browse(store,query())?;
             assert_eq!(before.total,1);assert!(before.items[0].get("sessionId").is_none());
             store.connection.execute("DELETE FROM sessions",[])?;
@@ -100,18 +140,18 @@ mod tests {
         runtime.read(|store,_| {
             for index in 0..25 {store.connection.execute("INSERT INTO accessories(session_id,name,display_text,description,cost,source,created_at) VALUES(1,?1,'⭐','描述',0,'crafted',?2)",params![if index==0{"目标饰品".to_string()}else{format!("饰品{index}")},format!("2026-10-{:02}T00:00:00Z",index+1)])?;}
             let context=||Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0};
-            let page=browse(store,Query{kind:"accessories".into(),context:context(),search:"".into(),order:"newest".into(),page:1,travel_ids:vec![]})?;
+            let page=browse(store,Query{kind:"accessories".into(),context:context(),search:"".into(),order:"newest".into(),page:1,travel_ids:vec![],favorites_only:false})?;
             assert_eq!(page.items.len(),12);assert_eq!(page.total,25);assert_eq!(page.pages,3);
-            let found=browse(store,Query{kind:"accessories".into(),context:context(),search:"目标".into(),order:"newest".into(),page:99,travel_ids:vec![]})?;
+            let found=browse(store,Query{kind:"accessories".into(),context:context(),search:"目标".into(),order:"newest".into(),page:99,travel_ids:vec![],favorites_only:false})?;
             assert_eq!(found.total,1);assert_eq!(found.page,1);assert_eq!(found.items[0]["name"],"目标饰品");
-            let mut wrong=context();wrong.session_id=Some("999".into());assert!(browse(store,Query{kind:"accessories".into(),context:wrong,search:"".into(),order:"newest".into(),page:1,travel_ids:vec![]}).is_err());Ok(())
+            let mut wrong=context();wrong.session_id=Some("999".into());assert!(browse(store,Query{kind:"accessories".into(),context:wrong,search:"".into(),order:"newest".into(),page:1,travel_ids:vec![],favorites_only:false}).is_err());Ok(())
         }).unwrap();
     }
     #[test]
     fn souvenir_search_matches_independent_title() {
         let r=crate::runtime::test_runtime("http://localhost");r.read(|s,_|{
             s.connection.execute("INSERT INTO souvenirs(session_id,title,content,note,created_at) VALUES(1,'蓝湾海螺','银白外壳','带给你','a')",[])?;
-            let result=browse(s,Query{kind:"souvenirs".into(),context:Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0},search:"蓝湾".into(),order:"newest".into(),page:1,travel_ids:vec![]})?;
+            let result=browse(s,Query{kind:"souvenirs".into(),context:Context{persona_id:"1".into(),session_id:Some("1".into()),context_revision:0},search:"蓝湾".into(),order:"newest".into(),page:1,travel_ids:vec![],favorites_only:false})?;
             assert_eq!(result.total,1);assert_eq!(result.items[0]["title"],"蓝湾海螺");Ok(())
         }).unwrap();
     }

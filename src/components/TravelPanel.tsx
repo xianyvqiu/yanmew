@@ -34,6 +34,8 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
   const selectedTab = tab ?? localTab;
   const [journalOpened, setJournalOpened] = useState(selectedTab === "journals");
   useEffect(() => { if (selectedTab === "journals") setJournalOpened(true); }, [selectedTab]);
+  const [souvenirsOpened,setSouvenirsOpened]=useState(selectedTab==="souvenirs");
+  useEffect(()=>{if(selectedTab==="souvenirs")setSouvenirsOpened(true);},[selectedTab]);
   const [selection, setSelection] = useState<string | null>(null);
   const openLetter=(id:string)=>{setSelection(selection===id?null:id);setDetail(null);};
   const closeLetter=()=>setSelection(null);
@@ -119,7 +121,8 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
     <nav className="ym-travel-tabs" aria-label="出行内容">{(["history", "mailbox", "souvenirs", "journals"] as TravelTab[]).map(item => <button key={item} className="ym-button" aria-current={selectedTab === item ? "page" : undefined}
       onClick={() => { setLocalTab(item); onTabChange?.(item); }}>{item === "history" ? "出行历史" : item === "mailbox" ? "邮箱" : item === "souvenirs" ? "伴手礼" : "旅行游记"}</button>)}</nav>
     {(selectedTab === "journals" || journalOpened) && <div hidden={selectedTab !== "journals"}><TravelJournalPanel context={context} /></div>}
-    {selectedTab === "journals" ? null : selectedTab === "souvenirs" ? <SouvenirPanel context={context} /> : selectedTab === "history" ? <section className="ym-page-card" aria-label="出行历史">
+    {(selectedTab==="souvenirs"||souvenirsOpened)&&<div hidden={selectedTab!=="souvenirs"}><SouvenirPanel context={context}/></div>}
+    {selectedTab === "journals" || selectedTab === "souvenirs" ? null : selectedTab === "history" ? <section className="ym-page-card" aria-label="出行历史">
       <h2>出行历史</h2>{tripsBrowser.loading && <p role="status">正在读取出行记录…</p>}
       {!tripsBrowser.loading && !tripsBrowser.total && !tripsBrowser.search && !tripsBrowser.error && <p className="ym-page-note">还没有出行记录。</p>}
       <CardBrowserControls browser={tripsBrowser} label="出行" timeLabel="出发时间" disabled={busy}/>
@@ -136,8 +139,8 @@ function TravelPanelForContext({ context, personaName, tab, onTabChange }: {
 
     </section> : <section className="ym-page-card" aria-label="邮箱">
       <h2>邮箱</h2>{mailBrowser.loading && <p role="status">正在读取信件…</p>}
-      {!mailBrowser.loading && !mailBrowser.total && !mailBrowser.search && !mailBrowser.error && <p className="ym-page-note">还没有信件。出门期间可以寄一封信。</p>}
-      <TravelFilter browser={mailBrowser} disabled={busy}/><CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
+      {!mailBrowser.loading && !mailBrowser.total && !mailBrowser.search && !mailBrowser.error && <p className="ym-page-note">{mailBrowser.favoritesOnly?"当前筛选下没有收藏的信件。":"还没有信件。出门期间可以寄一封信。"}</p>}
+      <TravelFilter browser={mailBrowser} disabled={busy} favoriteFilter={{label:"只看收藏的信件",checked:mailBrowser.favoritesOnly,onChange:mailBrowser.setFavoritesOnly}}/><CardBrowserControls browser={mailBrowser} label="信件" timeLabel="收发时间" disabled={busy}/>
       {mailBrowser.error&&<p role="alert" className="ym-page-error">{mailBrowser.error}</p>}
       <ul className="ym-letter-list ym-mailbox-list">{mailBrowser.items.map(letter=><li key={letter.id} data-letter-id={letter.id}>
         <InlineDetailCard title={letter.sender==="user"?"我寄出的信":`${personaName}的来信`} meta={<><LetterKindBadge letter={letter}/><time>{travelTime(letter.createdAt)}</time><TravelOriginLabel travel={letter.travel} travelId={letter.travelId}/></>} summary={<>{letter.content.replace(/\s+/g," ").slice(0,140)}{letter.content.length>140?"…":""}</>} status={<span className="ym-letter-meta"><span className="ym-letter-read-badge" data-read={letter.isRead||readIds.has(letter.id)}>{letter.isRead||readIds.has(letter.id)?"已读":"未读"}</span>{letter.isFavorite&&" · 已收藏"}{letter.hasBeenReplied&&" · 已回复"}{letter.replyState!=="none"&&` · ${replyStateName[letter.replyState]}`}</span>} expanded={selection===letter.id} detailLabel="信件详情" onToggle={()=>openLetter(letter.id)}>

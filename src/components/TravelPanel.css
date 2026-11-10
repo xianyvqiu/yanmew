@@ -1,4 +1,6 @@
 .ym-travel-panel { display: grid; gap: 16px; min-width: 0; }
+.ym-favorite-filter { display:flex!important;align-items:center;justify-content:flex-start!important;gap:10px;margin-block:14px;width:fit-content;cursor:pointer; }
+.ym-favorite-filter input { appearance:auto;width:17px!important;height:17px;margin:0;flex:none;accent-color:var(--ym-accent-strong); }
 .ym-travel-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .ym-travel-tabs [aria-current="page"] { background: var(--ym-accent-soft); }
 .ym-travel-origin { display:block;color:var(--ym-accent-strong);font-size:12px;font-weight:400;line-height:1.6; }

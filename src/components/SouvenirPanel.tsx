@@ -73,8 +73,8 @@ function SouvenirPanelForContext({ context }: { context: CurrentContext }) {
     {Boolean(status?.failures.length) && <button className="ym-button" disabled={busy || Boolean(status?.active)} onClick={() => { void act(() => souvenirsApi.retry(context)); }}>重试待生成礼物</button>}
     {(loading || browser.loading) && <p role="status">正在读取伴手礼…</p>}
     {error && <p role="alert" className="ym-page-error">{error}</p>}
-    {!loading && !browser.loading && !browser.total && !browser.search && !error && !browser.error && <p className="ym-page-empty">还没有收到伴手礼。</p>}
-    <TravelFilter browser={browser} disabled={busy}/><CardBrowserControls browser={browser} label="伴手礼" timeLabel="获得时间" disabled={busy}/>
+    {!loading && !browser.loading && !browser.total && !browser.search && !error && !browser.error && <p className="ym-page-empty">{browser.favoritesOnly?"当前筛选下没有收藏的伴手礼。":"还没有收到伴手礼。"}</p>}
+    <TravelFilter browser={browser} disabled={busy} favoriteFilter={{label:"只看收藏的伴手礼",checked:browser.favoritesOnly,onChange:browser.setFavoritesOnly}}/><CardBrowserControls browser={browser} label="伴手礼" timeLabel="获得时间" disabled={busy}/>
     {browser.error&&<p role="alert" className="ym-page-error">{browser.error}</p>}
     <ul className="ym-letter-list ym-mailbox-list">{browser.items.map(item=><li key={item.id}>
       <InlineDetailCard thumbnail={item.imageFile?<SouvenirImage item={item} context={context}/>:undefined} title={item.title?.trim()||`${item.travel?.destination||"旅行"}·伴手礼`} summary={item.content.length>140?item.content.slice(0,140)+"…":item.content} meta={<><TravelOriginLabel travel={item.travel} travelId={item.travelId}/><span>{travelTime(item.createdAt)}</span></>} expanded={selected===item.id} disabled={busy} detailLabel="伴手礼详情" onToggle={()=>{setDetail(null);setSelected(selected===item.id?null:item.id);}}>
