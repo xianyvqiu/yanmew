@@ -90,6 +90,18 @@ pub async fn confirm_backup_import(window:WebviewWindow,app:AppHandle,runtime:St
 #[derive(serde::Serialize)]#[serde(rename_all="camelCase")]
 pub struct PluginDetail {pub plugin:game_plugins::Plugin,pub manifest:Option<game_plugins::Manifest>,pub permissions:Vec<game_plugins::Permission>,pub usage:game_plugins::PrivateSnapshot}
 #[tauri::command]
+pub async fn list_community_games(window:WebviewWindow)->AppResult<Vec<crate::community_games::Game>> {
+    authorize_plugin_management(&window)?;crate::community_games::list().await
+}
+#[tauri::command]
+pub async fn get_community_game_readme(window:WebviewWindow,id:String,version:String)->AppResult<crate::community_games::Readme> {
+    authorize_plugin_management(&window)?;crate::community_games::readme(&id,&version).await
+}
+#[tauri::command]
+pub async fn get_community_game_download(window:WebviewWindow,id:String,version:String)->AppResult<String> {
+    authorize_plugin_management(&window)?;crate::community_games::download(&id,&version).await
+}
+#[tauri::command]
 pub async fn list_game_plugins(window:WebviewWindow,runtime:State<'_,Runtime>)->AppResult<Vec<game_plugins::Plugin>> {
     authorize_plugin_management(&window)?;storage(runtime.inner().clone(),|s,_|game_plugins::list(&s.connection)).await
 }

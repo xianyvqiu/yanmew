@@ -1,0 +1,12 @@
+.ym-community-card-open { display:flex; flex:1; flex-direction:column; gap:12px; align-items:flex-start; width:100%; min-width:0; padding:0; border:0; background:none; color:inherit; text-align:left; cursor:pointer; font:inherit; overflow-wrap:anywhere; }
+.ym-community-card-open strong { font-size:17px; }
+.ym-community-card-open span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; color:var(--ym-text-secondary); font-size:14px; line-height:1.7; }
+.ym-community-card-open small { margin-top:auto; color:var(--ym-text-muted); font-size:12px; }
+.ym-community-card-open:focus-visible { outline:2px solid var(--ym-accent); outline-offset:5px; border-radius:4px; }
+.ym-community-dialog { width:min(900px,calc(100vw - 32px)); }
+.ym-community-readme { overflow-wrap:anywhere; font-size:14px; line-height:1.8; }
+.ym-community-readme img { display:block; max-width:100%; height:auto; margin:16px 0; }
+.ym-community-readme pre { max-width:100%; overflow:auto; padding:14px; border-radius:10px; background:var(--ym-surface-muted); }
+.ym-community-readme table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; }
+.ym-community-readme th,.ym-community-readme td { padding:7px 12px; border:1px solid var(--ym-border); }
+.ym-community-readme a { color:var(--ym-accent-strong); }

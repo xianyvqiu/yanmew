@@ -8,6 +8,7 @@ import { useGamePlugins } from "../hooks/useGamePlugins";
 import type { GameInstallPreview, GamePermissionChoice, GamePlugin, GamePluginDetail, GamePluginLedger, GameRun, PluginJson, PluginSetting } from "../types";
 import GamePermissions from "./GamePermissions";
 import "./GamePlugins.css";
+import CommunityGamesPanel from "./CommunityGamesPanel";
 
 const requiresWallet = (plugin: GamePlugin) => plugin.pluginId === "com.yanmew.game.my-home";
 
@@ -34,6 +35,10 @@ function SettingField({ setting, value, disabled, onSave }: {
 }
 
 export default function PluginManagerPanel() {
+  const [community,setCommunity]=useState(false);
+  return community?<CommunityGamesPanel onBack={()=>setCommunity(false)}/>:<InstalledPluginsPanel onCommunity={()=>setCommunity(true)}/>;
+}
+function InstalledPluginsPanel({onCommunity}:{onCommunity:()=>void}) {
   const { plugins, wallet, error: listError, loading, refresh } = useGamePlugins();
   const [launchDetail, setLaunchDetail] = useState<GamePluginDetail | null>(null);
   const [launchChoices, setLaunchChoices] = useState<GamePermissionChoice[]>([]);
@@ -195,7 +200,7 @@ export default function PluginManagerPanel() {
   };
   const sourceLink = (url: string | null, title: string) => url && <button className="ym-button" disabled={busy} onClick={() => void run(() => webSearchApi.open(url))}>{title}</button>;
   return <>
-    <section className="ym-page-card"><div className="ym-page-heading"><h2>小游戏插件</h2><span className="ym-page-note">全局喵币 · {wallet?.coins ?? "读取中…"}</span><button className="ym-button" disabled={busy || !!preview} onClick={() => fileInput.current?.click()}>{busy ? "正在处理…" : "安装 / 更新本地小游戏插件"}</button><input ref={fileInput} hidden type="file" accept=".yanmew-game,.zip" disabled={busy || !!preview} aria-label="安装本地小游戏插件包" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void previewFile(file); }} /></div>
+    <section className="ym-page-card"><div className="ym-page-heading"><h2>小游戏插件</h2><span className="ym-page-note">全局喵币 · {wallet?.coins ?? "读取中…"}</span><button className="ym-button" disabled={busy || !!preview} onClick={onCommunity}>社区小游戏</button><button className="ym-button" disabled={busy || !!preview} onClick={() => fileInput.current?.click()}>{busy ? "正在处理…" : "安装 / 更新本地小游戏插件"}</button><input ref={fileInput} hidden type="file" accept=".yanmew-game,.zip" disabled={busy || !!preview} aria-label="安装本地小游戏插件包" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void previewFile(file); }} /></div>
       <p className="ym-page-note">在这里打开和管理所有小游戏，也可安装从作者 GitHub 下载的小游戏插件包。游戏与存档不随人设切换，各游戏自己的次数限制由插件保存；钱包和联网权限由你确认，自带小游戏可以停用，不能卸载。</p>
       {loading && <p>正在读取插件…</p>}{listError && <p role="alert" className="ym-page-error">{listError}<button className="ym-button" onClick={() => void refresh()}>重试</button></p>}
       {error && <p role="alert" className="ym-page-error">{error}</p>}{notice && <p role="status">{notice}</p>}

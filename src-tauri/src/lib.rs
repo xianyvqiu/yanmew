@@ -60,6 +60,7 @@ mod chat_images;
 mod stickers;
 mod sticker_commands;
 mod card_browser;
+mod community_games;
 pub mod reminders;
 mod reminder_email;
 pub mod reminder_extract;
@@ -223,6 +224,9 @@ pub fn run() {
             commands::get_letter_generation_status,
             commands::retry_letter_generation,
             commands::list_game_plugins,
+            commands::list_community_games,
+            commands::get_community_game_readme,
+            commands::get_community_game_download,
             commands::get_game_plugin,
             commands::preview_game_plugin_install,
             commands::confirm_game_plugin_install,

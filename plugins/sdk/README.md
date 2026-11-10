@@ -183,7 +183,9 @@ void start();
 
 ## 打包与实际安装
 
-普通作者使用已有 `yanmew-plugin` 工具即可打包，不需要构建整个桌宠。若暂未提供独立工具附件，可在颜喵主源码目录按根 README 配好 Rust/MSVC、Node.js 和资源，首次生成前端资源后构建工具：
+推荐下载 [Windows x64 开发工具包](https://github.com/xianyvqiu/yanmew-community-games/releases/tag/devkit-v1.0.1)，核对随附 SHA-256 后解压。工具包包含打包器、SDK、模板及本教程，不需要访问主仓库或安装 Rust、Node.js；仅编写网页即可开发插件。工具位置为解压目录下 `bin/yanmew-plugin.exe`。
+
+维护者如需从源码构建，可在颜喵主源码目录按根 README 配好 Rust/MSVC、Node.js 和资源后执行：
 
 ```powershell
 npm ci
@@ -191,13 +193,14 @@ npm run build
 cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin yanmew-plugin
 ```
 
-工具位置是主仓库 `src-tauri/target/release/yanmew-plugin.exe`。以下命令在主仓库根目录执行，插件源码假设保存在 `C:\games\guess-number`，输出位于本机临时目录：
+源码构建的工具位于 `src-tauri/target/release/yanmew-plugin.exe`。以下使用预编译工具，修改 `$pluginCli` 为实际解压路径，插件源码假设保存在 `C:\games\guess-number`，输出位于本机临时目录：
 
 ```powershell
+$pluginCli = 'C:\tools\yanmew-plugin-devkit-1.0.1-windows-x64\bin\yanmew-plugin.exe'
 $gameSource = 'C:\games\guess-number'
 $packageFile = Join-Path $env:TEMP 'org.example.guess-number-1.0.0.yanmew-game'
-& .\src-tauri\target\release\yanmew-plugin.exe pack $gameSource $packageFile
-& .\src-tauri\target\release\yanmew-plugin.exe validate $packageFile
+& $pluginCli pack $gameSource $packageFile
+& $pluginCli validate $packageFile
 Get-FileHash -LiteralPath $packageFile -Algorithm SHA256
 ```
 
@@ -460,9 +463,21 @@ $fileName = Split-Path -Leaf $packageFile
 
 作者提供 manifest、源码、运行资源、README.md、素材许可；社区分发目录使用 LICENSE.txt，保证打包器可识别。前端开发项目可以另带 `src/`，但正式分发的 ui 必须是可运行的 HTML/CSS/JS。不要提交只有成品包、无法复现的混淆文件或未授权素材，也不要在 manifest 自报“官方”身份。
 
-社区仓库已创建；初始化文件和发布流程尚待完成。具体投稿检查、维护者发布步骤以社区仓库上线后的 CONTRIBUTING.md 为准，当前不能假定推送 tag 后已有自动发布。维护者仍可按前述流程本地打包、上传 Release，再维护已发布目录。
+社区采用本地校验和维护者本地发布，不依赖 GitHub Actions、付费 runner 或主仓库源码。作者提交前，在社区仓库根目录执行 `npm run check:local`，下载并核验固定版本开发包，检查目录并实际打包全部投稿；检查不代替真实游玩。源码 PR 经人工审阅和本地检查后合入 main。
 
-应用内“社区小游戏”仍在接入，尚未交付；它使用本社区仓库的 `catalog.json`，不会自动搜索作者自己的 Release。进入目录需要维护者为正式社区 Release 填入版本、附件地址/大小/SHA-256、发布时间，以及固定到源码提交的 README 地址和 SHA-256；仅合入源码不等于已经出现在列表。下载由浏览器完成，再返回颜喵从本地安装、确认权限，不自动安装或授权。当前可使用前述手动下载和本地安装流程。
+维护者完整克隆社区仓库，在干净且与远端同步的 main 上执行：
+
+```powershell
+git switch main
+git pull --ff-only
+npm run release:local -- org.example.guess-number
+```
+
+将示例 ID 改为实际游戏 ID。命令从 manifest 读取版本，使用已校验 CLI 打包，复用本机 Git Credential Manager/GitHub Desktop 保存的 GitHub 登录，在内存中调用 Releases API 创建或核对 `<plugin-id>/v<version>`、上传包及校验文件，然后提交并推送 catalog.json。无需手填 token、设置仓库 Secret 或先手工推 tag。发布者必须有仓库写权限且本机 git push 可用；命令不修改 Git 姓名/邮箱。凭据不写入文件、URL或命令行。
+
+同版本已上传附件仅在 SHA-256 一致时复用；修复游戏须提升版本。网络中断可重新执行命令，完整步骤和推送冲突处理见社区 [README](https://github.com/xianyvqiu/yanmew-community-games#维护者本地发布) 与 [CONTRIBUTING](https://github.com/xianyvqiu/yanmew-community-games/blob/main/CONTRIBUTING.md)。PR 分支先确认只包含游戏变更，再执行仓库脚本；工具改动单独审查。
+
+应用内“社区小游戏”源码已接入，须使用包含该改动的新构建；它使用本社区仓库的 `catalog.json`，不会自动搜索作者自己的 Release。进入目录需要维护者为正式社区 Release 填入版本、附件地址/大小/SHA-256、发布时间，以及固定到源码提交的 README 地址和 SHA-256；仅合入源码不等于已经出现在列表。下载由浏览器完成，再返回颜喵从本地安装、确认权限，不自动安装或授权。当前可使用前述手动下载和本地安装流程。
 
 ## 发布前验收
 
