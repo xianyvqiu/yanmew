@@ -185,7 +185,7 @@ void start();
 
 安装试玩需要颜喵Windows主程序，开发工具包不包含它；请使用提供给作者的当前测试包，主项目开源后的获取方式以[主项目README](https://github.com/xianyvqiu/yanmew)为准。本教程使用宿主协议1.0.0，社区浏览入口已包含在20261110-145616及后续构建中。
 
-推荐下载 [Windows x64 开发工具包](https://github.com/xianyvqiu/yanmew-community-games/releases/tag/devkit-v1.0.2)，核对随附 SHA-256 后解压。工具包包含打包器、SDK、模板及本教程，不需要访问主仓库或安装 Rust、Node.js；仅编写网页即可开发插件。工具位置为解压目录下 `bin/yanmew-plugin.exe`。
+推荐下载 [Windows x64 开发工具包](https://github.com/xianyvqiu/yanmew-community-games/releases/tag/devkit-v1.0.1)，核对随附 SHA-256 后解压。工具包包含打包器、SDK、模板及本教程，不需要访问主仓库或安装 Rust、Node.js；仅编写网页即可开发插件。工具位置为解压目录下 `bin/yanmew-plugin.exe`。
 
 维护者如需从源码构建，可在颜喵主源码目录按根 README 配好 Rust/MSVC、Node.js 和资源后执行：
 
@@ -198,7 +198,7 @@ cargo build --release --locked --manifest-path src-tauri/Cargo.toml --bin yanmew
 源码构建的工具位于 `src-tauri/target/release/yanmew-plugin.exe`。以下使用预编译工具，修改 `$pluginCli` 为实际解压路径，插件源码假设保存在 `C:\games\guess-number`，输出位于本机临时目录：
 
 ```powershell
-$pluginCli = 'C:\tools\yanmew-plugin-devkit-1.0.2-windows-x64\bin\yanmew-plugin.exe'
+$pluginCli = 'C:\tools\yanmew-plugin-devkit-1.0.1-windows-x64\bin\yanmew-plugin.exe'
 $gameSource = 'C:\games\guess-number'
 $packageFile = Join-Path $env:TEMP 'org.example.guess-number-1.0.0.yanmew-game'
 & $pluginCli pack $gameSource $packageFile
@@ -361,7 +361,7 @@ await window.yanmew.storage.set("ui.summary", {
 
 ## 钱包和网络
 
-需要可运行的完整例子时，先看[喵币计算挑战](../examples/wallet-challenge/README.md)：包含manifest、完整HTML/CSS/JavaScript和许可，开始扣1喵币、答对奖励2喵币，演示原请求持久化、重复点击保护、响应未知、保存失败及重开核对。开发工具包1.0.2及以上在`examples/wallet-challenge/`附带同一示例。请在独立可丢弃资料中安装测试，不用自己的日常钱包测试；示例不是社区目录的正式作品。
+需要可运行的完整例子时，先看[喵币计算挑战](../examples/wallet-challenge/README.md)：包含manifest、完整HTML/CSS/JavaScript和许可，开始扣1喵币、答对奖励2喵币，演示原请求持久化、重复点击保护、响应未知、保存失败及重开核对。已发布开发工具包的CLI可打包本示例；请从公开的`developer/examples/wallet-challenge/`取得完整源码。当前1.0.1 ZIP不包含该示例，工具包内文档为打包时快照，最新说明以本公开教程为准。请在独立可丢弃资料中安装测试，不用自己的日常钱包测试；示例不是社区目录的正式作品。
 
 ### 钱包结算与存档的衔接
 
