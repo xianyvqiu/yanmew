@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::{collections::HashSet, time::Duration};
 
 const CATALOG_URL: &str = "https://raw.githubusercontent.com/xianyvqiu/yanmew-community-games/main/catalog.json";
+const CATALOG_API_URL: &str = "https://api.github.com/repos/xianyvqiu/yanmew-community-games/contents/catalog.json?ref=main";
+const CONTENTS_API_PREFIX: &str = "https://api.github.com/repos/xianyvqiu/yanmew-community-games/contents/";
 const RAW_PREFIX: &str = "/xianyvqiu/yanmew-community-games/";
 const DOWNLOAD_PREFIX: &str = "/xianyvqiu/yanmew-community-games/releases/download/";
 const MAX_CATALOG: usize = 1024 * 1024;
@@ -86,16 +88,33 @@ fn decode_readme(bytes: Vec<u8>, expected: &str) -> AppResult<String> {
     }
     String::from_utf8(bytes).map_err(|_|invalid())
 }
-struct Client { http: reqwest::Client }
+fn readme_api_url(game: &Game) -> AppResult<String> {
+    validate(game)?;
+    let url = https(&game.readme_url,"raw.githubusercontent.com")?;
+    let source = url.path().strip_prefix(RAW_PREFIX).ok_or_else(invalid)?;
+    let (revision,path) = source.split_once('/').ok_or_else(invalid)?;
+    Ok(format!("{CONTENTS_API_PREFIX}{path}?ref={revision}"))
+}
+struct Client { http: reqwest::Client, api: reqwest::Client }
 impl Client {
     fn new() -> AppResult<Self> {
-        let http=reqwest::Client::builder().user_agent("YanMew/0.1 community browser")
-            .redirect(reqwest::redirect::Policy::none()).connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15)).build().map_err(|_|unavailable())?;
-        Ok(Self{http})
+        let build = |connect,total| reqwest::Client::builder().user_agent("YanMew/0.1 community browser")
+            .redirect(reqwest::redirect::Policy::none()).connect_timeout(Duration::from_secs(connect))
+            .timeout(Duration::from_secs(total)).build().map_err(|_|unavailable());
+        // Raw 保留原有等待上限；官方内容接口允许较慢的首次连接，不携带登录信息。
+        Ok(Self{http:build(5,15)?,api:build(10,20)?})
     }
     async fn bytes(&self,url:&str,limit:usize)->AppResult<Vec<u8>> {
-        let mut response=self.http.get(url).send().await.map_err(|_|unavailable())?;
+        Self::read(self.http.get(url),limit).await
+    }
+    async fn github_bytes(&self,raw:&str,api:&str,limit:usize)->AppResult<Vec<u8>> {
+        match self.bytes(raw,limit).await {
+            Ok(bytes) => Ok(bytes),
+            Err(_) => Self::read(self.api.get(api).header(reqwest::header::ACCEPT,"application/vnd.github.raw+json"),limit).await,
+        }
+    }
+    async fn read(request:reqwest::RequestBuilder,limit:usize)->AppResult<Vec<u8>> {
+        let mut response=request.send().await.map_err(|_|unavailable())?;
         if !response.status().is_success() || response.content_length().is_some_and(|n|n>limit as u64) { return Err(unavailable()); }
         let mut bytes=Vec::new();
         while let Some(chunk)=response.chunk().await.map_err(|_|unavailable())? {
@@ -103,7 +122,7 @@ impl Client {
         }
         Ok(bytes)
     }
-    async fn catalog(&self)->AppResult<Vec<Game>> { parse_catalog(&self.bytes(CATALOG_URL,MAX_CATALOG).await?) }
+    async fn catalog(&self)->AppResult<Vec<Game>> { parse_catalog(&self.github_bytes(CATALOG_URL,CATALOG_API_URL,MAX_CATALOG).await?) }
     async fn find(&self,id:&str,version:&str)->AppResult<Game> {
         let game=self.catalog().await?.into_iter().find(|g|g.id==id)
             .ok_or_else(||AppError::new("COMMUNITY_GAME_NOT_FOUND","该小游戏已下架或不存在，请刷新列表"))?;
@@ -114,7 +133,7 @@ impl Client {
 pub async fn list()->AppResult<Vec<Game>> { Client::new()?.catalog().await }
 pub async fn readme(id:&str,version:&str)->AppResult<Readme> {
     let client=Client::new()?;let game=client.find(id,version).await?;
-    let bytes=client.bytes(&game.readme_url,MAX_README).await?;
+    let bytes=client.github_bytes(&game.readme_url,&readme_api_url(&game)?,MAX_README).await?;
     Ok(Readme{markdown:decode_readme(bytes,&game.readme_sha256)?,base_url:game.readme_url})
 }
 pub async fn download(id:&str,version:&str)->AppResult<String> { Ok(Client::new()?.find(id,version).await?.download_url) }

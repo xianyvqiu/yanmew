@@ -111,7 +111,9 @@ fn sync_visibility(app:&AppHandle)->AppResult<()> {
  #[cfg(windows)]
  {
   let hwnd=layer.hwnd().map_err(failure)?;let target_hwnd=target.hwnd().map_err(failure)?;
-  native::sync_visibility(hwnd,target_hwnd)?;
+  let visible=native::should_show_layer(hwnd,target_hwnd);
+  // 使用框架接口同步 Tao 的可见性标志，避免原生 HWND 已显示但框架仍视为隐藏。
+  if visible!=layer.is_visible().map_err(failure)?{if visible{layer.show().map_err(failure)?;}else{layer.hide().map_err(failure)?;}}
  }
  #[cfg(not(windows))]
  {
@@ -120,15 +122,17 @@ fn sync_visibility(app:&AppHandle)->AppResult<()> {
  Ok(())
 }
 pub fn window_event(app:&AppHandle,label:&str,event:&tauri::WindowEvent) {
- if !matches!(event,tauri::WindowEvent::Focused(_)|tauri::WindowEvent::Resized(_)|tauri::WindowEvent::Destroyed){return;}
+ if !matches!(event,tauri::WindowEvent::Focused(_)|tauri::WindowEvent::Moved(_)|tauri::WindowEvent::Resized(_)|tauri::WindowEvent::ScaleFactorChanged {..}|tauri::WindowEvent::Destroyed){return;}
  let target=app.state::<Guide>().state.lock().ok().and_then(|s|s.as_ref().map(|s|s.target.clone()));
  if target.as_deref()!=Some(label)&&label!="onboarding"{return;}
- // 排到本轮焦点消息之后，避免 owner 失焦到教程自身时短暂隐藏；不主动抢焦点。
- let owner=app.clone();let _=app.run_on_main_thread(move||{
-  if let Err(error)=sync_visibility(&owner){
-   if let Some(layer)=owner.get_webview_window("onboarding"){let _=layer.hide();}
-   eprintln!("更新教程可见性失败：{error}");
-  }
+ // run_on_main_thread 在主线程会直接执行；从运行时转交，避免在原生窗口回调内重入显示操作。
+ let owner=app.clone();tauri::async_runtime::spawn(async move {
+  let queued=owner.clone();let _=owner.run_on_main_thread(move||{
+   if let Err(error)=sync_visibility(&queued){
+    if let Some(layer)=queued.get_webview_window("onboarding"){let _=layer.hide();}
+    eprintln!("更新教程可见性失败：{error}");
+   }
+  });
  });
 }
 #[cfg(windows)]
@@ -138,25 +142,26 @@ mod native {
  fn failed()->AppError{AppError::new("ONBOARDING_WINDOW_ERROR","教程窗口层级设置失败，请重试或跳过教程")}
  pub(super) fn attach_owner(layer:HWND,target:HWND)->AppResult<()> {
   unsafe {
-   if GetWindowLongPtrW(layer,GWLP_HWNDPARENT)!=target.0 as isize {
+   let changed=GetWindowLongPtrW(layer,GWLP_HWNDPARENT)!=target.0 as isize;
+   if changed {
     SetLastError(WIN32_ERROR(0));
     if SetWindowLongPtrW(layer,GWLP_HWNDPARENT,target.0 as isize)==0&&GetLastError().0!=0{return Err(failed());}
    }
    // 桌宠允许置顶，教程只继承其层级；普通设置/聊天窗口不进入全局置顶组。
    let order=if GetWindowLongPtrW(target,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize!=0{HWND_TOPMOST}else{HWND_NOTOPMOST};
-   SetWindowPos(layer,Some(order),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER).map_err(|_|failed())?;
+   let topmost=GetWindowLongPtrW(layer,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize!=0;
+   if changed||topmost!=(order==HWND_TOPMOST){SetWindowPos(layer,Some(order),0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER).map_err(|_|failed())?;}
   }
   Ok(())
  }
- pub(super) fn sync_visibility(layer:HWND,target:HWND)->AppResult<()> {
+ fn foreground_matches(foreground:HWND,target:HWND)->bool {
+  foreground==target||unsafe{GetAncestor(foreground,GA_ROOT)==target}
+ }
+ pub(super) fn should_show_layer(layer:HWND,target:HWND)->bool {
   unsafe {
    let foreground=GetForegroundWindow();
-   let visible=should_show(IsWindowVisible(target).as_bool(),IsIconic(target).as_bool(),foreground==target,foreground==layer);
-   if visible {
-    if !IsWindowVisible(layer).as_bool(){let _=ShowWindow(layer,SW_SHOWNOACTIVATE);}
-   }else if IsWindowVisible(layer).as_bool(){let _=ShowWindow(layer,SW_HIDE);}
+   should_show(IsWindowVisible(target).as_bool(),IsIconic(target).as_bool(),foreground_matches(foreground,target),foreground_matches(foreground,layer))
   }
-  Ok(())
  }
  #[cfg(test)]
  mod tests {
@@ -169,7 +174,7 @@ mod native {
     let foreground=GetForegroundWindow();
     attach_owner(layer,pet).unwrap();assert_eq!(GetWindow(layer,GW_OWNER).unwrap(),pet);assert_ne!(GetWindowLongPtrW(pet,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);
     attach_owner(layer,settings).unwrap();assert_eq!(GetWindow(layer,GW_OWNER).unwrap(),settings);assert_eq!(GetWindowLongPtrW(layer,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);assert_ne!(GetWindowLongPtrW(pet,GWL_EXSTYLE)&WS_EX_TOPMOST.0 as isize,0);
-    sync_visibility(layer,settings).unwrap();assert!(!IsWindowVisible(layer).as_bool());assert_eq!(GetForegroundWindow(),foreground);
+    assert!(!should_show_layer(layer,settings));assert!(!IsWindowVisible(layer).as_bool());assert_eq!(GetForegroundWindow(),foreground);
     let _=DestroyWindow(layer);let _=DestroyWindow(pet);let _=DestroyWindow(settings);
    }
   }

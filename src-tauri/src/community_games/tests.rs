@@ -40,7 +40,8 @@ fn public_reader_rejects_http_errors_and_oversize_responses() {
         for (status,body,limit,success) in [("200 OK","hello",16,true),("200 OK","too large",3,false),("302 Found","moved",16,false),("404 Not Found","missing",16,false)] {
             let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
             let worker=std::thread::spawn(move||{let(mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();let mut buffer=[0;4096];stream.read(&mut buffer).unwrap();write!(stream,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();});
-            let client=Client{http:reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).build().unwrap()};
+            let http=reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+            let client=Client{api:http.clone(),http};
             assert_eq!(client.bytes(&format!("http://{address}/"),limit).await.is_ok(),success);worker.join().unwrap();
         }
     });
@@ -49,4 +50,44 @@ fn public_reader_rejects_http_errors_and_oversize_responses() {
 #[ignore="手动核对已发布的公开社区目录，不安装或下载插件"]
 fn published_community_catalog_read_only_smoke() {
     let games=tauri::async_runtime::block_on(list()).unwrap();println!("community catalog verified: {} published games",games.len());
+}
+#[test]
+fn official_readme_route_keeps_the_reviewed_repository_path_and_revision() {
+    let valid:Game=serde_json::from_value(game()).unwrap();
+    assert_eq!(readme_api_url(&valid).unwrap(),format!("{CONTENTS_API_PREFIX}games/org.example.puzzle/README.md?ref={}","a".repeat(40)));
+    for url in ["https://raw.githubusercontent.com/other/repo/main/README.md","https://raw.githubusercontent.com/xianyvqiu/yanmew-community-games/main/games/org.example.puzzle/README.md","https://token@raw.githubusercontent.com/xianyvqiu/yanmew-community-games/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/games/org.example.puzzle/README.md"] {
+        let mut invalid=valid.clone();invalid.readme_url=url.into();assert!(readme_api_url(&invalid).is_err());
+    }
+}
+#[test]
+fn raw_success_does_not_require_the_api_route() {
+    use std::io::{Read,Write};
+    tauri::async_runtime::block_on(async {
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+        let worker=std::thread::spawn(move||{let(mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();let mut buffer=[0;4096];stream.read(&mut buffer).unwrap();write!(stream,"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nraw").unwrap();});
+        let http=reqwest::Client::builder().no_proxy().build().unwrap();let client=Client{api:http.clone(),http};
+        assert_eq!(client.github_bytes(&format!("http://{address}/raw"),"http://127.0.0.1:1/unavailable",16).await.unwrap(),b"raw");worker.join().unwrap();
+    });
+}
+#[test]
+fn api_fallback_is_anonymous_raw_content_and_preserves_limits_and_digest() {
+    use std::io::{Read,Write};
+    tauri::async_runtime::block_on(async {
+        for (limit,success) in [(32,true),(3,false)] {
+            let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let address=listener.local_addr().unwrap();
+            let worker=std::thread::spawn(move||{
+                for (index,(status,body)) in [("503 Service Unavailable","down"),("200 OK","# Game\n")].iter().enumerate() {
+                    let(mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();let mut buffer=[0;4096];let count=stream.read(&mut buffer).unwrap();let request=String::from_utf8_lossy(&buffer[..count]).to_lowercase();
+                    assert!(!request.contains("authorization:"));
+                    if index==1 {assert!(request.starts_with("get /contents/readme?ref=fixed "));assert!(request.contains("accept: application/vnd.github.raw+json"));}
+                    write!(stream,"HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                }
+            });
+            let http=reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).build().unwrap();let client=Client{api:http.clone(),http};
+            let result=client.github_bytes(&format!("http://{address}/raw"),&format!("http://{address}/contents/readme?ref=fixed"),limit).await;
+            assert_eq!(result.is_ok(),success);
+            if let Ok(bytes)=result {assert_eq!(decode_readme(bytes.clone(),&format!("{:x}",Sha256::digest(&bytes))).unwrap(),"# Game\n");assert!(decode_readme(bytes,&"0".repeat(64)).is_err());}
+            worker.join().unwrap();
+        }
+    });
 }
