@@ -47,11 +47,13 @@ try {
     $releaseRoot = Join-Path $projectRoot ('releases/' + $releaseStamp)
     if (Test-Path -LiteralPath $releaseRoot) { throw '发布目录已存在，请稍后重试，原产物不覆盖' }
     $portable = Join-Path $releaseRoot "YanMew-$($config.version)-windows-x64"
+    $publishRoot = Join-Path $releaseRoot 'github-release'
     New-Item -ItemType Directory -Path $portable | Out-Null
+    New-Item -ItemType Directory -Path $publishRoot | Out-Null
     Copy-Item -LiteralPath $executable -Destination $portable
     $helper = Join-Path $projectRoot 'src-tauri/target/release/yanmew-update.exe'
     Copy-Item -LiteralPath $helper -Destination $portable
-    Copy-Item -LiteralPath $helper -Destination (Join-Path $releaseRoot '颜喵一键更新.exe')
+    Copy-Item -LiteralPath $helper -Destination (Join-Path $publishRoot 'YanMew-Update.exe')
     Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $portable
     Copy-Item -LiteralPath (Join-Path $projectRoot 'resources/portable-README.md') -Destination (Join-Path $portable '使用说明.md')
     & (Join-Path $PSScriptRoot 'copy-embedding-resources.ps1') -Destination $portable
@@ -133,12 +135,12 @@ try {
         [ordered]@{path=[IO.Path]::GetRelativePath($portable,$_.FullName).Replace('\','/');size=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     })
     [ordered]@{schemaVersion=1;product='com.yanmew.pet';version=$config.version;buildId=$buildId;files=$files} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $portable 'yanmew-package.json') -Encoding utf8NoBOM
-    $archive = Join-Path $releaseRoot '颜喵 YanMew-portable.zip'
+    $archive = Join-Path $publishRoot "YanMew-$($config.version)-windows-x64.zip"
     Compress-Archive -LiteralPath $portable -DestinationPath $archive -CompressionLevel Optimal
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding UTF8
-    [ordered]@{schemaVersion=1;version=$config.version;buildId=$buildId;assetName=[IO.Path]::GetFileName($archive);size=(Get-Item -LiteralPath $archive).Length;sha256=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $releaseRoot 'yanmew-update.json') -Encoding utf8NoBOM
-    "$((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant())  颜喵一键更新.exe" | Set-Content -LiteralPath (Join-Path $releaseRoot '颜喵一键更新.exe.sha256') -Encoding utf8NoBOM
+    [ordered]@{schemaVersion=1;version=$config.version;buildId=$buildId;assetName=[IO.Path]::GetFileName($archive);size=(Get-Item -LiteralPath $archive).Length;sha256=$hash} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $publishRoot 'yanmew-update.json') -Encoding utf8NoBOM
+    "$((Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant())  YanMew-Update.exe" | Set-Content -LiteralPath (Join-Path $publishRoot 'YanMew-Update.exe.sha256') -Encoding utf8NoBOM
     Write-Output "便携目录：$portable"
     Write-Output "便携 ZIP：$archive"
     Write-Output "SHA-256：$hash"
